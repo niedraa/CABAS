@@ -18,8 +18,9 @@ import { lookupIngredient } from './constraints';
 import { createId } from './ids';
 import { subtractPantry } from './pantry';
 import { scaleRecipeIngredients } from './portions';
+import { AISLE_LABELS } from './labels';
 import { capitalize, compareFr, foldText } from './text';
-import { convertBase, roundTo, toBase } from './units';
+import { convertBase, formatPieces, formatQuantity, roundTo, toBase } from './units';
 
 export interface BuildListOptions {
   /** Produits du catalogue : leurs contenances servent à l'arrondi. */
@@ -299,4 +300,70 @@ export function listProgress(items: readonly ShoppingListItem[]): { done: number
   const total = items.length;
   const done = items.filter((i) => i.checked).length;
   return { done, total, ratio: total > 0 ? done / total : 0 };
+}
+
+// ─── Affichage & partage ─────────────────────────────────────────────────────
+
+/**
+ * Quantité d'un article telle qu'affichée dans la liste : « 450 g », « 1,5 l »,
+ * « × 3 ». Vide pour un article manuel « à l'unité » (« Sacs poubelle »).
+ */
+export function formatItemQuantity(item: Pick<ShoppingListItem, 'quantity' | 'unit' | 'source'>): string {
+  const q = Number.isFinite(item.quantity) && item.quantity > 0 ? item.quantity : 0;
+  if (item.unit === 'piece') {
+    if (q === 0 || (item.source === 'manual' && q === 1)) return '';
+    return `× ${formatPieces(q)}`;
+  }
+  return formatQuantity(q, item.unit);
+}
+
+/**
+ * Conditionnement réel à acheter, s'il apporte une information : « 2 × 300 g »,
+ * « lot de 6 », « 2 lots de 6 ». `null` s'il n'y en a pas ou s'il correspond
+ * exactement au besoin (1 × 500 g pour 500 g).
+ */
+export function formatPackaging(item: Pick<ShoppingListItem, 'quantity' | 'packaging'>): string | null {
+  const p = item.packaging;
+  if (!p || !(p.packs > 0) || !(p.packSize > 0)) return null;
+  if (p.packs === 1 && roundTo(p.packSize, 3) === roundTo(item.quantity, 3)) return null;
+  if (p.packUnit === 'piece') {
+    const size = formatPieces(p.packSize);
+    return p.packs === 1 ? `lot de ${size}` : `${p.packs} lots de ${size}`;
+  }
+  return `${p.packs} × ${formatQuantity(p.packSize, p.packUnit)}`;
+}
+
+/** Ligne texte d'un article : « Ail — 5 g (1 × 250 g) », « Oignon × 3 », « Sacs poubelle ». */
+export function formatListItemLine(item: ShoppingListItem): string {
+  const qty = formatItemQuantity(item);
+  const pack = formatPackaging(item);
+  let line = item.label;
+  if (qty) line += item.unit === 'piece' ? ` ${qty}` : ` — ${qty}`;
+  if (pack) line += ` (${pack})`;
+  return line;
+}
+
+export interface ListTextOptions {
+  /** Première ligne (défaut : « Ma liste de courses »). */
+  title?: string;
+  /** Inclut les articles déjà cochés, marqués « ✓ » (défaut : seulement ce qui reste à acheter). */
+  includeChecked?: boolean;
+}
+
+/**
+ * Version texte de la liste, prête à copier / partager (SMS, messagerie) :
+ * rayons dans l'ordre de parcours, un article par ligne.
+ */
+export function formatShoppingListAsText(items: readonly ShoppingListItem[], opts: ListTextOptions = {}): string {
+  const kept = opts.includeChecked ? items : items.filter((i) => !i.checked);
+  const lines: string[] = [opts.title ?? 'Ma liste de courses'];
+  if (kept.length === 0) {
+    lines.push('', items.length > 0 ? 'Tout est déjà dans le cabas !' : 'Rien à acheter pour l’instant.');
+    return lines.join('\n');
+  }
+  for (const group of groupByAisle(kept)) {
+    lines.push('', AISLE_LABELS[group.aisle]);
+    for (const item of group.items) lines.push(`${item.checked ? '✓' : '•'} ${formatListItemLine(item)}`);
+  }
+  return lines.join('\n');
 }
