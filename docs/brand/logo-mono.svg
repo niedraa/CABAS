@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
+  <title>Cabas — monochrome</title>
+  <g transform="translate(-3.48 -7.65) scale(1.3913)">
+    <path d="M33 60 V52 A27 27 0 0 1 87 52 V60" stroke="#173A2C" stroke-width="10" stroke-linecap="round" fill="none"/>
+    <path d="M15 58 Q14 58 14.3 59.2 L24.6 103.2 Q25.3 106 28.2 106 H91.8 Q94.7 106 95.4 103.2 L105.7 59.2 Q106 58 105 58 Z M48 70 H48 A3 3 0 0 1 51 73 V93 A3 3 0 0 1 48 96 H48 A3 3 0 0 1 45 93 V73 A3 3 0 0 1 48 70 Z M60 70 H60 A3 3 0 0 1 63 73 V93 A3 3 0 0 1 60 96 H60 A3 3 0 0 1 57 93 V73 A3 3 0 0 1 60 70 Z M72 70 H72 A3 3 0 0 1 75 73 V93 A3 3 0 0 1 72 96 H72 A3 3 0 0 1 69 93 V73 A3 3 0 0 1 72 70 Z" fill="#173A2C" fill-rule="evenodd"/>
+  </g>
+</svg>

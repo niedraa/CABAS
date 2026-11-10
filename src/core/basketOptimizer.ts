@@ -33,8 +33,34 @@ export interface OptimizeOptions {
   now?: string;
 }
 
-/** Au-delà, on présélectionne les meilleurs magasins (combinatoire maîtrisée). */
+/**
+ * Nombre de magasins toujours conservés lors d'une présélection. La
+ * présélection n'a lieu que si l'énumération exhaustive dépasse
+ * `MAX_COMBINATIONS` (ex. > 90 magasins pour 2 magasins max, > 12 magasins
+ * sans limite) : en dessous, le résultat est l'optimum exact.
+ */
 export const MAX_ENUMERATED_STORES = 6;
+
+/** Budget de combinaisons évaluées (coût ≈ combinaisons × articles). */
+export const MAX_COMBINATIONS = 4096;
+
+/** Nombre de combinaisons de taille 1..k parmi n (Infinity au-delà du budget). */
+function combinationCount(n: number, k: number): number {
+  let total = 0;
+  let c = 1;
+  for (let i = 1; i <= Math.min(k, n); i++) {
+    c = (c * (n - i + 1)) / i;
+    total += c;
+    if (total > MAX_COMBINATIONS) return Infinity;
+  }
+  return total;
+}
+
+/** maxStores saisi → entier ≥ 1 (NaN / absent → 2 ; Infinity accepté). */
+function sanitizeMaxStores(value: number | undefined): number {
+  if (value === undefined || Number.isNaN(value)) return 2;
+  return Math.max(1, Math.floor(value));
+}
 
 /** Frais d'un magasin pour un canal ; null si le canal n'est pas proposé. */
 export function storeFees(store: Store, channel: OrderChannel = 'drive'): number | null {
@@ -186,7 +212,7 @@ export function optimizeBasket(
 ): BasketPlan {
   const channel = opts.channel ?? 'drive';
   const includeFees = opts.includeFees ?? true;
-  const maxStores = Math.max(1, Math.floor(opts.maxStores ?? 2));
+  const maxStores = sanitizeMaxStores(opts.maxStores);
   const allowed = opts.allowedStoreIds && opts.allowedStoreIds.length > 0 ? new Set(opts.allowedStoreIds) : undefined;
 
   let eligible = stores
@@ -194,7 +220,15 @@ export function optimizeBasket(
     .slice()
     .sort((a, b) => cmpStr(a.id, b.id));
 
-  if (eligible.length > MAX_ENUMERATED_STORES) {
+  // « Un seul magasin » : n combinaisons, toujours exhaustif. « Le moins cher » :
+  // exhaustif tant que le budget de combinaisons le permet. (L'ancienne règle
+  // « > 6 magasins ⇒ présélection » ratait l'optimum, p. ex. un magasin très
+  // bon marché sur quelques articles mais mal classé en mono-magasin.)
+  let keep = eligible.length;
+  if (mode === 'cheapest') {
+    while (keep > MAX_ENUMERATED_STORES && combinationCount(keep, maxStores) > MAX_COMBINATIONS) keep--;
+  }
+  if (keep < eligible.length) {
     // Présélection : meilleure couverture, puis meilleur total mono-magasin.
     const totals = new Map(storeTotals(comparisons, eligible, { channel, includeFees }).map((t) => [t.storeId, t]));
     eligible = eligible
@@ -204,7 +238,7 @@ export function optimizeBasket(
         const tb = totals.get(b.id) as StoreTotal;
         return tb.coveredItemIds.length - ta.coveredItemIds.length || ta.totalCents - tb.totalCents || cmpStr(a.id, b.id);
       })
-      .slice(0, MAX_ENUMERATED_STORES)
+      .slice(0, keep)
       .sort((a, b) => cmpStr(a.id, b.id));
   }
 

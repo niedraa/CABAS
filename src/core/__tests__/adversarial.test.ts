@@ -24,6 +24,7 @@ import {
   planFromSelection,
   selectLlmCandidates,
   setMealLocked,
+  setMealServings,
   suggestAlternatives,
   weekSlots,
   type LlmSelection,
@@ -483,13 +484,22 @@ describe('parseLlmResponse — entrées hostiles', () => {
     expect(sel?.meals[0].reason).toHaveLength(120);
   });
 
-  it('candidat FALSIFIÉ (même id, ingrédients « nettoyés ») : planFromSelection revalide avec le catalogue', () => {
+  it('candidat FALSIFIÉ (même id, ingrédients « nettoyés ») : rejeté par le parseur ET par planFromSelection', () => {
     const forged = { ...RECIPES.find((r) => r.id === 'pad_thai')!, ingredients: [riOf('riz')] };
-    const sel = parseLlmResponse(JSON.stringify({ meals: [{ date: mon, type: 'diner', recipeId: 'pad_thai' }] }), inp, [forged]);
-    expect(sel?.meals).toHaveLength(1); // le faux candidat paraît sûr…
-    const plan = planFromSelection(inp, sel as LlmSelection, 'ai');
-    expect(plan.meals.some((m) => m.recipeId === 'pad_thai')).toBe(false); // …mais il est rejeté ici
+    const text = JSON.stringify({ meals: [{ date: mon, type: 'diner', recipeId: 'pad_thai' }] });
+    // Le parseur revalide contre la version du catalogue (input.recipes).
+    expect(parseLlmResponse(text, inp, [forged])?.meals).toEqual([]);
+    // Même si un appelant contourne le parseur, planFromSelection revalide.
+    const raw: LlmSelection = { meals: [{ date: mon, type: 'diner', recipeId: 'pad_thai' }] };
+    const plan = planFromSelection(inp, raw, 'ai');
+    expect(plan.meals.some((m) => m.recipeId === 'pad_thai')).toBe(false);
     expectPlanSafe(plan, RECIPES, profile, INGREDIENTS_BY_ID);
+  });
+
+  it('candidat absent du catalogue (id halluciné mais « candidat ») → rejeté', () => {
+    const invented = recipe('plat_invente', { title: 'Inventé', ingredients: [riOf('riz')] });
+    const text = JSON.stringify({ meals: [{ date: mon, type: 'diner', recipeId: 'plat_invente' }] });
+    expect(parseLlmResponse(text, inp, [invented])?.meals).toEqual([]);
   });
 
   it('extractJson : beaucoup d’accolades parasites, temps raisonnable', () => {
@@ -672,5 +682,21 @@ describe('propriété : catalogues et profils aléatoires (oracle indépendant)'
       }
     }
     expect(mealsChecked).toBeGreaterThan(500);
+  });
+});
+
+// ─── 7. Portions saisies ─────────────────────────────────────────────────────
+
+describe('setMealServings — saisies invalides', () => {
+  it('NaN / Infini → portions inchangées (jamais NaN dans le planning)', () => {
+    const plan = generateMealPlan(input());
+    const id = plan.meals[0].id;
+    const before = plan.meals[0].servings;
+    for (const bad of [NaN, Infinity, -Infinity]) {
+      const next = setMealServings(plan, id, bad);
+      expect(next.meals[0].servings).toBe(before);
+    }
+    expect(setMealServings(plan, id, -2).meals[0].servings).toBe(1);
+    expect(setMealServings(plan, id, 2.6).meals[0].servings).toBe(3);
   });
 });

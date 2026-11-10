@@ -144,6 +144,8 @@ export function unitLabel(unit: Unit, q = 1): string {
  * Les g ≥ 1000 passent en kg, les ml ≥ 1000 en l, les ml multiples de 10 en cl.
  */
 export function formatQuantity(q: number, unit: Unit): string {
+  // Jamais « NaN g » à l'écran : une quantité illisible s'affiche comme 0.
+  if (!Number.isFinite(q)) q = 0;
   const raw = RAW[unit] ?? RAW.piece;
   if (unit === 'g' || unit === 'kg') {
     const g = roundHuman(q * raw.factor);

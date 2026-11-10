@@ -29,8 +29,12 @@ function groupThousands(n: number): string {
 
 /** Centimes → « 4,99 € ». */
 export function formatPrice(cents: number, opts: FormatPriceOptions = {}): string {
-  const rounded = Math.round(Number.isFinite(cents) ? cents : 0);
-  const abs = Math.abs(rounded);
+  const value = Number.isFinite(cents) ? cents : 0;
+  // Arrondi SYMÉTRIQUE (demi-centime loin de zéro) : Math.round(-150.5) vaut
+  // -150 alors que Math.round(150.5) vaut 151 — un remboursement et un débit
+  // de même valeur s'afficheraient différemment.
+  const abs = Math.round(Math.abs(value));
+  const rounded = value < 0 ? -abs : abs;
   const euros = Math.floor(abs / 100);
   const rest = abs % 100;
   const decimals = opts.compact && rest === 0 ? '' : `,${rest < 10 ? '0' : ''}${rest}`;

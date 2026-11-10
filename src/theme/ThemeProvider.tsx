@@ -2,14 +2,18 @@ import React, { createContext, useContext, useMemo } from 'react';
 import { useColorScheme } from 'react-native';
 
 import {
+  controlHeight,
   darkColors,
   elevation,
+  iconSize,
   layout,
   lightColors,
   motion,
+  opacity,
   radius,
   spacing,
   typography,
+  zIndex,
   type ColorScheme,
 } from './tokens';
 
@@ -24,6 +28,10 @@ export interface Theme {
   elevation: typeof elevation;
   motion: typeof motion;
   layout: typeof layout;
+  iconSize: typeof iconSize;
+  controlHeight: typeof controlHeight;
+  opacity: typeof opacity;
+  zIndex: typeof zIndex;
 }
 
 export function buildTheme(scheme: 'light' | 'dark'): Theme {
@@ -36,6 +44,10 @@ export function buildTheme(scheme: 'light' | 'dark'): Theme {
     elevation,
     motion,
     layout,
+    iconSize,
+    controlHeight,
+    opacity,
+    zIndex,
   };
 }
 

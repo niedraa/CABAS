@@ -25,6 +25,8 @@ export const palette = {
   moutarde300: '#F3C982',
   moutarde100: '#FBEBCB',
   moutarde50: '#FDF6E7',
+  /** Moutarde « texte » : lisible sur crème (AA ≥ 4,5:1), pour badges premium. */
+  moutarde800: '#8C5B14',
 
   // Crème / papier (fonds)
   creme: '#F6F1E7',
@@ -36,6 +38,8 @@ export const palette = {
   tomate600: '#C9452B',
   tomate500: '#E0573A',
   tomate100: '#FBE1D8',
+  /** Tomate profonde : texte « danger / économie » sur fond clair (AA ≥ 4,5:1). */
+  tomate700: '#B23A22',
 
   // Prune (badges informatifs, IA)
   prune600: '#6B4B8A',
@@ -45,6 +49,7 @@ export const palette = {
   encre900: '#14231C',
   encre700: '#33433B',
   encre500: '#5B6B62',
+  encre400: '#76847C',
   encre300: '#93A099',
   blanc: '#FFFFFF',
   noir: '#000000',
@@ -55,6 +60,7 @@ export const palette = {
   nuit700: '#16291F',
   nuit600: '#1D3428',
   nuit500: '#28463A',
+  nuit400: '#7F988A',
   nuit300: '#5E7A6C',
   lin: '#F3EEE3',
 } as const;
@@ -80,6 +86,8 @@ export type ColorScheme = {
   onPrimary: string;
   /** Texte posé sur `accent` */
   onAccent: string;
+  /** Texte posé sur `danger` (bouton destructif plein) */
+  onDanger: string;
 
   /** Vert forêt : identité, en-têtes, boutons secondaires pleins */
   primary: string;
@@ -89,6 +97,8 @@ export type ColorScheme = {
   accent: string;
   accentPressed: string;
   accentSoft: string;
+  /** Moutarde utilisable comme couleur de TEXTE (badges premium, liens chauds) */
+  accentText: string;
 
   success: string;
   successSoft: string;
@@ -121,9 +131,11 @@ export const lightColors: ColorScheme = {
 
   text: palette.encre900,
   textSecondary: palette.encre500,
-  textTertiary: palette.encre300,
+  // Tertiaire : indications non essentielles (placeholder, méta, icônes) — ≥ 3:1.
+  textTertiary: palette.encre400,
   onPrimary: palette.lin,
   onAccent: palette.foret900,
+  onDanger: palette.blanc,
 
   primary: palette.foret800,
   primaryPressed: palette.foret900,
@@ -131,16 +143,18 @@ export const lightColors: ColorScheme = {
   accent: palette.moutarde500,
   accentPressed: palette.moutarde600,
   accentSoft: palette.moutarde100,
+  accentText: palette.moutarde800,
 
   success: palette.foret600,
   successSoft: palette.foret100,
-  danger: palette.tomate500,
+  // Tomate profonde pour garantir l'AA du texte sur crème (tomate500 = 3,3:1).
+  danger: palette.tomate700,
   dangerSoft: palette.tomate100,
   info: palette.prune600,
   infoSoft: palette.prune100,
 
   priceBest: palette.foret600,
-  savings: palette.tomate500,
+  savings: palette.tomate700,
 
   overlay: 'rgba(14, 36, 27, 0.45)',
   shadow: 'rgba(23, 58, 44, 0.16)',
@@ -160,9 +174,10 @@ export const darkColors: ColorScheme = {
 
   text: palette.lin,
   textSecondary: '#B4C2B9',
-  textTertiary: palette.nuit300,
+  textTertiary: palette.nuit400,
   onPrimary: palette.foret900,
   onAccent: palette.foret900,
+  onDanger: '#2A0F09',
 
   primary: palette.foret300,
   primaryPressed: '#A6CFB8',
@@ -170,6 +185,7 @@ export const darkColors: ColorScheme = {
   accent: '#F0B14F',
   accentPressed: palette.moutarde300,
   accentSoft: '#3A2F1A',
+  accentText: '#F0B14F',
 
   success: '#6FBF93',
   successSoft: '#1E3A2D',
@@ -183,7 +199,8 @@ export const darkColors: ColorScheme = {
 
   overlay: 'rgba(0, 0, 0, 0.6)',
   shadow: 'rgba(0, 0, 0, 0.5)',
-  hero: palette.foret900,
+  // Héros : forêt (plus clair que le fond nuit) pour rester lisible comme surface.
+  hero: palette.foret800,
   heroText: palette.lin,
   heroCircle: palette.foret700,
 };
@@ -291,6 +308,12 @@ export const motion = {
   spring: { damping: 18, stiffness: 220, mass: 1 },
   springSnappy: { damping: 22, stiffness: 380, mass: 0.8 },
   springBouncy: { damping: 12, stiffness: 180, mass: 1 },
+  /** Feuille modale : ample mais sans rebond gênant. */
+  springSheet: { damping: 26, stiffness: 260, mass: 1 },
+  /** Indicateurs (pastille d'onglet, segment) : vif, léger dépassement. */
+  springIndicator: { damping: 20, stiffness: 300, mass: 0.9 },
+  /** Apparition d'un toast. */
+  springToast: { damping: 17, stiffness: 240, mass: 0.9 },
   duration: { instant: 90, fast: 160, base: 240, slow: 420, celebrate: 900 },
   /** Décalage entre éléments d'une liste qui apparaît */
   stagger: 45,
@@ -330,3 +353,75 @@ export const layout = {
   hitSlop: { top: 10, bottom: 10, left: 10, right: 10 },
   minTouchTarget: 44,
 } as const;
+
+// ─── Ajouts « Marché frais » (kit UI) ────────────────────────────────────────
+
+/** Tailles d'icônes (lucide-react-native, trait 2). */
+export const iconSize = {
+  xs: 14,
+  sm: 16,
+  md: 20,
+  lg: 24,
+  xl: 28,
+  xxl: 36,
+} as const;
+
+/** Hauteurs des contrôles (boutons, champs) — toujours ≥ 44 pt pour md/lg. */
+export const controlHeight = {
+  sm: 36,
+  md: 48,
+  lg: 56,
+} as const;
+
+/** Opacités sémantiques. */
+export const opacity = {
+  disabled: 0.45,
+  pressed: 0.85,
+  decor: 0.18,
+} as const;
+
+/** Plans d'empilement. */
+export const zIndex = {
+  base: 0,
+  raised: 10,
+  sticky: 50,
+  fab: 80,
+  sheet: 100,
+  toast: 200,
+} as const;
+
+/**
+ * Pastels des vignettes recette / illustrations (emoji sur fond pastel).
+ * Chaque entrée : fond clair + fond sombre (mode nuit), choisis pour rester
+ * doux sous un emoji coloré.
+ */
+export const pastels = [
+  { key: 'pistache', light: '#DDEFD9', dark: '#23402F' },
+  { key: 'abricot', light: '#FCE3C8', dark: '#43301C' },
+  { key: 'tomate', light: '#FADBD2', dark: '#45251E' },
+  { key: 'lavande', light: '#E8E1F4', dark: '#2E2840' },
+  { key: 'citron', light: '#FBF0C2', dark: '#3E3819' },
+  { key: 'menthe', light: '#D6EFEA', dark: '#1D3D38' },
+  { key: 'framboise', light: '#F7DCE6', dark: '#40232F' },
+  { key: 'ciel', light: '#DCE9F6', dark: '#1F3042' },
+] as const;
+export type PastelKey = (typeof pastels)[number]['key'];
+
+/**
+ * Ombres en `boxShadow` (supporté par RN ≥ 0.76 sur iOS/Android et par
+ * react-native-web), plus prévisible que les `shadow*` hérités. La couleur
+ * vient de `colors.shadow` (différente en clair / sombre).
+ */
+export function boxShadow(level: 'none' | 'sm' | 'md' | 'lg', shadowColor: string): string {
+  switch (level) {
+    case 'sm':
+      return `0px 2px 6px 0px ${shadowColor}`;
+    case 'md':
+      return `0px 8px 20px -4px ${shadowColor}`;
+    case 'lg':
+      return `0px 18px 36px -8px ${shadowColor}`;
+    default:
+      return 'none';
+  }
+}
+

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="560" height="160" viewBox="0 0 560 160">
+  <title>Cabas — Tes courses, de A à Z.</title>
+  <g transform="translate(6.96 3.30) scale(1.2174)">
+    <path d="M33 60 V52 A27 27 0 0 1 87 52 V60" stroke="#173A2C" stroke-width="10" stroke-linecap="round" fill="none"/>
+    <path d="M15 58 Q14 58 14.3 59.2 L24.6 103.2 Q25.3 106 28.2 106 H91.8 Q94.7 106 95.4 103.2 L105.7 59.2 Q106 58 105 58 Z" fill="#E8A33D"/>
+    <rect x="45" y="70" width="6" height="26" rx="3" fill="#173A2C"/>
+    <rect x="57" y="70" width="6" height="26" rx="3" fill="#173A2C"/>
+    <rect x="69" y="70" width="6" height="26" rx="3" fill="#173A2C"/>
+  </g>
+  <text x="156" y="98" font-family="'Bricolage Grotesque', 'Poppins', 'DM Sans', system-ui, sans-serif" font-weight="800" font-size="84" letter-spacing="-2.5" fill="#173A2C">Cabas</text>
+  <text x="160" y="132" font-family="'Bricolage Grotesque', 'Poppins', 'DM Sans', system-ui, sans-serif" font-weight="500" font-size="22" fill="#5B6B62">Tes courses, de A à Z.</text>
+</svg>

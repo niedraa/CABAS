@@ -26,10 +26,40 @@ export interface CatalogIndex {
   ingredientsById?: Map<string, Ingredient>;
 }
 
+/** Prix exploitable : montant fini et strictement positif (sinon donnée corrompue, ignorée). */
+export function isUsablePrice(price: Price): boolean {
+  return Number.isFinite(price.priceCents) && price.priceCents > 0;
+}
+
+/**
+ * Vrai si `a` doit remplacer `b` pour un même (produit, magasin) : le plus
+ * récent gagne, comparé en INSTANT (les horodatages peuvent avoir des fuseaux
+ * différents) ; à instant égal, départage total et déterministe pour que le
+ * résultat ne dépende pas de l'ordre des entrées : prix le plus élevé d'abord
+ * (estimation prudente du panier), puis promo, puis source.
+ */
+export function isPreferredPrice(a: Price, b: Price): boolean {
+  const ta = Date.parse(a.updatedAt);
+  const tb = Date.parse(b.updatedAt);
+  if (Number.isFinite(ta) && Number.isFinite(tb)) {
+    if (ta !== tb) return ta > tb;
+  } else if (a.updatedAt !== b.updatedAt) {
+    return String(a.updatedAt) > String(b.updatedAt);
+  }
+  if (a.priceCents !== b.priceCents) return a.priceCents > b.priceCents;
+  const pa = a.promoPriceCents ?? Number.MAX_SAFE_INTEGER;
+  const pb = b.promoPriceCents ?? Number.MAX_SAFE_INTEGER;
+  if (pa !== pb) return pa > pb;
+  const ka = `${a.promoUntil ?? ''}|${a.source}|${a.promoLabel ?? ''}`;
+  const kb = `${b.promoUntil ?? ''}|${b.source}|${b.promoLabel ?? ''}`;
+  return ka > kb;
+}
+
 /** Prix effectif : promo si elle existe, est moins chère et n'a pas expiré. */
 export function effectivePrice(price: Price, now?: string): { cents: number; isPromo: boolean } {
   const promo = price.promoPriceCents;
-  if (promo !== undefined && promo !== null && promo >= 0 && promo < price.priceCents) {
+  // Une promo à 0 € (ou NaN) est une donnée corrompue : elle rendrait l'article gratuit.
+  if (typeof promo === 'number' && promo > 0 && promo < price.priceCents) {
     const today = todayISO(now);
     if (!price.promoUntil || price.promoUntil.slice(0, 10) >= today) return { cents: promo, isPromo: true };
   }
@@ -53,13 +83,14 @@ export function buildCatalogIndex(
   }
   const pricesByProduct = new Map<string, Map<string, Price>>();
   for (const price of prices) {
+    if (!isUsablePrice(price)) continue;
     let byStore = pricesByProduct.get(price.productId);
     if (!byStore) {
       byStore = new Map();
       pricesByProduct.set(price.productId, byStore);
     }
     const prev = byStore.get(price.storeId);
-    if (!prev || price.updatedAt >= prev.updatedAt) byStore.set(price.storeId, price);
+    if (!prev || isPreferredPrice(price, prev)) byStore.set(price.storeId, price);
   }
   const index: CatalogIndex = {
     productsByIngredient,

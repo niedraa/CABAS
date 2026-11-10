@@ -4,7 +4,7 @@
  * send-notifications et par l'écran « Alertes ».
  */
 import type { OrderHandoff, Price } from './types';
-import { effectivePrice } from './priceComparison';
+import { effectivePrice, isPreferredPrice, isUsablePrice } from './priceComparison';
 
 export interface PriceWatch {
   productId: string;
@@ -32,9 +32,10 @@ export function detectPriceDrops(
   // Prix le plus récent par (produit, magasin).
   const latest = new Map<string, Price>();
   for (const p of prices) {
+    if (!isUsablePrice(p)) continue; // prix NaN / nul / négatif : jamais une « baisse »
     const key = `${p.productId}|${p.storeId}`;
     const prev = latest.get(key);
-    if (!prev || p.updatedAt >= prev.updatedAt) latest.set(key, p);
+    if (!prev || isPreferredPrice(p, prev)) latest.set(key, p);
   }
   const drops: PriceDrop[] = [];
   const seen = new Set<string>();

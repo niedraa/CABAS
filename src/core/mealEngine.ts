@@ -492,6 +492,9 @@ export function setMealLocked(plan: MealPlan, mealId: string, locked: boolean): 
 
 /** Change le nombre de portions d'un repas (immuable, minimum 1). */
 export function setMealServings(plan: MealPlan, mealId: string, servings: number): MealPlan {
+  // Saisie illisible (NaN, ±Infini) : on garde les portions actuelles plutôt
+  // que d'écrire NaN dans le planning (et dans la liste de courses).
+  if (!Number.isFinite(servings)) return plan;
   const s = Math.max(1, Math.round(servings));
   return { ...plan, meals: plan.meals.map((m) => (m.id === mealId ? { ...m, servings: s } : m)) };
 }

@@ -14,6 +14,7 @@ import type {
   ShoppingListItem,
 } from './types';
 import { AISLES } from './types';
+import { lookupIngredient } from './constraints';
 import { createId } from './ids';
 import { subtractPantry } from './pantry';
 import { scaleRecipeIngredients } from './portions';
@@ -98,16 +99,20 @@ export function buildShoppingList(
     if (!recipe) continue;
     for (const ri of scaleRecipeIngredients(recipe, meal.servings)) {
       if (ri.optional) continue;
-      const ingredient = ingredientsById[ri.ingredientId];
+      const ingredient = lookupIngredient(ingredientsById, ri.ingredientId);
       if (!ingredient) continue;
       const base = toBase(ri.quantity, ri.unit, ingredient);
+      // Donnée sale (quantité ou portions NaN, négatives, infinies) : la
+      // contribution compte pour 0 — l'ingrédient reste listé, mais ne
+      // contamine pas (NaN) ni ne réduit (négatif) le besoin des autres recettes.
+      const quantity = Number.isFinite(base.quantity) && base.quantity > 0 ? base.quantity : 0;
       const id = planItemId(ingredient.id, base.unit, ingredient.baseUnit);
       const entry = acc.get(id);
       if (entry) {
-        entry.quantity += base.quantity;
+        entry.quantity += quantity;
         if (!entry.recipeIds.includes(recipe.id)) entry.recipeIds.push(recipe.id);
       } else {
-        acc.set(id, { ingredient, unit: base.unit, quantity: base.quantity, recipeIds: [recipe.id] });
+        acc.set(id, { ingredient, unit: base.unit, quantity, recipeIds: [recipe.id] });
       }
     }
   }
@@ -136,7 +141,7 @@ export function buildShoppingList(
   const products = opts.products ?? [];
   if (products.length > 0) {
     items = items.map((item) => {
-      const ingredient = item.ingredientId ? ingredientsById[item.ingredientId] : undefined;
+      const ingredient = item.ingredientId ? lookupIngredient(ingredientsById, item.ingredientId) : undefined;
       if (!ingredient) return item;
       const rounded = roundToPackaging(item.quantity, packSizesFor(ingredient, item.unit, products));
       return rounded ? { ...item, packaging: { ...rounded, packUnit: item.unit } } : item;
