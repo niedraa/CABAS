@@ -1,12 +1,14 @@
-import { Text, View } from 'react-native';
+/**
+ * Point d'entrée : redirige vers l'onboarding (premier lancement) ou vers
+ * l'app (profil créé). Le layout racine n'affiche cet écran qu'une fois les
+ * stores relus : pas de « flash » d'onboarding pour un utilisateur connu.
+ */
+import { Redirect } from 'expo-router';
 
-import { useTheme } from '@/theme';
+import { entryHref } from '@/components/feature/onboarding';
+import { useProfileStore } from '@/stores';
 
 export default function Index() {
-  const t = useTheme();
-  return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.colors.background }}>
-      <Text style={[t.typography.hero, { color: t.colors.text }]}>Cabas</Text>
-    </View>
-  );
+  const onboarded = useProfileStore((s) => s.onboardingCompleted);
+  return <Redirect href={entryHref(onboarded)} />;
 }
