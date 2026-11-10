@@ -24,8 +24,7 @@ export type PersistedStoreName =
   | 'order'
   | 'pantry'
   | 'budget'
-  | 'settings'
-  | 'week';
+  | 'settings';
 
 /** Version de schéma de chaque store (incrémenter + écrire `migrate` en cas de rupture). */
 export const STORE_VERSIONS: Record<PersistedStoreName, number> = {
@@ -38,7 +37,6 @@ export const STORE_VERSIONS: Record<PersistedStoreName, number> = {
   pantry: 1,
   budget: 1,
   settings: 1,
-  week: 1,
 };
 
 /** Clé de persistance : `cabas/<nom>`. */
