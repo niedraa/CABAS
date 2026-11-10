@@ -54,17 +54,20 @@ export function plural(n: number, singular: string, pluralForm = `${singular}s`)
   return `${n} ${n > 1 ? pluralForm : singular}`;
 }
 
-/** Contenance d'un conditionnement : « 250 g », « 1 l », « 6 pièces ». */
+/** Espace insécable : « 250 g » ne se coupe jamais en fin de ligne. */
+const NBSP = '\u00A0';
+
+/** Contenance d'un conditionnement : « 250 g », « 1 l », « 6 pièces » (insécable). */
 export function packLabel(product: Pick<Product, 'packSize' | 'packUnit'>): string {
-  if (product.packUnit === 'piece') return plural(product.packSize, 'pièce');
-  return formatQuantity(product.packSize, product.packUnit);
+  const raw = product.packUnit === 'piece' ? plural(product.packSize, 'pièce') : formatQuantity(product.packSize, product.packUnit);
+  return raw.replace(/ /g, NBSP);
 }
 
-/** Quantité achetée : « 2 × 250 g » (« 250 g » pour un seul conditionnement). */
+/** Quantité achetée : « 2 × 250 g » (« 250 g » pour un seul conditionnement), insécable. */
 export function packsLabel(packs: number, product: Pick<Product, 'packSize' | 'packUnit'> | undefined): string {
-  if (!product) return `${packs} ×`;
+  if (!product) return `${packs}${NBSP}×`;
   const pack = packLabel(product);
-  return packs > 1 ? `${packs} × ${pack}` : pack;
+  return packs > 1 ? `${packs}${NBSP}×${NBSP}${pack}` : pack;
 }
 
 /** Nom d'un produit avec sa marque : « Ail blanc, filet 3 têtes · Auchan ». */

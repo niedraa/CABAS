@@ -6,13 +6,13 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { ReceiptCard } from '@/components/brand';
-import { AnimatedPrice, Badge, Divider, KeyValueRow, StoreBadgeStack, Text } from '@/components/ui';
+import { AnimatedPrice, Badge, Divider, StoreBadge, StoreBadgeStack, Text } from '@/components/ui';
 import type { OrderChannel } from '@/core';
-import { formatPrice } from '@/core';
 import { formatPriceForA11y } from '@/lib/a11y';
 import { useTheme } from '@/theme';
 
 import { feesLabel, feesValue, MODE_COPY, plural, type ReceiptSummary } from './basketView';
+import { ReceiptLine } from './ReceiptLine';
 
 export interface BasketReceiptProps {
   summary: ReceiptSummary;
@@ -28,7 +28,7 @@ export function BasketReceipt({ summary, channel, header, updating, testID }: Ba
   const t = useTheme();
   const multi = summary.parts.length > 1;
   return (
-    <View testID={testID} accessibilityState={{ busy: !!updating }}>
+    <View testID={testID} accessibilityState={{ busy: !!updating }} style={{ opacity: updating ? t.opacity.pressed : 1 }}>
       <ReceiptCard header={header ? `Ticket · ${header}` : 'Ticket'} edges="bottom">
         <View style={[styles.row, { gap: t.spacing.sm }]}>
           {summary.chains.length > 0 ? <StoreBadgeStack chains={summary.chains} size="sm" /> : null}
@@ -36,44 +36,36 @@ export function BasketReceipt({ summary, channel, header, updating, testID }: Ba
             {summary.parts.length > 0 ? plural(summary.parts.length, 'magasin') : 'Aucun magasin'}
           </Text>
           <Badge
-            label={summary.mode === 'cheapest' ? MODE_COPY.cheapest.label : multi ? 'Optimisé' : 'Meilleur total'}
-            tone="success"
+            label={updating ? 'Mise à jour…' : summary.mode === 'cheapest' ? MODE_COPY.cheapest.label : multi ? 'Optimisé' : 'Meilleur total'}
+            tone={updating ? 'neutral' : 'success'}
             size="sm"
           />
         </View>
         <Divider variant="dashed" spacing={t.spacing.xs} />
         {summary.parts.map((p) => (
-          <KeyValueRow
+          <ReceiptLine
             key={p.storeId}
+            left={<StoreBadge chain={p.store?.chain ?? p.storeId} name={p.name} size="xs" />}
             label={p.name}
             hint={plural(p.items, 'article')}
-            value={formatPrice(p.subtotalCents)}
-            leader
+            value={<AnimatedPrice cents={p.subtotalCents} variant="bodyMedium" />}
+            accessibilityValue={formatPriceForA11y(p.subtotalCents)}
+            testID={testID ? `${testID}-store-${p.storeId}` : undefined}
           />
         ))}
-        <KeyValueRow
+        <ReceiptLine
           label={feesLabel(channel)}
           value={feesValue(summary.feesCents)}
           valueColor={summary.feesCents > 0 ? 'text' : 'success'}
-          leader
         />
         {summary.savingsCents > 0 ? (
-          <View
-            style={[styles.row, { gap: t.spacing.sm }]}
-            accessible
-            accessibilityLabel={`Économie : ${formatPriceForA11y(summary.savingsCents)} par rapport au magasin le plus cher`}
+          <ReceiptLine
+            label="Économie"
+            hint="vs. le magasin le plus cher"
+            value={<AnimatedPrice cents={-summary.savingsCents} variant="price" color="savings" />}
+            accessibilityValue={`moins ${formatPriceForA11y(summary.savingsCents)}`}
             testID={testID ? `${testID}-savings` : undefined}
-          >
-            <View style={styles.flex}>
-              <Text variant="callout" color="textSecondary">
-                Économie
-              </Text>
-              <Text variant="caption" color="textTertiary">
-                vs. le magasin le plus cher
-              </Text>
-            </View>
-            <AnimatedPrice cents={-summary.savingsCents} variant="price" color="savings" />
-          </View>
+          />
         ) : null}
         <Divider variant="dashed" spacing={t.spacing.xs} />
         <View
@@ -85,8 +77,8 @@ export function BasketReceipt({ summary, channel, header, updating, testID }: Ba
             <Text variant="headline">Total</Text>
             <Text variant="caption" color="textSecondary">
               {summary.missing > 0
-                ? `${plural(summary.items, 'article')} · ${summary.missing} introuvable${summary.missing > 1 ? 's' : ''}`
-                : `${plural(summary.items, 'article')}, frais compris`}
+                ? `${nb(plural(summary.items, 'article'))} · ${nb(plural(summary.missing, 'introuvable'))}`
+                : `${nb(plural(summary.items, 'article'))}, frais compris`}
             </Text>
           </View>
           <AnimatedPrice cents={summary.totalCents} variant="priceLarge" testID={testID ? `${testID}-total` : undefined} />
@@ -95,6 +87,9 @@ export function BasketReceipt({ summary, channel, header, updating, testID }: Ba
     </View>
   );
 }
+
+/** « 44 articles » ne se coupe pas entre le nombre et le mot. */
+const nb = (s: string) => s.replace(' ', '\u00A0');
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center' },
