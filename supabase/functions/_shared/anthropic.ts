@@ -106,7 +106,10 @@ export function createAnthropicClient(cfg: AnthropicConfig): LlmClient {
         throw new LlmError('invalid_response', 'Réponse Claude illisible');
       }
       if (data.stop_reason === 'refusal') {
-        throw new LlmError('refusal', `Claude a décliné la requête (${data.stop_details?.category ?? 'sans catégorie'})`);
+        throw new LlmError(
+          'refusal',
+          `Claude a décliné la requête (${data.stop_details?.category ?? 'sans catégorie'})`,
+        );
       }
       const text = (data.content ?? [])
         .filter((b) => b.type === 'text' && typeof b.text === 'string')

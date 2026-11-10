@@ -11,7 +11,10 @@ import type { MealPlanRepository } from './handler.ts';
 export function createMealPlanRepository(client: SupabaseClient, userId: string, now: () => Date): MealPlanRepository {
   return {
     async loadProfile() {
-      const row = unwrap<Row | null>('profile', await client.from('profiles').select('*').eq('id', userId).maybeSingle());
+      const row = unwrap<Row | null>(
+        'profile',
+        await client.from('profiles').select('*').eq('id', userId).maybeSingle(),
+      );
       return row ? rowToProfile(row) : null;
     },
     async loadEntitlement(): Promise<Entitlement> {

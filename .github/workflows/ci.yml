@@ -41,7 +41,9 @@ jobs:
         with:
           deno-version: v2.x
       - run: npm ci
-      - run: node supabase/tests/run-sql-tests.mjs
+      - run: npm run test:sql
+      - run: npm run test:scripts
+      - run: node scripts/generate-seed.mjs --check
       - name: Deno check & test
         working-directory: supabase/functions
         run: |

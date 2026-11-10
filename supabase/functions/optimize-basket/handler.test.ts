@@ -8,10 +8,49 @@ import { type BasketRepository, createOptimizeBasketHandler } from './handler.ts
 const NOW = new Date('2026-11-10T09:00:00.000Z');
 
 const ITEMS: ShoppingListItem[] = [
-  { id: 'riz', ingredientId: 'riz', label: 'Riz', quantity: 600, unit: 'g', aisle: 'epicerie_salee', checked: false, source: 'plan', recipeIds: [] },
-  { id: 'tomate', ingredientId: 'tomate', label: 'Tomates', quantity: 800, unit: 'g', aisle: 'fruits_legumes', checked: false, source: 'plan', recipeIds: [] },
-  { id: 'oignon', ingredientId: 'oignon', label: 'Oignons', quantity: 300, unit: 'g', aisle: 'fruits_legumes', checked: false, source: 'plan', recipeIds: [] },
-  { id: 'sacs', label: 'Sacs poubelle', quantity: 1, unit: 'piece', aisle: 'hygiene_maison', checked: false, source: 'manual', recipeIds: [] },
+  {
+    id: 'riz',
+    ingredientId: 'riz',
+    label: 'Riz',
+    quantity: 600,
+    unit: 'g',
+    aisle: 'epicerie_salee',
+    checked: false,
+    source: 'plan',
+    recipeIds: [],
+  },
+  {
+    id: 'tomate',
+    ingredientId: 'tomate',
+    label: 'Tomates',
+    quantity: 800,
+    unit: 'g',
+    aisle: 'fruits_legumes',
+    checked: false,
+    source: 'plan',
+    recipeIds: [],
+  },
+  {
+    id: 'oignon',
+    ingredientId: 'oignon',
+    label: 'Oignons',
+    quantity: 300,
+    unit: 'g',
+    aisle: 'fruits_legumes',
+    checked: false,
+    source: 'plan',
+    recipeIds: [],
+  },
+  {
+    id: 'sacs',
+    label: 'Sacs poubelle',
+    quantity: 1,
+    unit: 'piece',
+    aisle: 'hygiene_maison',
+    checked: false,
+    source: 'manual',
+    recipeIds: [],
+  },
 ];
 
 function fakeRepo(opts: { entitlement?: Entitlement; preferred?: string[]; saveFails?: boolean } = {}) {
@@ -78,7 +117,7 @@ Deno.test('premium : « le moins cher » multi-magasins', async () => {
   assertEquals(data.plan.mode, 'cheapest');
   assertFalse(data.meta.downgraded);
   assert(data.plan.totalCents > 0);
-  assertEquals(data.plan.missingItemIds, ['sacs'], 'seul l\'article libre est introuvable');
+  assertEquals(data.plan.missingItemIds, ['sacs'], "seul l'article libre est introuvable");
   // Le panier multi-magasins n'est jamais plus cher que le meilleur mono-magasin.
   const { data: single } = await call(repo, { items: ITEMS, mode: 'single_store' });
   assert(data.plan.totalCents <= single.plan.totalCents);
@@ -140,19 +179,21 @@ Deno.test('articles cochés : ignorés par le comparateur', async () => {
 
 Deno.test('validation : requêtes invalides → 400', async () => {
   const { repo } = fakeRepo();
-  for (const body of [
-    {},
-    { items: [] },
-    { items: 'riz' },
-    { items: [{ id: 'x', quantity: -1, unit: 'g' }] },
-    { items: [{ id: 'x', quantity: 1, unit: 'kg' }] },
-    { items: [{ id: 'x', quantity: 1, unit: 'g' }, { id: 'x', quantity: 2, unit: 'g' }] },
-    { items: ITEMS, mode: 'gratuit' },
-    { items: ITEMS, channel: 'pigeon' },
-    { items: ITEMS, maxStores: 9 },
-    { items: ITEMS, storeIds: 'lidl' },
-    { items: Array.from({ length: 301 }, (_, i) => ({ id: `i${i}`, quantity: 1, unit: 'g' })) },
-  ]) {
+  for (
+    const body of [
+      {},
+      { items: [] },
+      { items: 'riz' },
+      { items: [{ id: 'x', quantity: -1, unit: 'g' }] },
+      { items: [{ id: 'x', quantity: 1, unit: 'kg' }] },
+      { items: [{ id: 'x', quantity: 1, unit: 'g' }, { id: 'x', quantity: 2, unit: 'g' }] },
+      { items: ITEMS, mode: 'gratuit' },
+      { items: ITEMS, channel: 'pigeon' },
+      { items: ITEMS, maxStores: 9 },
+      { items: ITEMS, storeIds: 'lidl' },
+      { items: Array.from({ length: 301 }, (_, i) => ({ id: `i${i}`, quantity: 1, unit: 'g' })) },
+    ]
+  ) {
     const { status } = await call(repo, body);
     assertEquals(status, 400, JSON.stringify(body).slice(0, 80));
   }

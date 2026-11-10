@@ -73,7 +73,9 @@ export const RECIPES: Recipe[] = [
   recipe('rec_poulet_riz', 'Poulet au riz', ['poulet', 'riz', 'oignon']),
   recipe('rec_saumon', 'Saumon à la crème', ['saumon', 'riz', 'creme']),
   recipe('rec_omelette', 'Omelette tomate', ['oeuf', 'oignon', 'tomate']),
-  recipe('rec_salade_pc', 'Salade de pois chiches', ['pois_chiches', 'tomate', 'oignon'], { cuisine: 'mediterraneenne' }),
+  recipe('rec_salade_pc', 'Salade de pois chiches', ['pois_chiches', 'tomate', 'oignon'], {
+    cuisine: 'mediterraneenne',
+  }),
   recipe('rec_riz_cantonais', 'Riz cantonais', ['riz', 'oeuf', 'oignon'], { cuisine: 'asiatique' }),
   recipe('rec_tomates_farcies', 'Tomates farcies au riz', ['tomate', 'riz', 'oignon']),
   recipe('rec_dahl', 'Dahl de lentilles', ['lentilles', 'lait_coco', 'oignon'], { cuisine: 'indienne' }),
@@ -203,8 +205,13 @@ export function wellBehavedLlm(extraMeals: { date: string; type: string; recipeI
   return fakeLlm((prompt) => {
     const { slots, candidates } = parsePrompt(prompt);
     const meals = [
-      ...extraMeals.map((m) => ({ ...m, reason: 'Proposé par l\'IA' })),
-      ...slots.map((s, i) => ({ date: s.date, type: s.type, recipeId: candidates[i % candidates.length], reason: 'Rapide et de saison' })),
+      ...extraMeals.map((m) => ({ ...m, reason: "Proposé par l'IA" })),
+      ...slots.map((s, i) => ({
+        date: s.date,
+        type: s.type,
+        recipeId: candidates[i % candidates.length],
+        reason: 'Rapide et de saison',
+      })),
     ];
     return `Voici ta semaine :\n\`\`\`json\n${JSON.stringify({ meals })}\n\`\`\``;
   });

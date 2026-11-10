@@ -49,7 +49,7 @@ export async function readJson(req: Request, maxBytes = 256 * 1024): Promise<unk
   try {
     return JSON.parse(text);
   } catch {
-    throw new HttpError(400, 'invalid_json', 'Le corps de la requête n\'est pas un JSON valide.');
+    throw new HttpError(400, 'invalid_json', "Le corps de la requête n'est pas un JSON valide.");
   }
 }
 
@@ -81,7 +81,9 @@ export function withHandler(
         log.error('configuration error', { error: err.message });
         return errorJson(500, 'server_misconfigured', 'Le service est mal configuré. Réessaie plus tard.');
       }
-      log.error('unhandled error', { error: err instanceof Error ? { name: err.name, message: err.message } : String(err) });
+      log.error('unhandled error', {
+        error: err instanceof Error ? { name: err.name, message: err.message } : String(err),
+      });
       return errorJson(500, 'internal_error', 'Une erreur inattendue est survenue. Réessaie dans un instant.');
     }
   };

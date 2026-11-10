@@ -17,7 +17,7 @@
  */
 import { formatWeekRange, startOfWeek } from '../_shared/core/index.ts';
 import { verifySharedSecret } from '../_shared/auth.ts';
-import { type ExpoMessage, type ExpoTicket, chunk, sendExpoBatch } from '../_shared/expoPush.ts';
+import { chunk, type ExpoMessage, type ExpoTicket, sendExpoBatch } from '../_shared/expoPush.ts';
 import { json, requireMethod, withHandler } from '../_shared/http.ts';
 import type { Logger } from '../_shared/logger.ts';
 import { nextWeekStart, zonedParts } from '../_shared/time.ts';
@@ -95,8 +95,10 @@ export function planningReminder(userId: string, weekStart: string, localDate: s
   return {
     userId,
     kind: 'planning_reminder',
-    title: 'Ta semaine t\'attend 🥕',
-    body: `2 minutes pour planifier tes repas du ${formatWeekRange(weekStart)} : ta liste de courses suivra toute seule.`,
+    title: "Ta semaine t'attend 🥕",
+    body: `2 minutes pour planifier tes repas du ${
+      formatWeekRange(weekStart)
+    } : ta liste de courses suivra toute seule.`,
     data: { type: 'planning_reminder', weekStart, url: 'cabas:///' },
     dedupeKey: `planning:${userId}:${localDate}`,
   };
@@ -187,7 +189,15 @@ export function createSendNotificationsHandler(deps: SendNotificationsDeps): (re
       for (const to of userTokens) {
         outgoing.push({
           notificationId: n.id,
-          message: { to, title: n.title, body: n.body, data: { ...n.data, notificationId: n.id }, sound: 'default', channelId: 'default', priority: 'high' },
+          message: {
+            to,
+            title: n.title,
+            body: n.body,
+            data: { ...n.data, notificationId: n.id },
+            sound: 'default',
+            channelId: 'default',
+            priority: 'high',
+          },
         });
       }
     }
@@ -198,7 +208,10 @@ export function createSendNotificationsHandler(deps: SendNotificationsDeps): (re
       batches++;
       let tickets: ExpoTicket[];
       try {
-        tickets = await sendExpoBatch(batch.map((b) => b.message), { fetch: deps.fetch, accessToken: deps.expoAccessToken });
+        tickets = await sendExpoBatch(batch.map((b) => b.message), {
+          fetch: deps.fetch,
+          accessToken: deps.expoAccessToken,
+        });
       } catch (err) {
         log.warn('expo batch failed', { error: err instanceof Error ? err.message : String(err), size: batch.length });
         tickets = batch.map(() => ({ status: 'error', message: 'HTTP', details: { error: 'HttpError' } }));
@@ -230,7 +243,8 @@ export function createSendNotificationsHandler(deps: SendNotificationsDeps): (re
     const tokensRemoved = deadTokens.size > 0 ? await repo.deleteTokens(Array.from(deadTokens)) : 0;
     if (results.size > 0) await repo.markResults(Array.from(results.values()), nowIso);
 
-    const count = (s: NotificationResult['status']) => Array.from(results.values()).filter((r) => r.status === s).length;
+    const count = (s: NotificationResult['status']) =>
+      Array.from(results.values()).filter((r) => r.status === s).length;
     const stats = {
       remindersQueued: queued,
       planningCandidates: Array.from(planningByWeek.values()).reduce((a, l) => a + l.length, 0),

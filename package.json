@@ -76,7 +76,11 @@
     "e2e": "node e2e/run.mjs",
     "sync:shared": "node scripts/sync-shared.mjs",
     "seed:generate": "node scripts/generate-seed.mjs",
-    "check": "npm run typecheck && npm run lint && npm test"
+    "check": "npm run typecheck && npm run lint && npm test",
+    "test:sql": "node supabase/tests/run-sql-tests.mjs",
+    "test:functions": "cd supabase/functions && deno test --allow-env --allow-read",
+    "test:scripts": "node --test supabase/tests/scripts.test.mjs",
+    "test:backend": "npm run test:sql && npm run test:scripts && npm run test:functions"
   },
   "private": true,
   "jest": {

@@ -113,7 +113,10 @@ export function createCollectPricesHandler(deps: CollectPricesDeps): (req: Reque
     const started = Date.now();
     const nowDate = now();
     const since = new Date(nowDate.getTime() - maxAgeDays * 86_400_000).toISOString().slice(0, 10);
-    const [products, stores] = await Promise.all([deps.repo.listProductsToCheck(limit, productIds), deps.repo.loadStores()]);
+    const [products, stores] = await Promise.all([
+      deps.repo.listProductsToCheck(limit, productIds),
+      deps.repo.loadStores(),
+    ]);
     const current = new Map<string, Price>();
     for (const p of await deps.repo.loadCurrentPrices(products.map((p) => p.id))) {
       current.set(`${p.productId}|${p.storeId}`, p);
@@ -167,11 +170,20 @@ export function createCollectPricesHandler(deps: CollectPricesDeps): (req: Reque
           break;
         }
         stats.errors++;
-        log.warn('open prices fetch failed', { productId: product.id, error: err instanceof Error ? err.message : String(err) });
+        log.warn('open prices fetch failed', {
+          productId: product.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
         continue;
       }
 
-      const { observations, rejected, unmatched } = latestObservationsByStore(items, product, stores, nowDate, maxAgeDays);
+      const { observations, rejected, unmatched } = latestObservationsByStore(
+        items,
+        product,
+        stores,
+        nowDate,
+        maxAgeDays,
+      );
       stats.observations += items.length;
       stats.rejectedObservations += rejected;
       stats.unmatchedObservations += unmatched;
@@ -214,7 +226,10 @@ export function createCollectPricesHandler(deps: CollectPricesDeps): (req: Reque
       const storesById = new Map(stores.map((s) => [s.id, s]));
       const notifications: NotificationInsert[] = [];
       for (const [userId, list] of byUser) {
-        const drops = detectPriceDrops(list, toUpsert, { thresholdPct: deps.dropThresholdPct ?? 5, now: nowDate.toISOString() });
+        const drops = detectPriceDrops(list, toUpsert, {
+          thresholdPct: deps.dropThresholdPct ?? 5,
+          now: nowDate.toISOString(),
+        });
         for (const d of drops) {
           const productName = productsById.get(d.productId)?.name ?? 'Un produit habituel';
           const storeName = storesById.get(d.storeId)?.name ?? d.storeId;
@@ -222,16 +237,24 @@ export function createCollectPricesHandler(deps: CollectPricesDeps): (req: Reque
             userId,
             kind: 'price_drop',
             title: 'Baisse de prix 📉',
-            body: `${productName} : ${formatPrice(d.newCents)} au lieu de ${formatPrice(d.oldCents)} chez ${storeName} (−${
-              String(Math.round(d.dropPct)).replace('.', ',')
-            } %)`,
-            data: { type: 'price_drop', productId: d.productId, storeId: d.storeId, oldCents: d.oldCents, newCents: d.newCents },
+            body: `${productName} : ${formatPrice(d.newCents)} au lieu de ${
+              formatPrice(d.oldCents)
+            } chez ${storeName} (−${String(Math.round(d.dropPct)).replace('.', ',')} %)`,
+            data: {
+              type: 'price_drop',
+              productId: d.productId,
+              storeId: d.storeId,
+              oldCents: d.oldCents,
+              newCents: d.newCents,
+            },
             dedupeKey: `price_drop:${userId}:${d.productId}:${d.storeId}:${d.newCents}`,
           });
         }
       }
       stats.priceDrops = notifications.length;
-      if (!dryRun && notifications.length > 0) stats.notificationsQueued = await deps.repo.enqueueNotifications(notifications);
+      if (!dryRun && notifications.length > 0) {
+        stats.notificationsQueued = await deps.repo.enqueueNotifications(notifications);
+      }
     }
 
     stats.durationMs = Date.now() - started;

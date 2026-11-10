@@ -53,19 +53,33 @@ function fakeDb(opts: {
       const reachable = new Set(db.tokens.map((t) => t.userId));
       return Promise.resolve((opts.prefs ?? []).filter((p) => reachable.has(p.userId)));
     },
-    usersWithPlanForWeek: (ids, week) => Promise.resolve(new Set((opts.plans?.[week] ?? []).filter((u) => ids.includes(u)))),
-    usersWithUnorderedPlan: (ids, week) => Promise.resolve(new Set((opts.unordered?.[week] ?? []).filter((u) => ids.includes(u)))),
+    usersWithPlanForWeek: (ids, week) =>
+      Promise.resolve(new Set((opts.plans?.[week] ?? []).filter((u) => ids.includes(u)))),
+    usersWithUnorderedPlan: (ids, week) =>
+      Promise.resolve(new Set((opts.unordered?.[week] ?? []).filter((u) => ids.includes(u)))),
     enqueue(rows: NotificationInsert[]) {
       let n = 0;
       for (const r of rows) {
         if (db.queue.some((q) => q.dedupeKey === r.dedupeKey)) continue;
-        db.queue.push({ id: nextId++, userId: r.userId, kind: r.kind, title: r.title, body: r.body, data: r.data, attempts: 0, status: 'pending', dedupeKey: r.dedupeKey });
+        db.queue.push({
+          id: nextId++,
+          userId: r.userId,
+          kind: r.kind,
+          title: r.title,
+          body: r.body,
+          data: r.data,
+          attempts: 0,
+          status: 'pending',
+          dedupeKey: r.dedupeKey,
+        });
         n++;
       }
       return Promise.resolve(n);
     },
-    listPending: (limit) => Promise.resolve(db.queue.filter((q) => q.status === 'pending').slice(0, limit).map((q) => ({ ...q }))),
-    loadPreferences: (ids) => Promise.resolve(new Map((opts.prefs ?? []).filter((p) => ids.includes(p.userId)).map((p) => [p.userId, p]))),
+    listPending: (limit) =>
+      Promise.resolve(db.queue.filter((q) => q.status === 'pending').slice(0, limit).map((q) => ({ ...q }))),
+    loadPreferences: (ids) =>
+      Promise.resolve(new Map((opts.prefs ?? []).filter((p) => ids.includes(p.userId)).map((p) => [p.userId, p]))),
     loadPushTokens: (ids) => Promise.resolve(db.tokens.filter((t) => ids.includes(t.userId))),
     markResults(results: NotificationResult[]) {
       for (const r of results) {
@@ -92,29 +106,53 @@ function fakeDb(opts: {
 /** Faux serveur Expo : ticket selon le jeton (…dead… / …rate… / ok). */
 function fakeExpo(opts: { httpStatus?: number } = {}) {
   const requests: { headers: Headers; messages: { to: string; title: string; data: Record<string, unknown> }[] }[] = [];
-  const f = (async (input: string | URL | Request, init?: RequestInit) => {
+  const f = ((input: string | URL | Request, init?: RequestInit) => {
     assertEquals(String(input), EXPO_PUSH_URL);
     const messages = JSON.parse(String(init?.body));
     requests.push({ headers: new Headers(init?.headers), messages });
-    if (opts.httpStatus) return new Response('down', { status: opts.httpStatus });
+    if (opts.httpStatus) return Promise.resolve(new Response('down', { status: opts.httpStatus }));
     const data = messages.map((m: { to: string }) =>
       m.to.includes('dead')
-        ? { status: 'error', message: `"${m.to}" is not a registered push notification recipient`, details: { error: 'DeviceNotRegistered' } }
+        ? {
+          status: 'error',
+          message: `"${m.to}" is not a registered push notification recipient`,
+          details: { error: 'DeviceNotRegistered' },
+        }
         : m.to.includes('rate')
         ? { status: 'error', message: 'rate', details: { error: 'MessageRateExceeded' } }
         : { status: 'ok', id: crypto.randomUUID() }
     );
-    return new Response(JSON.stringify({ data }), { status: 200, headers: { 'content-type': 'application/json' } });
+    return Promise.resolve(
+      new Response(JSON.stringify({ data }), { status: 200, headers: { 'content-type': 'application/json' } }),
+    );
   }) as typeof fetch;
   return { fetch: f, requests };
 }
 
-function handler(db: NotificationRepository, now: Date, f: typeof fetch, extra: { expoAccessToken?: string; maxAttempts?: number } = {}) {
-  return createSendNotificationsHandler({ repo: db, cronSecret: SECRET, fetch: f, logger: silentLogger, now: () => now, ...extra });
+function handler(
+  db: NotificationRepository,
+  now: Date,
+  f: typeof fetch,
+  extra: { expoAccessToken?: string; maxAttempts?: number } = {},
+) {
+  return createSendNotificationsHandler({
+    repo: db,
+    cronSecret: SECRET,
+    fetch: f,
+    logger: silentLogger,
+    now: () => now,
+    ...extra,
+  });
 }
 
 async function run(h: (r: Request) => Promise<Response>, secret = SECRET) {
-  const res = await h(new Request('http://localhost/send-notifications', { method: 'POST', headers: { 'x-cron-secret': secret }, body: '{}' }));
+  const res = await h(
+    new Request('http://localhost/send-notifications', {
+      method: 'POST',
+      headers: { 'x-cron-secret': secret },
+      body: '{}',
+    }),
+  );
   return { status: res.status, data: await res.json() };
 }
 
@@ -125,7 +163,7 @@ const tok = (userId: string, suffix = 'ok') => ({ userId, token: `ExponentPushTo
 Deno.test('zonedParts : heure locale Paris / New York, fuseau invalide → Paris', () => {
   assertEquals(zonedParts(SUNDAY_18H_PARIS, 'Europe/Paris'), { date: '2026-11-15', weekday: 6, hour: 18, minute: 5 });
   assertEquals(zonedParts(SUNDAY_18H_PARIS, 'America/New_York').hour, 12);
-  assertEquals(zonedParts(new Date('2026-07-01T16:00:00Z'), 'Europe/Paris').hour, 18, 'heure d\'été (UTC+2)');
+  assertEquals(zonedParts(new Date('2026-07-01T16:00:00Z'), 'Europe/Paris').hour, 18, "heure d'été (UTC+2)");
   assertEquals(zonedParts(SUNDAY_18H_PARIS, 'Mars/Olympus'), zonedParts(SUNDAY_18H_PARIS, 'Europe/Paris'));
 });
 
@@ -137,9 +175,12 @@ Deno.test('planningTargetWeek : lundi → semaine en cours, sinon la suivante', 
 
 // ─── Sécurité ────────────────────────────────────────────────────────────────
 
-Deno.test('secret cron invalide → 401, rien n\'est envoyé', async () => {
+Deno.test("secret cron invalide → 401, rien n'est envoyé", async () => {
   const expo = fakeExpo();
-  const db = fakeDb({ queue: [{ userId: 'a', kind: 'price_drop', title: 't', body: 'b', data: {} }], tokens: [tok('a')] });
+  const db = fakeDb({
+    queue: [{ userId: 'a', kind: 'price_drop', title: 't', body: 'b', data: {} }],
+    tokens: [tok('a')],
+  });
   const { status } = await run(handler(db, SUNDAY_18H_PARIS, expo.fetch), 'faux');
   assertEquals(status, 401);
   assertEquals(expo.requests.length, 0);
@@ -148,7 +189,7 @@ Deno.test('secret cron invalide → 401, rien n\'est envoyé', async () => {
 
 // ─── Rappels ─────────────────────────────────────────────────────────────────
 
-Deno.test('rappel de planification : à l\'heure locale, sans planning existant, dédupliqué', async () => {
+Deno.test("rappel de planification : à l'heure locale, sans planning existant, dédupliqué", async () => {
   const expo = fakeExpo();
   const db = fakeDb({
     prefs: [
@@ -178,7 +219,7 @@ Deno.test('rappel de planification : à l\'heure locale, sans planning existant,
   assertEquals(db.queue.length, 1);
 });
 
-Deno.test('rappel de planification : fuseau de l\'utilisateur respecté (New York à 18 h locale)', async () => {
+Deno.test("rappel de planification : fuseau de l'utilisateur respecté (New York à 18 h locale)", async () => {
   const expo = fakeExpo();
   const db = fakeDb({ prefs: [pref('bob', { timezone: 'America/New_York' })], tokens: [tok('bob')] });
   const nyEvening = new Date('2026-11-15T23:05:00.000Z'); // 18 h 05 à New York (UTC−5)
@@ -203,9 +244,12 @@ Deno.test('rappel de commande : vendredi 10 h, plannings avec liste non command�
 
 // ─── Envoi ───────────────────────────────────────────────────────────────────
 
-Deno.test('envoi : lots de 100 messages, jeton d\'accès Expo transmis', async () => {
+Deno.test("envoi : lots de 100 messages, jeton d'accès Expo transmis", async () => {
   const expo = fakeExpo();
-  const queue = Array.from({ length: 150 }, (_, i) => ({ userId: `u${i}`, kind: 'price_drop' as const, title: 'Baisse', body: 'b', data: { productId: 'p' } }));
+  const queue = Array.from(
+    { length: 150 },
+    (_, i) => ({ userId: `u${i}`, kind: 'price_drop' as const, title: 'Baisse', body: 'b', data: { productId: 'p' } }),
+  );
   const db = fakeDb({ queue, tokens: queue.map((q) => tok(q.userId)) });
   const { data } = await run(handler(db, SUNDAY_18H_PARIS, expo.fetch, { expoAccessToken: 'expo-token' }));
   assertEquals(expo.requests.length, 2);
@@ -238,7 +282,10 @@ Deno.test('DeviceNotRegistered : jeton supprimé ; notification envoyée si un a
 
 Deno.test('erreurs transitoires : réessai (pending) puis échec après le nombre max de tentatives', async () => {
   const expo = fakeExpo();
-  const db = fakeDb({ queue: [{ userId: 'alice', kind: 'price_drop', title: 't', body: 'b', data: {} }], tokens: [tok('alice', 'rate')] });
+  const db = fakeDb({
+    queue: [{ userId: 'alice', kind: 'price_drop', title: 't', body: 'b', data: {} }],
+    tokens: [tok('alice', 'rate')],
+  });
   const h = handler(db, SUNDAY_18H_PARIS, expo.fetch, { maxAttempts: 3 });
   await run(h);
   assertEquals(db.queue[0].status, 'pending');
@@ -253,7 +300,10 @@ Deno.test('erreurs transitoires : réessai (pending) puis échec après le nombr
 
 Deno.test('Expo indisponible (HTTP 503) → notifications laissées en file', async () => {
   const expo = fakeExpo({ httpStatus: 503 });
-  const db = fakeDb({ queue: [{ userId: 'alice', kind: 'order_reminder', title: 't', body: 'b', data: {} }], tokens: [tok('alice')] });
+  const db = fakeDb({
+    queue: [{ userId: 'alice', kind: 'order_reminder', title: 't', body: 'b', data: {} }],
+    tokens: [tok('alice')],
+  });
   const { status, data } = await run(handler(db, SUNDAY_18H_PARIS, expo.fetch));
   assertEquals(status, 200);
   assertEquals(data.stats.retrying, 1);

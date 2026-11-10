@@ -39,7 +39,8 @@ export function createNotificationRepository(client: SupabaseClient): Notificati
       // Seuls les utilisateurs joignables (au moins un jeton push).
       const withToken = new Set<string>();
       for (const ids of chunks(prefs.map((p) => String(p.user_id)))) {
-        const rows = unwrap<Row[]>('push_tokens', await client.from('push_tokens').select('user_id').in('user_id', ids)) ?? [];
+        const rows =
+          unwrap<Row[]>('push_tokens', await client.from('push_tokens').select('user_id').in('user_id', ids)) ?? [];
         for (const r of rows) withToken.add(String(r.user_id));
       }
       return prefs.filter((p) => withToken.has(String(p.user_id))).map(rowToPref);
@@ -60,7 +61,10 @@ export function createNotificationRepository(client: SupabaseClient): Notificati
       for (const ids of chunks(userIds)) {
         const plans = unwrap<Row[]>(
           'meal_plans',
-          await client.from('meal_plans').select('user_id, id, generated_at').eq('week_start', weekStart).in('user_id', ids),
+          await client.from('meal_plans').select('user_id, id, generated_at').eq('week_start', weekStart).in(
+            'user_id',
+            ids,
+          ),
         ) ?? [];
         if (plans.length === 0) continue;
         const planUsers = plans.map((p) => String(p.user_id));
@@ -68,7 +72,9 @@ export function createNotificationRepository(client: SupabaseClient): Notificati
           client.from('shopping_lists').select('user_id, meal_plan_id').in('user_id', planUsers),
           client.from('order_handoffs').select('user_id, created_at').in('user_id', planUsers),
         ]);
-        const listKeys = new Set((unwrap<Row[]>('shopping_lists', lists) ?? []).map((l) => `${l.user_id}|${l.meal_plan_id}`));
+        const listKeys = new Set(
+          (unwrap<Row[]>('shopping_lists', lists) ?? []).map((l) => `${l.user_id}|${l.meal_plan_id}`),
+        );
         const orderRows = unwrap<Row[]>('order_handoffs', orders) ?? [];
         for (const p of plans) {
           const uid = String(p.user_id);
@@ -88,7 +94,14 @@ export function createNotificationRepository(client: SupabaseClient): Notificati
           await client
             .from('notification_queue')
             .upsert(
-              batch.map((n) => ({ user_id: n.userId, kind: n.kind, title: n.title, body: n.body, data: n.data, dedupe_key: n.dedupeKey })),
+              batch.map((n) => ({
+                user_id: n.userId,
+                kind: n.kind,
+                title: n.title,
+                body: n.body,
+                data: n.data,
+                dedupe_key: n.dedupeKey,
+              })),
               { onConflict: 'dedupe_key', ignoreDuplicates: true },
             )
             .select('id'),
@@ -121,7 +134,8 @@ export function createNotificationRepository(client: SupabaseClient): Notificati
     async loadPreferences(userIds) {
       const map = new Map<string, ReminderPreference>();
       for (const ids of chunks(userIds)) {
-        const rows = unwrap<Row[]>('prefs', await client.from('notification_preferences').select('*').in('user_id', ids)) ?? [];
+        const rows =
+          unwrap<Row[]>('prefs', await client.from('notification_preferences').select('*').in('user_id', ids)) ?? [];
         for (const r of rows) map.set(String(r.user_id), rowToPref(r));
       }
       return map;
@@ -129,32 +143,46 @@ export function createNotificationRepository(client: SupabaseClient): Notificati
     async loadPushTokens(userIds) {
       const out: { userId: string; token: string }[] = [];
       for (const ids of chunks(userIds)) {
-        const rows = unwrap<Row[]>('push_tokens', await client.from('push_tokens').select('user_id, token').in('user_id', ids)) ?? [];
+        const rows =
+          unwrap<Row[]>('push_tokens', await client.from('push_tokens').select('user_id, token').in('user_id', ids)) ??
+            [];
         for (const r of rows) out.push({ userId: String(r.user_id), token: String(r.token) });
       }
       return out;
     },
     async markResults(results, nowIso) {
-      // Une requête par statut final (les erreurs sont tronquées : pas de données personnelles).
+      // Regroupement par résultat identique → quelques UPDATE … WHERE id IN (…)
+      // au lieu d'un aller-retour par notification. Erreurs tronquées (codes Expo, pas de données personnelles).
+      const groups = new Map<string, { ids: number[]; r: (typeof results)[number] }>();
       for (const r of results) {
-        unwrap(
-          'mark result',
-          await client
-            .from('notification_queue')
-            .update({
-              status: r.status,
-              attempts: r.attempts,
-              last_error: r.error ? r.error.slice(0, 200) : null,
-              sent_at: r.status === 'sent' ? nowIso : null,
-            })
-            .eq('id', r.id),
-        );
+        const key = `${r.status}|${r.attempts}|${r.error ?? ''}`;
+        const g = groups.get(key);
+        if (g) g.ids.push(r.id);
+        else groups.set(key, { ids: [r.id], r });
+      }
+      for (const { ids, r } of groups.values()) {
+        for (const batch of chunks(ids)) {
+          unwrap(
+            'mark results',
+            await client
+              .from('notification_queue')
+              .update({
+                status: r.status,
+                attempts: r.attempts,
+                last_error: r.error ? r.error.slice(0, 200) : null,
+                sent_at: r.status === 'sent' ? nowIso : null,
+              })
+              .in('id', batch),
+          );
+        }
       }
     },
     async deleteTokens(tokens) {
       let n = 0;
       for (const batch of chunks(tokens)) {
-        const rows = unwrap<Row[]>('delete tokens', await client.from('push_tokens').delete().in('token', batch).select('id')) ?? [];
+        const rows =
+          unwrap<Row[]>('delete tokens', await client.from('push_tokens').delete().in('token', batch).select('id')) ??
+            [];
         n += rows.length;
       }
       return n;

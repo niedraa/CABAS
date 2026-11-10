@@ -19,8 +19,8 @@ export class TtlCache<T> {
   constructor(private readonly ttlMs: number, private readonly clock: () => number = Date.now) {}
 
   /** Valeur en cache, ou chargement unique partagé entre requêtes concurrentes. */
-  async get(load: () => Promise<T>): Promise<T> {
-    if (this.value !== undefined && this.clock() < this.expiresAt) return this.value;
+  get(load: () => Promise<T>): Promise<T> {
+    if (this.value !== undefined && this.clock() < this.expiresAt) return Promise.resolve(this.value);
     if (!this.pending) {
       this.pending = load()
         .then((v) => {
@@ -83,8 +83,10 @@ export async function loadOffers(
   ingredientIds: string[],
 ): Promise<{ products: Product[]; prices: Price[] }> {
   if (ingredientIds.length === 0) return { products: [], prices: [] };
-  const rows = await fetchAll<Row>('get_prices_for_ingredients', (from, to) =>
-    client.rpc('get_prices_for_ingredients', { ingredient_ids: ingredientIds }).range(from, to));
+  const rows = await fetchAll<Row>(
+    'get_prices_for_ingredients',
+    (from, to) => client.rpc('get_prices_for_ingredients', { ingredient_ids: ingredientIds }).range(from, to),
+  );
   const products = new Map<string, Product>();
   const prices: Price[] = [];
   for (const r of rows) {

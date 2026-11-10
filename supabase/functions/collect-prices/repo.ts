@@ -4,7 +4,16 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Price } from '../_shared/core/index.ts';
-import { effectiveEntitlement, num, priceToRow, type Row, rowToPrice, rowToProduct, rowToStore, rowToSubscription } from '../_shared/mappers.ts';
+import {
+  effectiveEntitlement,
+  num,
+  priceToRow,
+  type Row,
+  rowToPrice,
+  rowToProduct,
+  rowToStore,
+  rowToSubscription,
+} from '../_shared/mappers.ts';
 import { fetchAll, unwrap } from '../_shared/supabaseClient.ts';
 import type { NotificationInsert, PriceCollectionRepository, PriceWatchRow } from './handler.ts';
 import type { CollectStore } from './openPrices.ts';
@@ -19,7 +28,8 @@ function chunks<T>(xs: T[], size = CHUNK): T[][] {
 export function createPriceCollectionRepository(client: SupabaseClient, now: () => Date): PriceCollectionRepository {
   return {
     async listProductsToCheck(limit, productIds) {
-      let q = client.from('products').select('*').order('last_price_check_at', { ascending: true, nullsFirst: true }).limit(limit);
+      let q = client.from('products').select('*').order('last_price_check_at', { ascending: true, nullsFirst: true })
+        .limit(limit);
       if (productIds && productIds.length > 0) q = q.in('id', productIds);
       return (unwrap<Row[]>('products', await q) ?? []).map(rowToProduct);
     },
@@ -33,14 +43,20 @@ export function createPriceCollectionRepository(client: SupabaseClient, now: () 
     async loadCurrentPrices(productIds) {
       const out: Price[] = [];
       for (const ids of chunks(productIds)) {
-        const rows = await fetchAll<Row>('prices', (from, to) => client.from('prices').select('*').in('product_id', ids).range(from, to));
+        const rows = await fetchAll<Row>(
+          'prices',
+          (from, to) => client.from('prices').select('*').in('product_id', ids).range(from, to),
+        );
         out.push(...rows.map(rowToPrice));
       }
       return out;
     },
     async upsertPrices(prices) {
       for (const batch of chunks(prices)) {
-        unwrap('upsert prices', await client.from('prices').upsert(batch.map(priceToRow), { onConflict: 'product_id,store_id' }));
+        unwrap(
+          'upsert prices',
+          await client.from('prices').upsert(batch.map(priceToRow), { onConflict: 'product_id,store_id' }),
+        );
       }
     },
     async markChecked(productIds, at) {
@@ -52,8 +68,14 @@ export function createPriceCollectionRepository(client: SupabaseClient, now: () 
       const watches: Row[] = [];
       for (const ids of chunks(productIds)) {
         watches.push(
-          ...await fetchAll<Row>('price_watches', (from, to) =>
-            client.from('price_watches').select('user_id, product_id, store_id, reference_cents').in('product_id', ids).range(from, to)),
+          ...await fetchAll<Row>(
+            'price_watches',
+            (from, to) =>
+              client.from('price_watches').select('user_id, product_id, store_id, reference_cents').in(
+                'product_id',
+                ids,
+              ).range(from, to),
+          ),
         );
       }
       const userIds = Array.from(new Set(watches.map((w) => String(w.user_id))));
@@ -65,7 +87,9 @@ export function createPriceCollectionRepository(client: SupabaseClient, now: () 
           client.from('notification_preferences').select('user_id, price_drops').in('user_id', ids),
           client.from('subscriptions').select('*').in('user_id', ids),
         ]);
-        const optIn = new Set((unwrap<Row[]>('prefs', prefs) ?? []).filter((p) => p.price_drops === true).map((p) => String(p.user_id)));
+        const optIn = new Set(
+          (unwrap<Row[]>('prefs', prefs) ?? []).filter((p) => p.price_drops === true).map((p) => String(p.user_id)),
+        );
         for (const s of unwrap<Row[]>('subscriptions', subs) ?? []) {
           const uid = String(s.user_id);
           if (optIn.has(uid) && effectiveEntitlement(rowToSubscription(s), now()) === 'premium') eligible.add(uid);
@@ -88,7 +112,14 @@ export function createPriceCollectionRepository(client: SupabaseClient, now: () 
           await client
             .from('notification_queue')
             .upsert(
-              batch.map((n) => ({ user_id: n.userId, kind: n.kind, title: n.title, body: n.body, data: n.data, dedupe_key: n.dedupeKey })),
+              batch.map((n) => ({
+                user_id: n.userId,
+                kind: n.kind,
+                title: n.title,
+                body: n.body,
+                data: n.data,
+                dedupe_key: n.dedupeKey,
+              })),
               { onConflict: 'dedupe_key', ignoreDuplicates: true },
             )
             .select('id'),

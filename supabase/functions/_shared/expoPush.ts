@@ -45,7 +45,9 @@ export interface ExpoClientOptions {
 /** Envoie un lot (≤ 100). Lève ExpoHttpError si la requête entière échoue. */
 export async function sendExpoBatch(messages: ExpoMessage[], opts: ExpoClientOptions): Promise<ExpoTicket[]> {
   if (messages.length === 0) return [];
-  if (messages.length > EXPO_BATCH_SIZE) throw new Error(`Lot Expo trop grand (${messages.length} > ${EXPO_BATCH_SIZE})`);
+  if (messages.length > EXPO_BATCH_SIZE) {
+    throw new Error(`Lot Expo trop grand (${messages.length} > ${EXPO_BATCH_SIZE})`);
+  }
   const headers: Record<string, string> = {
     Accept: 'application/json',
     'Accept-Encoding': 'gzip, deflate',
@@ -61,7 +63,11 @@ export async function sendExpoBatch(messages: ExpoMessage[], opts: ExpoClientOpt
   const data = body && typeof body === 'object' ? (body as { data?: unknown }).data : null;
   if (!Array.isArray(data) || data.length !== messages.length) {
     // Réponse inattendue : chaque message est considéré en erreur (réessai ultérieur).
-    return messages.map(() => ({ status: 'error', message: 'Réponse Expo inattendue', details: { error: 'InvalidResponse' } }));
+    return messages.map(() => ({
+      status: 'error',
+      message: 'Réponse Expo inattendue',
+      details: { error: 'InvalidResponse' },
+    }));
   }
   return data.map((t) =>
     t && typeof t === 'object' && (t as { status?: unknown }).status === 'ok'

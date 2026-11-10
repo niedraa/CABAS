@@ -218,7 +218,7 @@ create trigger prices_record_history after insert or update on public.prices
   for each row execute function public.record_price_history();
 
 -- Append-only : toute modification de l'historique est refusée (même service_role ;
--- le nettoyage se fait via la fonction prune_price_history, qui désactive ce garde-fou).
+-- la purge se fait via public.run_maintenance(), qui lève ce garde-fou localement).
 create or replace function public.forbid_history_mutation()
 returns trigger
 language plpgsql

@@ -1,0 +1,7 @@
+# Fichiers locaux de la CLI Supabase
+.branches
+.temp
+# Secrets locaux (modèle : .env.example)
+.env
+.env.*
+!.env.example

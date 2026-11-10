@@ -5,8 +5,8 @@ import { LlmError } from '../_shared/anthropic.ts';
 import { HttpError } from '../_shared/http.ts';
 import { silentLogger } from '../_shared/logger.ts';
 import {
-  fakeLlm,
   type FakeLlm,
+  fakeLlm,
   INGREDIENTS,
   INGREDIENTS_BY_ID,
   never,
@@ -106,16 +106,18 @@ Deno.test('non authentifié → 401', async () => {
 
 Deno.test('requêtes invalides → 400', async () => {
   const h = handlerWith(fakeRepo(), null);
-  for (const body of [
-    '{pas du json',
-    { weekStart: '2026-11-17' }, // mardi
-    { weekStart: 'demain' },
-    { weekStart: '2030-01-07' }, // trop loin
-    { weekStart: WEEK, maxMeals: 0 },
-    { weekStart: WEEK, maxMeals: 2.5 },
-    { weekStart: WEEK, lockedMeals: [{ date: '2026-11-30', type: 'diner', recipeId: 'rec_curry' }] },
-    { weekStart: WEEK, lockedMeals: [{ date: WEEK, type: 'gouter', recipeId: 'rec_curry' }] },
-  ]) {
+  for (
+    const body of [
+      '{pas du json',
+      { weekStart: '2026-11-17' }, // mardi
+      { weekStart: 'demain' },
+      { weekStart: '2030-01-07' }, // trop loin
+      { weekStart: WEEK, maxMeals: 0 },
+      { weekStart: WEEK, maxMeals: 2.5 },
+      { weekStart: WEEK, lockedMeals: [{ date: '2026-11-30', type: 'diner', recipeId: 'rec_curry' }] },
+      { weekStart: WEEK, lockedMeals: [{ date: WEEK, type: 'gouter', recipeId: 'rec_curry' }] },
+    ]
+  ) {
     const { status, data } = await call(h, body);
     assertEquals(status, 400, JSON.stringify(body));
     assert(['invalid_request', 'invalid_json'].includes(data.error.code));
@@ -192,7 +194,7 @@ Deno.test('IA : délai dépassé → repli règles, réponse rapide', async () =
   assertNoPeanuts(data.plan);
 });
 
-Deno.test('IA : le signal d\'annulation est déclenché au délai', async () => {
+Deno.test("IA : le signal d'annulation est déclenché au délai", async () => {
   let aborted = false;
   const llm = fakeLlm((_p, signal) =>
     new Promise<string>((_resolve, reject) => {
@@ -231,7 +233,7 @@ Deno.test('sans clé API → règles, sans appel', async () => {
   assertNoPeanuts(data.plan);
 });
 
-Deno.test('budget épuisé → pas d\'appel LLM', async () => {
+Deno.test("budget épuisé → pas d'appel LLM", async () => {
   const llm = wellBehavedLlm();
   const { data } = await call(handlerWith(fakeRepo(), llm, { totalBudgetMs: 1500 }), { weekStart: WEEK });
   assertEquals(llm.calls.length, 0);
@@ -299,7 +301,13 @@ Deno.test('repas verrouillé conservé ; verrouillé DANGEREUX retiré', async (
 });
 
 Deno.test('planning existant de la semaine : son id est réutilisé', async () => {
-  const stored: MealPlan = { id: 'plan_existing', weekStart: WEEK, meals: [], generatedAt: NOW.toISOString(), source: 'rules' };
+  const stored: MealPlan = {
+    id: 'plan_existing',
+    weekStart: WEEK,
+    meals: [],
+    generatedAt: NOW.toISOString(),
+    source: 'rules',
+  };
   const { data } = await call(handlerWith(fakeRepo({ stored }), null), { weekStart: WEEK });
   assertEquals(data.plan.id, 'plan_existing');
 });
@@ -319,7 +327,7 @@ Deno.test('filet de sécurité : un moteur défaillant ne peut PAS renvoyer de p
   assertEquals(data.plan.meals.length, 9, 'le créneau est re-rempli par les règles');
 });
 
-Deno.test('échec d\'enregistrement → 200 avec persisted=false', async () => {
+Deno.test("échec d'enregistrement → 200 avec persisted=false", async () => {
   const { status, data } = await call(handlerWith(fakeRepo({ saveFails: true }), null), { weekStart: WEEK });
   assertEquals(status, 200);
   assertFalse(data.meta.persisted);

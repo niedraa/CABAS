@@ -14,13 +14,16 @@ import {
   detectChain,
   latestObservationsByStore,
   normalizeObservation,
-  type OpenPriceItem,
   OPEN_PRICES_URL,
+  type OpenPriceItem,
 } from './openPrices.ts';
 
 const NOW = new Date('2026-11-10T09:00:00.000Z');
 const SECRET = 'cron-secret-test';
-const COLLECT_STORES: CollectStore[] = STORES.map((s) => ({ ...s, osmLocationIds: s.id === 'carrefour' ? [987654] : [] }));
+const COLLECT_STORES: CollectStore[] = STORES.map((s) => ({
+  ...s,
+  osmLocationIds: s.id === 'carrefour' ? [987654] : [],
+}));
 const RIZ = PRODUCTS.find((p) => p.id === 'prd_riz')!; // 1 kg
 const RIZ_MDD = PRODUCTS.find((p) => p.id === 'prd_riz_mdd_lidl')!;
 
@@ -37,7 +40,12 @@ function item(over: Partial<OpenPriceItem> & { brand?: string; name?: string } =
     price_without_discount: null,
     date: '2026-11-05',
     location_osm_id: 111,
-    location: { osm_id: 111, osm_brand: brand ?? 'E.Leclerc', osm_name: name ?? 'E.Leclerc Lyon', osm_address_city: 'Lyon' },
+    location: {
+      osm_id: 111,
+      osm_brand: brand ?? 'E.Leclerc',
+      osm_name: name ?? 'E.Leclerc Lyon',
+      osm_address_city: 'Lyon',
+    },
     ...rest,
   };
 }
@@ -49,7 +57,7 @@ Deno.test('detectChain : marques et noms OSM (accents, casse, variantes)', () =>
   assertEquals(detectChain({ osm_name: 'Carrefour Market Croix-Rousse' }), 'carrefour');
   assertEquals(detectChain({ osm_brand: 'Intermarché Super' }), 'intermarche');
   assertEquals(detectChain({ osm_brand: 'LIDL' }), 'lidl');
-  assertEquals(detectChain({ osm_name: 'Monop\' Bellecour' }), 'monoprix');
+  assertEquals(detectChain({ osm_name: "Monop' Bellecour" }), 'monoprix');
   assertEquals(detectChain({ osm_brand: 'Auchan Supermarché' }), 'auchan');
   assertEquals(detectChain({ osm_brand: 'Biocoop' }), null);
   // La marque l'emporte sur le nom.
@@ -61,15 +69,21 @@ Deno.test('normalizeObservation : prix unitaire, au kilo, promo, rejets', () => 
   assertEquals(normalizeObservation(item(), RIZ, NOW), { priceCents: 179, observedAt: '2026-11-05T12:00:00.000Z' });
   // Prix au kilo, conditionnement de 500 g → moitié.
   const half: Product = { ...RIZ, packSize: 500 };
-  assertEquals((normalizeObservation(item({ price: 3.2, price_per: 'KILOGRAM' }), half, NOW) as { priceCents: number }).priceCents, 160);
+  assertEquals(
+    (normalizeObservation(item({ price: 3.2, price_per: 'KILOGRAM' }), half, NOW) as { priceCents: number }).priceCents,
+    160,
+  );
   // Prix au litre sur un produit en grammes → incohérent.
   assertEquals(normalizeObservation(item({ price_per: 'LITER' }), RIZ, NOW), { rejected: 'unit_mismatch' });
   // Promo : prix barré = prix normal, prix payé = promo.
-  assertEquals(normalizeObservation(item({ price: 1.5, price_is_discounted: true, price_without_discount: 1.99 }), RIZ, NOW), {
-    priceCents: 199,
-    promoPriceCents: 150,
-    observedAt: '2026-11-05T12:00:00.000Z',
-  });
+  assertEquals(
+    normalizeObservation(item({ price: 1.5, price_is_discounted: true, price_without_discount: 1.99 }), RIZ, NOW),
+    {
+      priceCents: 199,
+      promoPriceCents: 150,
+      observedAt: '2026-11-05T12:00:00.000Z',
+    },
+  );
   // Prix en chaîne accepté.
   assertEquals((normalizeObservation(item({ price: '2.05' }), RIZ, NOW) as { priceCents: number }).priceCents, 205);
   assertEquals(normalizeObservation(item({ currency: 'CHF' }), RIZ, NOW), { rejected: 'currency' });
@@ -95,12 +109,23 @@ Deno.test('latestObservationsByStore : OSM exact > enseigne, dernier relevé, MD
   assertEquals(unmatched, 2);
   assertEquals(rejected, 1);
 
-  const mdd = latestObservationsByStore([item({ product_code: RIZ_MDD.ean, brand: 'Auchan' })], RIZ_MDD, COLLECT_STORES, NOW);
+  const mdd = latestObservationsByStore(
+    [item({ product_code: RIZ_MDD.ean, brand: 'Auchan' })],
+    RIZ_MDD,
+    COLLECT_STORES,
+    NOW,
+  );
   assertEquals(mdd.observations.length, 0, 'une MDD Lidl ne peut pas avoir de prix chez Auchan');
 });
 
 Deno.test('shouldReplace : prix démo toujours remplacé, sinon seulement par plus récent', () => {
-  const base: Price = { productId: 'p', storeId: 's', priceCents: 100, updatedAt: '2026-11-09T06:00:00.000Z', source: 'demo' };
+  const base: Price = {
+    productId: 'p',
+    storeId: 's',
+    priceCents: 100,
+    updatedAt: '2026-11-09T06:00:00.000Z',
+    source: 'demo',
+  };
   assert(shouldReplace(undefined, '2026-01-01T00:00:00Z'));
   assert(shouldReplace(base, '2026-11-01T12:00:00.000Z'));
   const real = { ...base, source: 'partner' as const };
@@ -208,7 +233,15 @@ Deno.test('collecte : parse Open Prices, upsert source open_prices, requêtes s�
       return jsonRes({
         items: [
           item({ id: 10, price: 1.69, date: '2026-11-08' }),
-          item({ id: 11, price: 2.09, location_osm_id: 987654, brand: 'Carrefour', date: '2026-11-07', price_is_discounted: true, price_without_discount: 2.29 }),
+          item({
+            id: 11,
+            price: 2.09,
+            location_osm_id: 987654,
+            brand: 'Carrefour',
+            date: '2026-11-07',
+            price_is_discounted: true,
+            price_without_discount: 2.29,
+          }),
         ],
         total: 2,
         page: 1,
@@ -239,9 +272,15 @@ Deno.test('collecte : parse Open Prices, upsert source open_prices, requêtes s�
   assertEquals(repo.checked.sort(), ['prd_riz', 'prd_riz_mdd_lidl']);
 });
 
-Deno.test('collecte : un relevé plus ancien qu\'un prix réel n\'écrase pas', async () => {
+Deno.test("collecte : un relevé plus ancien qu'un prix réel n'écrase pas", async () => {
   const current: Price[] = [
-    { productId: 'prd_riz', storeId: 'leclerc', priceCents: 175, updatedAt: '2026-11-09T08:00:00.000Z', source: 'partner' },
+    {
+      productId: 'prd_riz',
+      storeId: 'leclerc',
+      priceCents: 175,
+      updatedAt: '2026-11-09T08:00:00.000Z',
+      source: 'partner',
+    },
   ];
   const repo = fakeRepo({ products: [RIZ], current });
   const { fetch } = fakeFetch(() => jsonRes({ items: [item({ date: '2026-11-05' })] }));
@@ -280,7 +319,9 @@ Deno.test('collecte : 429 puis succès au second essai', async () => {
 Deno.test('collecte : erreur 500 / réseau / JSON invalide sur un produit → compté, lot poursuivi', async () => {
   const repo = fakeRepo();
   const { fetch } = fakeFetch((url) =>
-    url.searchParams.get('product_code') === RIZ.ean ? jsonRes({ error: 'boom' }, 500) : new Response('<html>', { status: 200 })
+    url.searchParams.get('product_code') === RIZ.ean
+      ? jsonRes({ error: 'boom' }, 500)
+      : new Response('<html>', { status: 200 })
   );
   const { stats } = await (await makeHandler(repo, fetch)(cronReq())).json();
   assertEquals(stats.errors, 1);
@@ -288,7 +329,7 @@ Deno.test('collecte : erreur 500 / réseau / JSON invalide sur un produit → co
   assertEquals(repo.checked, ['prd_riz_mdd_lidl']);
 });
 
-Deno.test('baisses de prix : notification mise en file (une seule fois), dryRun n\'écrit rien', async () => {
+Deno.test("baisses de prix : notification mise en file (une seule fois), dryRun n'écrit rien", async () => {
   const watches: PriceWatchRow[] = [
     { userId: 'u1', productId: 'prd_riz', storeId: 'leclerc', referenceCents: 199 },
     { userId: 'u2', productId: 'prd_riz', storeId: 'leclerc', referenceCents: 170 }, // baisse < 5 %

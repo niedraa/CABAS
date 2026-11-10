@@ -37,7 +37,9 @@ export function optionalInt(v: unknown, field: string, min: number, max: number)
 /** Tableau de chaînes courtes (ids), borné. */
 export function optionalStringArray(v: unknown, field: string, maxItems: number, maxLen = 128): string[] | undefined {
   if (v === undefined || v === null) return undefined;
-  if (!Array.isArray(v) || v.length > maxItems) throw badRequest(`${field} doit être une liste d'au plus ${maxItems} éléments.`);
+  if (!Array.isArray(v) || v.length > maxItems) {
+    throw badRequest(`${field} doit être une liste d'au plus ${maxItems} éléments.`);
+  }
   for (const s of v) {
     if (typeof s !== 'string' || s.length === 0 || s.length > maxLen) {
       throw badRequest(`${field} contient une valeur invalide.`);
@@ -58,7 +60,7 @@ const BASE_UNITS: readonly BaseUnit[] = ['g', 'ml', 'piece'];
 
 /** Valide et normalise les articles d'une liste de courses (core › ShoppingListItem). */
 export function parseShoppingListItems(v: unknown, maxItems = 300): ShoppingListItem[] {
-  if (!Array.isArray(v) || v.length === 0) throw badRequest('items doit être une liste non vide d\'articles.');
+  if (!Array.isArray(v) || v.length === 0) throw badRequest("items doit être une liste non vide d'articles.");
   if (v.length > maxItems) throw badRequest(`Liste trop longue (${maxItems} articles maximum).`);
   const seen = new Set<string>();
   return v.map((raw, i) => {
@@ -75,7 +77,10 @@ export function parseShoppingListItems(v: unknown, maxItems = 300): ShoppingList
     if (!unit) throw badRequest(`items[${i}].unit est obligatoire (g, ml ou piece).`);
     const label = typeof raw.label === 'string' && raw.label.trim() ? raw.label.trim().slice(0, 200) : id;
     const ingredientId = raw.ingredientId;
-    if (ingredientId !== undefined && ingredientId !== null && (typeof ingredientId !== 'string' || ingredientId.length > 128)) {
+    if (
+      ingredientId !== undefined && ingredientId !== null &&
+      (typeof ingredientId !== 'string' || ingredientId.length > 128)
+    ) {
       throw badRequest(`items[${i}].ingredientId est invalide.`);
     }
     const aisle = optionalEnum(raw.aisle, `items[${i}].aisle`, AISLES) ?? ('autre' as Aisle);
@@ -87,7 +92,9 @@ export function parseShoppingListItems(v: unknown, maxItems = 300): ShoppingList
       aisle,
       checked: raw.checked === true,
       source: raw.source === 'plan' ? 'plan' : 'manual',
-      recipeIds: Array.isArray(raw.recipeIds) ? raw.recipeIds.filter((r): r is string => typeof r === 'string').slice(0, 50) : [],
+      recipeIds: Array.isArray(raw.recipeIds)
+        ? raw.recipeIds.filter((r): r is string => typeof r === 'string').slice(0, 50)
+        : [],
     };
     if (typeof ingredientId === 'string' && ingredientId) item.ingredientId = ingredientId;
     return item;

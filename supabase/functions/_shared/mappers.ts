@@ -35,7 +35,9 @@ export function num(v: unknown, fallback = 0): number {
   const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
   return Number.isFinite(n) ? n : fallback;
 }
-const optNum = (v: unknown): number | undefined => (v == null || v === '' ? undefined : Number.isFinite(num(v, NaN)) ? num(v) : undefined);
+const optNum = (
+  v: unknown,
+): number | undefined => (v == null || v === '' ? undefined : Number.isFinite(num(v, NaN)) ? num(v) : undefined);
 
 /** Normalise un horodatage Postgres en ISO 8601 (UTC). */
 export function isoTimestamp(v: unknown): string {
@@ -201,7 +203,8 @@ function toMealSlots(v: unknown): MealSlotPreference[] {
     .map((s) => ({ weekday: num(s.weekday, -1), type: s.type }))
     .filter(
       (s): s is MealSlotPreference =>
-        Number.isInteger(s.weekday) && s.weekday >= 0 && s.weekday <= 6 && (s.type === 'dejeuner' || s.type === 'diner'),
+        Number.isInteger(s.weekday) && s.weekday >= 0 && s.weekday <= 6 &&
+        (s.type === 'dejeuner' || s.type === 'diner'),
     );
 }
 

@@ -10,7 +10,9 @@ import { createUserClient } from '../_shared/supabaseClient.ts';
 import { createGenerateMealPlanHandler } from './handler.ts';
 import { createMealPlanRepository } from './repo.ts';
 
-const logger = createLogger('generate-meal-plan', { level: optionalEnv(denoEnv, 'LOG_LEVEL') === 'debug' ? 'debug' : 'info' });
+const logger = createLogger('generate-meal-plan', {
+  level: optionalEnv(denoEnv, 'LOG_LEVEL') === 'debug' ? 'debug' : 'info',
+});
 const apiKey = optionalEnv(denoEnv, 'ANTHROPIC_API_KEY');
 if (!apiKey) logger.warn('ANTHROPIC_API_KEY absente : moteur de règles uniquement');
 

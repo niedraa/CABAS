@@ -64,7 +64,13 @@ export function createLogger(fn: string, opts: LoggerOptions = {}, base: Record<
   const sink = opts.sink ?? consoleSink;
   const emit = (level: LogLevel, message: string, fields?: Record<string, unknown>) => {
     if (ORDER[level] < min) return;
-    const payload = { ts: new Date().toISOString(), level, fn, msg: message, ...(redact({ ...base, ...fields }) as object) };
+    const payload = {
+      ts: new Date().toISOString(),
+      level,
+      fn,
+      msg: message,
+      ...(redact({ ...base, ...fields }) as object),
+    };
     sink(level, JSON.stringify(payload));
   };
   return {
@@ -82,6 +88,9 @@ export const silentLogger: Logger = createLogger('test', { sink: () => {} });
 /** Logger qui mémorise ses lignes (tests). */
 export function memoryLogger(): Logger & { lines: { level: LogLevel; entry: Record<string, unknown> }[] } {
   const lines: { level: LogLevel; entry: Record<string, unknown> }[] = [];
-  const logger = createLogger('test', { level: 'debug', sink: (level, line) => lines.push({ level, entry: JSON.parse(line) }) });
+  const logger = createLogger('test', {
+    level: 'debug',
+    sink: (level, line) => lines.push({ level, entry: JSON.parse(line) }),
+  });
   return Object.assign(logger, { lines });
 }

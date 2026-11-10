@@ -107,12 +107,12 @@ export function parseGenerateRequest(body: unknown, today: string): GenerateRequ
   const weekStart = requireIsoDate(b.weekStart, 'weekStart');
   if (weekdayIndex(weekStart) !== 0) throw badRequest('weekStart doit être un lundi.');
   const deltaDays = (Date.parse(weekStart) - Date.parse(today)) / 86_400_000;
-  if (!(deltaDays > -366 && deltaDays < 366)) throw badRequest('weekStart doit être à moins d\'un an d\'aujourd\'hui.');
+  if (!(deltaDays > -366 && deltaDays < 366)) throw badRequest("weekStart doit être à moins d'un an d'aujourd'hui.");
 
   const lockedMeals: PlannedMeal[] = [];
   if (b.lockedMeals !== undefined && b.lockedMeals !== null) {
     if (!Array.isArray(b.lockedMeals) || b.lockedMeals.length > 14) {
-      throw badRequest('lockedMeals doit être une liste d\'au plus 14 repas.');
+      throw badRequest("lockedMeals doit être une liste d'au plus 14 repas.");
     }
     b.lockedMeals.forEach((m, i) => {
       if (!isRecord(m)) throw badRequest(`lockedMeals[${i}] doit être un objet.`);
@@ -269,7 +269,10 @@ export function createGenerateMealPlanHandler(deps: GenerateMealPlanDeps): (req:
         llmMeta.model = deps.llm.model;
         const llm = deps.llm;
         try {
-          const text = await withTimeout(timeout, (signal) => llm.complete(buildLlmPrompt(input, candidates), { signal }));
+          const text = await withTimeout(
+            timeout,
+            (signal) => llm.complete(buildLlmPrompt(input, candidates), { signal }),
+          );
           const selection = parseLlmResponse(text, input, candidates);
           if (!selection) {
             llmMeta.fallbackReason = 'unparseable';
@@ -288,7 +291,10 @@ export function createGenerateMealPlanHandler(deps: GenerateMealPlanDeps): (req:
             : err instanceof LlmError && err.kind === 'refusal'
             ? 'llm_refusal'
             : 'llm_error';
-          log.warn('llm fallback', { reason: llmMeta.fallbackReason, error: err instanceof Error ? err.message : String(err) });
+          log.warn('llm fallback', {
+            reason: llmMeta.fallbackReason,
+            error: err instanceof Error ? err.message : String(err),
+          });
         }
       }
     }

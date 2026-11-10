@@ -60,6 +60,8 @@ export async function requireUser(req: Request, auth: AuthLike): Promise<AuthUse
   const token = bearerToken(req);
   if (!token) throw new HttpError(401, 'unauthorized', 'Connexion requise.');
   const { data, error } = await auth.getUser(token);
-  if (error || !data?.user?.id) throw new HttpError(401, 'unauthorized', 'Session invalide ou expirée. Reconnecte-toi.');
+  if (error || !data?.user?.id) {
+    throw new HttpError(401, 'unauthorized', 'Session invalide ou expirée. Reconnecte-toi.');
+  }
   return { id: data.user.id, email: data.user.email ?? undefined };
 }

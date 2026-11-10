@@ -1,0 +1,162 @@
+# ════════════════════════════════════════════════════════════════════════════
+# Configuration Supabase de Cabas (CLI : `supabase start`, `supabase db push`…).
+#
+# RÉGION : l'hébergement UE se choisit à la CRÉATION du projet distant
+# (ex. `supabase projects create cabas --region eu-west-3` → Paris), pas ici.
+# Voir docs/BACKEND.md.
+#
+# Les secrets ne sont JAMAIS écrits ici : syntaxe env(NOM) lue depuis
+# supabase/.env (local, ignoré par git) — modèle : supabase/.env.example.
+# ════════════════════════════════════════════════════════════════════════════
+
+project_id = "cabas"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+# Les Edge Functions paginent au-delà (fetchAll).
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 17
+
+[db.pooler]
+enabled = false
+
+[db.migrations]
+enabled = true
+
+[db.seed]
+# Catalogue de démonstration (généré : npm run seed:generate).
+enabled = true
+sql_paths = ["./seed.sql"]
+
+[realtime]
+enabled = false
+
+[studio]
+enabled = true
+port = 54323
+api_url = "http://127.0.0.1"
+
+[inbucket]
+# Boîte mail locale de test (e-mails de confirmation / magic links).
+enabled = true
+port = 54324
+
+[storage]
+enabled = true
+file_size_limit = "10MiB"
+
+# Photos des recettes (lecture publique, écriture service_role uniquement).
+[storage.buckets.recipe-images]
+public = true
+file_size_limit = "2MiB"
+allowed_mime_types = ["image/jpeg", "image/png", "image/webp"]
+
+[auth]
+enabled = true
+# Schéma d'URL de l'app (expo-router / expo-linking).
+site_url = "cabas://"
+additional_redirect_urls = ["cabas://auth/callback", "exp://127.0.0.1:8081/--/auth/callback", "http://localhost:8081/auth/callback"]
+# Jeton d'accès : 1 h ; le SDK le renouvelle via le refresh token (rotation activée).
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+enable_signup = true
+enable_anonymous_sign_ins = false
+enable_manual_linking = false
+minimum_password_length = 8
+password_requirements = "lower_upper_letters_digits"
+
+[auth.rate_limit]
+email_sent = 10
+sign_in_sign_ups = 30
+token_refresh = 150
+token_verifications = 30
+
+[auth.email]
+enable_signup = true
+enable_confirmations = true
+double_confirm_changes = true
+secure_password_change = true
+max_frequency = "1m0s"
+otp_length = 6
+otp_expiry = 3600
+
+[auth.sms]
+enable_signup = false
+
+# Connexion avec Apple (obligatoire sur iOS si un autre fournisseur social est proposé).
+# Désactivé par défaut : renseigner les variables puis passer enabled = true.
+[auth.external.apple]
+enabled = false
+client_id = "env(SUPABASE_AUTH_EXTERNAL_APPLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_EXTERNAL_APPLE_SECRET)"
+redirect_uri = ""
+url = ""
+# Connexion native iOS (expo-apple-authentication) : nonce géré par le SDK.
+skip_nonce_check = false
+
+[auth.external.google]
+enabled = false
+client_id = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_SECRET)"
+redirect_uri = ""
+url = ""
+skip_nonce_check = false
+
+[edge_runtime]
+enabled = true
+policy = "per_worker"
+inspector_port = 8083
+deno_version = 2
+
+[analytics]
+enabled = false
+
+# ─── Edge Functions ─────────────────────────────────────────────────────────
+# verify_jwt = true : la passerelle exige un JWT Supabase valide (en plus de
+# la vérification auth.getUser() faite dans la fonction).
+# verify_jwt = false : appels système authentifiés par secret partagé
+# (x-cron-secret, ou Authorization du webhook RevenueCat).
+
+[functions.generate-meal-plan]
+enabled = true
+verify_jwt = true
+import_map = "./functions/deno.json"
+entrypoint = "./functions/generate-meal-plan/index.ts"
+
+[functions.optimize-basket]
+enabled = true
+verify_jwt = true
+import_map = "./functions/deno.json"
+entrypoint = "./functions/optimize-basket/index.ts"
+
+[functions.account]
+enabled = true
+verify_jwt = true
+import_map = "./functions/deno.json"
+entrypoint = "./functions/account/index.ts"
+
+[functions.collect-prices]
+enabled = true
+verify_jwt = false
+import_map = "./functions/deno.json"
+entrypoint = "./functions/collect-prices/index.ts"
+
+[functions.send-notifications]
+enabled = true
+verify_jwt = false
+import_map = "./functions/deno.json"
+entrypoint = "./functions/send-notifications/index.ts"
+
+[functions.revenuecat-webhook]
+enabled = true
+verify_jwt = false
+import_map = "./functions/deno.json"
+entrypoint = "./functions/revenuecat-webhook/index.ts"
