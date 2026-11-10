@@ -100,6 +100,9 @@
       "src/**/*.{ts,tsx}",
       "!src/**/*.d.ts",
       "!src/app/**"
+    ],
+    "testMatch": [
+      "**/?(*.)+(test).[jt]s?(x)"
     ]
   }
 }

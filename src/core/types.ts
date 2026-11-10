@@ -443,3 +443,35 @@ export interface NotificationPreferences {
   orderReminder: boolean;
   priceDrops: boolean;
 }
+
+// ─── Placard (V2 — anti-gaspi) ───────────────────────────────────────────────
+
+/** Un article présent à la maison (placard, frigo, congélateur). */
+export interface PantryItem {
+  id: string;
+  /** Absent pour un article libre (« reste de riz »). */
+  ingredientId?: string;
+  label: string;
+  /** Quantité disponible, en unité de base. */
+  quantity: number;
+  unit: BaseUnit;
+  /** Horodatage ISO d'ajout. */
+  addedAt: string;
+  /** Date limite (jour ISO `YYYY-MM-DD` ou horodatage ISO). */
+  expiresAt?: string;
+}
+
+// ─── Budget (V2 — suivi des dépenses) ────────────────────────────────────────
+
+/** Une dépense de courses (commande passée via Cabas ou saisie à la main). */
+export interface SpendingEntry {
+  id: string;
+  /** Jour ISO `YYYY-MM-DD`. */
+  date: string;
+  storeId: string;
+  totalCents: number;
+  /** Économie réalisée grâce au comparateur, centimes. */
+  savingsCents: number;
+  source: 'order' | 'manual';
+  label?: string;
+}
