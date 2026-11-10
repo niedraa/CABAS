@@ -102,6 +102,15 @@ export function planOptions(offerings: NormalizedOfferings | null): PlanOptionVi
   return [planOptionView('annual', offerings?.annual ?? null), planOptionView('monthly', offerings?.monthly ?? null)];
 }
 
+/**
+ * Jours d'essai offerts à cet utilisateur : ceux du store une fois les offres
+ * chargées (null si l'essai a déjà servi), sinon la durée standard.
+ */
+export function offeredTrialDays(offerings: NormalizedOfferings | null): number | null {
+  if (!offerings) return PREMIUM_PRICING.trialDays;
+  return offerings.annual?.trial?.days ?? offerings.monthly?.trial?.days ?? null;
+}
+
 /** Offre présélectionnée : l'annuelle si elle existe, sinon la mensuelle. */
 export function defaultPackage(offerings: NormalizedOfferings | null): PackageId {
   if (offerings && !offerings.annual && offerings.monthly) return 'monthly';

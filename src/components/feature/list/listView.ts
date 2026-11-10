@@ -13,7 +13,6 @@ import {
   formatPackaging,
   formatQuantity,
   guessAisle,
-  joinFr,
 } from '@/core';
 
 /** Emoji d'un rayon (vignettes du placard, aperçu de saisie). */
@@ -22,7 +21,7 @@ export const AISLE_EMOJI: Record<Aisle, string> = {
   boulangerie: '🥖',
   boucherie: '🥩',
   poissonnerie: '🐟',
-  cremerie: '🧀',
+  cremerie: '🥛',
   epicerie_salee: '🍝',
   condiments: '🧂',
   epicerie_sucree: '🍫',
@@ -38,6 +37,17 @@ export const AISLE_OPTIONS: { value: Aisle; label: string; emoji: string }[] = A
   label: AISLE_LABELS[a],
   emoji: AISLE_EMOJI[a],
 }));
+
+/** Unité courte affichée à côté d'un champ numérique. */
+export const UNIT_SHORT: Record<BaseUnit, string> = { g: 'g', ml: 'ml', piece: 'pièce(s)' };
+
+/** Nombre saisi (« 250 », « 1,5 ») → valeur > 0, sinon null. */
+export function parseAmount(text: string): number | null {
+  const clean = text.trim().replace(/\s/g, '').replace(',', '.');
+  if (!/^\d+(\.\d+)?$|^\.\d+$/.test(clean)) return null;
+  const n = Number(clean);
+  return Number.isFinite(n) && n > 0 && n < 100000 ? n : null;
+}
 
 /** « 1 article », « 3 articles ». */
 export function countFr(n: number, singular: string, plural = `${singular}s`): string {
@@ -73,7 +83,8 @@ export function recipeSources(
   const titles = recipeIds.map((id) => recipesById[id]?.title).filter((x): x is string => !!x);
   if (titles.length === 0) return null;
   const short = titles.length === 1 ? titles[0] : `${titles[0]} +${titles.length - 1}`;
-  return { short, full: `Pour ${joinFr(titles)}` };
+  // « · » plutôt que « et » : les titres contiennent souvent déjà « et ».
+  return { short, full: `Pour ${titles.join(' · ')}` };
 }
 
 /**
@@ -102,7 +113,7 @@ export function itemView(
   const sources = recipeSources(item.recipeIds, recipesById);
   return {
     quantity: formatItemQuantity(item),
-    buy: pack ? `Prends ${pack}` : null,
+    buy: pack ? `Prends ${pack.startsWith('lot ') ? `un ${pack}` : pack}` : null,
     sources: sources?.short ?? (item.source === 'manual' ? 'Ajouté par toi' : null),
     sourcesA11y: sources?.full ?? (item.source === 'manual' ? 'Ajouté par toi' : null),
     pantry: pantryHintFor(item, pantry),
@@ -121,7 +132,7 @@ export function itemA11yLabel(item: ShoppingListItem, view: ItemView): string {
 
 // ─── Rayons ──────────────────────────────────────────────────────────────────
 
-export interface AisleSection {
+export interface ListSection {
   aisle: Aisle;
   items: ShoppingListItem[];
 }
@@ -136,7 +147,7 @@ export function orderSection(items: readonly ShoppingListItem[], frozen: Readonl
   return items.slice().sort((a, b) => rank(a) - rank(b) || compareFr(a.label, b.label));
 }
 
-export function applyFrozenOrder(sections: readonly AisleSection[], frozen: Readonly<Record<string, boolean>>): AisleSection[] {
+export function applyFrozenOrder(sections: readonly ListSection[], frozen: Readonly<Record<string, boolean>>): ListSection[] {
   if (Object.keys(frozen).length === 0) return sections.slice();
   return sections.map((s) => ({ aisle: s.aisle, items: orderSection(s.items, frozen) }));
 }
@@ -146,6 +157,14 @@ export function sectionProgress(items: readonly ShoppingListItem[]): { done: num
   return { done, total: items.length, complete: items.length > 0 && done === items.length };
 }
 
+/** État d'avancement de la liste : vide, à faire, tout coché. */
+export type ListPhase = 'empty' | 'todo' | 'complete';
+
+export function listPhase(total: number, done: number): ListPhase {
+  if (!(total > 0)) return 'empty';
+  return done >= total ? 'complete' : 'todo';
+}
+
 /** Titre de la carte de progression : « Encore 12 articles », « Plus qu’un article ». */
 export function remainingHeadline(remaining: number): string {
   if (remaining <= 0) return 'Tout est dans le cabas';
@@ -153,20 +172,25 @@ export function remainingHeadline(remaining: number): string {
   return `Encore ${remaining} articles`;
 }
 
-/** Sous-titre : « 5 sur 17 cochés · 3 rayons à faire ». */
-export function progressSubtitle(sections: readonly AisleSection[]): string {
+/**
+ * Sous-titre de la carte de progression (l'anneau montre déjà « 5/17 ») :
+ * « 17 articles · 6 rayons », « 3 rayons à faire », « Dernier rayon : Crèmerie ».
+ */
+export function progressSubtitle(sections: readonly ListSection[]): string {
   let done = 0;
   let total = 0;
-  let todo = 0;
+  const todo: Aisle[] = [];
   for (const s of sections) {
     const p = sectionProgress(s.items);
     done += p.done;
     total += p.total;
-    if (!p.complete) todo += 1;
+    if (!p.complete) todo.push(s.aisle);
   }
   if (total === 0) return 'Ta liste est vide';
-  if (done === 0) return `${countFr(total, 'article')} · ${countFr(todo, 'rayon')}`;
-  return `${done} sur ${total} cochés · ${countFr(todo, 'rayon')} à faire`;
+  if (done === 0) return `${countFr(total, 'article')} · ${countFr(todo.length, 'rayon')}`;
+  if (todo.length === 0) return 'Tout est coché';
+  if (todo.length === 1) return `Dernier rayon : ${AISLE_LABELS[todo[0]]}`;
+  return `${todo.length} rayons à faire`;
 }
 
 // ─── Saisie rapide ───────────────────────────────────────────────────────────

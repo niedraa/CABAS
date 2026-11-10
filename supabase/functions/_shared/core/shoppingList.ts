@@ -370,3 +370,48 @@ export function formatShoppingListAsText(items: readonly ShoppingListItem[], opt
   }
   return lines.join('\n');
 }
+
+// ─── Articles du menu retirés par l'utilisateur ──────────────────────────────
+
+/**
+ * Articles du menu retirés à la main (« Vider les articles cochés », glisser
+ * pour retirer) : clé → quantité retirée. Sans cette mémoire, la liste
+ * régénérée après un changement du planning ou du placard les ferait revenir.
+ */
+export type ListDismissals = Record<string, number>;
+
+/** Clé d'un article du menu : ingrédient + unité (sinon son id). */
+export function dismissalKey(item: Pick<ShoppingListItem, 'id' | 'ingredientId' | 'unit'>): string {
+  return item.ingredientId ? `${item.ingredientId}|${item.unit}` : `id:${item.id}`;
+}
+
+/** Mémorise les articles du menu retirés (la plus grande quantité retirée est retenue). Les articles libres sont ignorés. */
+export function recordDismissals(dismissed: ListDismissals, removed: readonly ShoppingListItem[]): ListDismissals {
+  const next: ListDismissals = { ...dismissed };
+  for (const item of removed) {
+    if (item.source !== 'plan') continue;
+    const key = dismissalKey(item);
+    next[key] = Math.max(next[key] ?? 0, Number.isFinite(item.quantity) ? item.quantity : 0);
+  }
+  return next;
+}
+
+/** Oublie les retraits de ces articles (annulation : ils reviennent pour de bon). */
+export function forgetDismissals(dismissed: ListDismissals, restored: readonly ShoppingListItem[]): ListDismissals {
+  const next: ListDismissals = { ...dismissed };
+  for (const item of restored) delete next[dismissalKey(item)];
+  return next;
+}
+
+/**
+ * Retire d'une liste fraîchement générée les articles du menu déjà retirés —
+ * sauf si le planning en demande désormais davantage (nouveau repas, plus de
+ * portions) : l'article revient alors, car le besoin a changé.
+ */
+export function withoutDismissed(items: readonly ShoppingListItem[], dismissed: ListDismissals): ShoppingListItem[] {
+  return items.filter((item) => {
+    if (item.source !== 'plan') return true;
+    const removed = dismissed[dismissalKey(item)];
+    return removed === undefined || item.quantity > removed + 1e-9;
+  });
+}

@@ -154,7 +154,8 @@ const styles = StyleSheet.create({
   label: { marginLeft: 4 },
   frame: { flexDirection: 'row', alignItems: 'center', borderWidth: 1.5 },
   left: { paddingLeft: 14, paddingRight: 10 },
-  input: { flex: 1, minHeight: 50, paddingVertical: 12 },
+  // Le cadre animé montre déjà le focus : pas de contour navigateur en plus (web).
+  input: { flex: 1, minHeight: 50, paddingVertical: 12, outlineStyle: 'solid', outlineWidth: 0 },
   clear: {
     width: 24,
     height: 24,

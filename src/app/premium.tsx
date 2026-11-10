@@ -11,7 +11,7 @@ import { router, useFocusEffect, useLocalSearchParams, type Href } from 'expo-ro
 import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInDown, FadeOut } from 'react-native-reanimated';
 import { ArrowRight, ShieldCheck, X } from 'lucide-react-native';
 
 import { Celebration, CircleDecor } from '@/components/brand';
@@ -55,6 +55,7 @@ export default function PremiumScreen() {
   const [pkg, setPkg] = useState<PackageId>(() => defaultPackage(offerings));
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
   const [celebrate, setCelebrate] = useState(0);
+  const [celebrating, setCelebrating] = useState(false);
   const [focused, setFocused] = useState(true);
 
   // Barre d'état claire tant que la modale forêt est visible.
@@ -111,6 +112,7 @@ export default function PremiumScreen() {
         return;
       }
       setCelebrate((n) => n + 1);
+      setCelebrating(true);
       toast.show({
         title: res.state.isTrial ? 'Ton essai commence !' : 'Bienvenue dans Premium !',
         message: res.state.isTrial
@@ -134,6 +136,7 @@ export default function PremiumScreen() {
     if (res.status === 'success') {
       if (effectiveEntitlement(res.state) === 'premium') {
         setCelebrate((n) => n + 1);
+        setCelebrating(true);
         toast.show({ title: 'Abonnement restauré', message: 'Content de te revoir dans Premium.', tone: 'success' });
       } else {
         toast.show({ title: 'Aucun abonnement trouvé', message: 'Aucun achat Premium n’est lié à ce compte.', tone: 'neutral' });
@@ -175,7 +178,7 @@ export default function PremiumScreen() {
               {renewal ? (
                 <Animated.View
                   entering={staggerEntering(4, 70, 80)}
-                  style={[styles.statusCard, { marginTop: t.spacing.xl, padding: t.spacing.lg, borderRadius: t.radius.lg, backgroundColor: withAlpha(c.heroText, 0.1) }]}
+                  style={[styles.statusCard, { marginTop: t.spacing.xl, padding: t.spacing.lg, gap: t.spacing.md, borderRadius: t.radius.lg, backgroundColor: withAlpha(c.heroText, 0.1) }]}
                   testID="premium-status"
                 >
                   <ShieldCheck size={t.iconSize.md} color={c.accent} />
@@ -275,10 +278,16 @@ export default function PremiumScreen() {
         <IconButton icon={X} variant="hero" accessibilityLabel="Fermer" onPress={close} testID="premium-close" />
       </View>
 
-      {celebrate > 0 ? (
-        <View pointerEvents="none" style={styles.celebrate}>
-          <Celebration size={240} playKey={celebrate} accessibilityLabel="Bienvenue dans Premium" />
-        </View>
+      {celebrating ? (
+        <Animated.View pointerEvents="none" exiting={FadeOut.duration(t.motion.duration.base)} style={styles.celebrate}>
+          <Celebration
+            size={240}
+            playKey={celebrate}
+            haptic={false}
+            onDone={() => setTimeout(() => setCelebrating(false), 350)}
+            accessibilityLabel="Bienvenue dans Premium"
+          />
+        </Animated.View>
       ) : null}
     </View>
   );
@@ -309,7 +318,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   column: { width: '100%', alignSelf: 'center' },
   muted: { opacity: 0.78 },
-  statusCard: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  statusCard: { flexDirection: 'row', alignItems: 'center' },
   footer: { borderTopWidth: StyleSheet.hairlineWidth * 2 },
   link: { alignItems: 'center', justifyContent: 'center' },
   underline: { textDecorationLine: 'underline' },

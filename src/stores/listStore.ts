@@ -12,7 +12,12 @@
  *  - `addManualItem(label, quantity?, unit?, weekStart?)` → article (rayon deviné) ou null ;
  *  - `updateItem(itemId, patch, weekStart?)`, `removeItem(itemId, weekStart?)` ;
  *  - `clearChecked(weekStart?)` (retire les articles cochés), `uncheckAll(weekStart?)` ;
+ *  - `restoreItems(items, weekStart?)` : annulation d'un retrait (les articles reviennent pour de bon) ;
  *  - `reset()`.
+ * `dismissed: Record<weekStart, ListDismissals>` : articles du MENU retirés à la main
+ * (vider les cochés, glisser pour retirer). La liste régénérée ne les fait pas
+ * revenir — sauf si le planning en demande davantage (core › withoutDismissed).
+ * Mémoire locale à l'appareil (non synchronisée).
  * Sélecteurs purs : `groupItemsByAisle(items)` (rayons dans l'ordre de parcours,
  * non cochés d'abord), `listProgressOf(items)`, `emptyList(weekStart)`.
  * Hooks mémoïsés : `useActiveList()`, `useListSections(weekStart?)`, `useListProgress(weekStart?)`.
@@ -21,8 +26,18 @@ import { useMemo } from 'react';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-import type { Aisle, BaseUnit, MealPlan, ShoppingList, ShoppingListItem } from '@/core';
-import { buildShoppingList, createManualItem, groupByAisle, listProgress, mergeWithExisting, toggleItem as toggleCore } from '@/core';
+import type { Aisle, BaseUnit, ListDismissals, MealPlan, ShoppingList, ShoppingListItem } from '@/core';
+import {
+  buildShoppingList,
+  createManualItem,
+  forgetDismissals,
+  groupByAisle,
+  listProgress,
+  mergeWithExisting,
+  recordDismissals,
+  toggleItem as toggleCore,
+  withoutDismissed,
+} from '@/core';
 import { track } from '@/services/analytics';
 import { getCatalogSnapshot } from '@/services/catalog';
 
@@ -35,6 +50,8 @@ export type ListItemPatch = Partial<Pick<ShoppingListItem, 'label' | 'quantity' 
 export interface ListState {
   hydrated: boolean;
   lists: Record<string, ShoppingList>;
+  /** Semaine → articles du menu retirés à la main. */
+  dismissed: Record<string, ListDismissals>;
   regenerateFromPlan(plan: MealPlan): ShoppingList;
   toggleItem(itemId: string, weekStart?: string): void;
   setChecked(itemId: string, checked: boolean, weekStart?: string): void;
@@ -43,6 +60,7 @@ export interface ListState {
   removeItem(itemId: string, weekStart?: string): void;
   clearChecked(weekStart?: string): void;
   uncheckAll(weekStart?: string): void;
+  restoreItems(items: readonly ShoppingListItem[], weekStart?: string): void;
   setList(weekStart: string, list: ShoppingList): void;
   reset(): void;
 }
@@ -71,18 +89,36 @@ export const useListStore = create<ListState>()(
         set({ lists: { ...get().lists, [ws]: { ...list, items, updatedAt: new Date().toISOString() } } });
       };
 
+      /** Retire des articles d'une semaine et mémorise ceux du menu (ils ne reviendront pas à la régénération). */
+      const dismiss = (weekStart: string | undefined, shouldRemove: (item: ShoppingListItem) => boolean) => {
+        const ws = weekStart ?? activeWeek();
+        const list = get().lists[ws] ?? emptyList(ws);
+        const removed = list.items.filter(shouldRemove);
+        if (removed.length === 0) return;
+        set({
+          lists: {
+            ...get().lists,
+            [ws]: { ...list, items: list.items.filter((i) => !shouldRemove(i)), updatedAt: new Date().toISOString() },
+          },
+          dismissed: { ...get().dismissed, [ws]: recordDismissals(get().dismissed[ws] ?? {}, removed) },
+        });
+      };
+
       return {
         hydrated: false,
         lists: {},
+        dismissed: {},
 
         regenerateFromPlan(plan) {
           const catalog = getCatalogSnapshot();
           const { items: pantryItems, origins } = usePantryStore.getState();
           const pantry = pantryForWeekList(pantryItems, origins, plan.weekStart);
-          const fresh = buildShoppingList(plan, catalog.recipesById, catalog.ingredientsById, {
+          const generated = buildShoppingList(plan, catalog.recipesById, catalog.ingredientsById, {
             products: catalog.products,
             pantry,
           });
+          // Les articles du menu déjà retirés à la main ne reviennent pas (sauf besoin accru).
+          const fresh = withoutDismissed(generated, get().dismissed[plan.weekStart] ?? {});
           const previous = get().lists[plan.weekStart] ?? emptyList(plan.weekStart);
           const list: ShoppingList = {
             id: previous.id,
@@ -133,25 +169,35 @@ export const useListStore = create<ListState>()(
           );
         },
         removeItem(itemId, weekStart) {
-          mutate(weekStart, (items) => items.filter((i) => i.id !== itemId));
+          dismiss(weekStart, (i) => i.id === itemId);
         },
         clearChecked(weekStart) {
-          mutate(weekStart, (items) => items.filter((i) => !i.checked));
+          dismiss(weekStart, (i) => i.checked);
         },
         uncheckAll(weekStart) {
           mutate(weekStart, (items) => items.map((i) => (i.checked ? { ...i, checked: false } : i)));
+        },
+        restoreItems(restored, weekStart) {
+          const ws = weekStart ?? activeWeek();
+          const list = get().lists[ws] ?? emptyList(ws);
+          const ids = new Set(list.items.map((i) => i.id));
+          const back = restored.filter((i) => !ids.has(i.id));
+          set({
+            lists: { ...get().lists, [ws]: { ...list, items: [...list.items, ...back], updatedAt: new Date().toISOString() } },
+            dismissed: { ...get().dismissed, [ws]: forgetDismissals(get().dismissed[ws] ?? {}, restored) },
+          });
         },
         setList(weekStart, list) {
           set({ lists: { ...get().lists, [weekStart]: list } });
         },
         reset() {
-          set({ lists: {} });
+          set({ lists: {}, dismissed: {} });
         },
       };
     },
     {
       ...basePersistOptions<Partial<ListState>>('list'),
-      partialize: (s) => ({ lists: s.lists }),
+      partialize: (s) => ({ lists: s.lists, dismissed: s.dismissed }),
     },
   ),
 );

@@ -225,6 +225,42 @@ describe('listStore', () => {
     useListStore.getState().removeItem(manual!.id);
     expect(getList(ws).items.find((i) => i.id === manual!.id)).toBeUndefined();
   });
+
+  it('articles du menu vidés ou retirés : ils ne reviennent pas quand la liste est régénérée', async () => {
+    onboard();
+    await usePlanStore.getState().generate();
+    const ws = week();
+    const plan = getList(ws).items.filter((i) => i.source === 'plan');
+    expect(plan.length).toBeGreaterThan(2);
+    const [a, b, c] = plan;
+
+    // « Vider les articles cochés » puis le placard change (→ régénération de la liste).
+    useListStore.getState().toggleItem(a.id);
+    useListStore.getState().toggleItem(b.id);
+    useListStore.getState().clearChecked();
+    usePantryStore.getState().add({ label: 'Sel', quantity: 1000, unit: 'g' });
+    usePlanStore.getState().syncList(ws);
+    let ids = getList(ws).items.map((i) => i.id);
+    expect(ids).not.toContain(a.id);
+    expect(ids).not.toContain(b.id);
+
+    // Glisser pour retirer : même règle.
+    useListStore.getState().removeItem(c.id);
+    usePlanStore.getState().syncList(ws);
+    expect(getList(ws).items.map((i) => i.id)).not.toContain(c.id);
+
+    // Annuler : l'article revient, et reste après régénération.
+    useListStore.getState().restoreItems([a]);
+    usePlanStore.getState().syncList(ws);
+    ids = getList(ws).items.map((i) => i.id);
+    expect(ids).toContain(a.id);
+    expect(ids).not.toContain(b.id);
+    expect(ids.filter((id) => id === a.id)).toHaveLength(1);
+
+    // Tout remettre à zéro efface la mémoire des retraits.
+    useListStore.getState().reset();
+    expect(useListStore.getState().dismissed).toEqual({});
+  });
 });
 
 describe('basketStore', () => {
