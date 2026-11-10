@@ -35,6 +35,7 @@ export function initMonitoring(): void {
   if (initialized || !env.sentryDsn) return;
   initialized = true;
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- module natif chargé à la demande (absent sur le web / en démo)
     sentry = require('@sentry/react-native') as SentryModule;
     sentry.init({
       dsn: env.sentryDsn,

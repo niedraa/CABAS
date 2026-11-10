@@ -87,7 +87,9 @@ export async function shareExport(): Promise<string> {
     setTimeout(() => g.URL?.revokeObjectURL(url), 1000);
     return name;
   }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- module natif chargé à la demande (absent sur le web / en démo)
   const { File, Paths } = require('expo-file-system') as typeof import('expo-file-system');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- module natif chargé à la demande (absent sur le web / en démo)
   const Sharing = require('expo-sharing') as typeof import('expo-sharing');
   const file = new File(Paths.cache, name);
   file.create({ overwrite: true });

@@ -46,6 +46,7 @@ function notifications(): NotificationsModule | null {
     return mod;
   }
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- module natif chargé à la demande (absent sur le web / en démo)
     mod = require('expo-notifications') as NotificationsModule;
   } catch {
     mod = null;

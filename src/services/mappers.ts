@@ -218,15 +218,21 @@ export function rowToProfile(r: Row): UserProfile {
   };
 }
 
-/** Profil → colonnes modifiables de `profiles` (l'id est la clé, = auth.uid()). */
+/**
+ * Profil → colonnes modifiables de `profiles` (l'id est la clé, = auth.uid()).
+ * La base REFUSE allergies / régimes sans `health_data_consent_at` dans la même
+ * écriture : sans consentement, ils sont donc toujours envoyés vides (c'est aussi
+ * la forme exigée pour un retrait de consentement).
+ */
 export function profileToRow(p: UserProfile, onboardingCompletedAt: string | null): Row {
+  const consent = p.healthDataConsentAt;
   return {
     id: p.id,
     display_name: p.displayName.slice(0, 80),
     adults: p.household.adults,
     children: p.household.children,
-    diets: p.diets,
-    allergens: p.allergens,
+    diets: consent ? p.diets : [],
+    allergens: consent ? p.allergens : [],
     disliked_ingredient_ids: p.dislikedIngredientIds,
     favorite_cuisines: p.favoriteCuisines,
     weekly_budget_cents: p.weeklyBudgetCents,
@@ -235,7 +241,7 @@ export function profileToRow(p: UserProfile, onboardingCompletedAt: string | nul
     equipment: p.equipment,
     preferred_store_ids: p.preferredStoreIds,
     meal_slots: p.mealSlots,
-    health_data_consent_at: p.healthDataConsentAt,
+    health_data_consent_at: consent,
     onboarding_completed_at: onboardingCompletedAt,
   };
 }

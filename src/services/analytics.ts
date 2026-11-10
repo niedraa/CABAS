@@ -80,6 +80,7 @@ let pendingIdentify: string | null = null;
 function createClient(): PostHog | null {
   if (!env.posthogKey) return null;
   try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- module natif chargé à la demande (absent sur le web / en démo)
     const mod = require('posthog-react-native') as typeof import('posthog-react-native');
     return new mod.PostHog(env.posthogKey, {
       host: env.posthogHost,

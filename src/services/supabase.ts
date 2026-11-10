@@ -20,6 +20,7 @@ let polyfilled = false;
 function ensureUrlPolyfill(): void {
   if (polyfilled || Platform.OS === 'web') return;
   polyfilled = true;
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- module natif chargé à la demande (absent sur le web / en démo)
   require('react-native-url-polyfill/auto');
 }
 

@@ -331,6 +331,7 @@ export function createSimulatedPurchases(store: SimulatedStore = createSimulated
 }
 
 function createNativePurchases(key: string): PurchasesService {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- module natif chargé à la demande (absent sur le web / en démo)
   const mod: PurchasesModule = require('react-native-purchases');
   const Purchases = mod.default;
   let configuredFor: string | null = null;
@@ -355,11 +356,11 @@ function createNativePurchases(key: string): PurchasesService {
     isSimulated: () => false,
     async configure(userId) {
       if (configuredFor === userId) return;
-      if (configuredFor === null) {
+      if (configuredFor === null && !(await Purchases.isConfigured())) {
         Purchases.configure({ apiKey: key, appUserID: userId });
-      } else {
-        await Purchases.logIn(userId);
       }
+      // app_user_id RevenueCat = id utilisateur Supabase (le webhook s'appuie dessus).
+      if ((await Purchases.getAppUserID()) !== userId) await Purchases.logIn(userId);
       configuredFor = userId;
     },
     async getOfferings() {

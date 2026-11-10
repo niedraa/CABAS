@@ -26,7 +26,7 @@ import { buildShoppingList, createManualItem, groupByAisle, listProgress, mergeW
 import { track } from '@/services/analytics';
 import { getCatalogSnapshot } from '@/services/catalog';
 
-import { usePantryStore } from './pantryStore';
+import { pantryForWeekList, usePantryStore } from './pantryStore';
 import { basePersistOptions, registerPersistedStore } from './registry';
 import { activeWeek, useWeekStore } from './weekStore';
 
@@ -77,7 +77,8 @@ export const useListStore = create<ListState>()(
 
         regenerateFromPlan(plan) {
           const catalog = getCatalogSnapshot();
-          const pantry = usePantryStore.getState().items;
+          const { items: pantryItems, origins } = usePantryStore.getState();
+          const pantry = pantryForWeekList(pantryItems, origins, plan.weekStart);
           const fresh = buildShoppingList(plan, catalog.recipesById, catalog.ingredientsById, {
             products: catalog.products,
             pantry,

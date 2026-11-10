@@ -6,13 +6,17 @@
  *  - `add({ label, quantity, unit, ingredientId?, expiresAt? })` → PantryItem
  *    (même ingrédient / même libellé et même unité : les quantités s'additionnent) ;
  *  - `update(id, patch)`, `remove(id)`, `consume(id, quantity)` (supprimé à zéro) ;
- *  - `addFromShopping(items)` : après les courses, le SURPLUS des articles cochés
- *    (paquet entamé) rejoint le placard (core › pantryItemsFromShopping) — voir
- *    aussi `addFromCheckedList()` dans src/stores/index.ts qui lit la liste active ;
+ *  - `addFromShopping(items, weekStart?)` → nombre d'articles : après les courses, le
+ *    SURPLUS des articles cochés (paquet entamé) rejoint le placard
+ *    (core › pantryItemsFromShopping) — voir aussi `addFromCheckedList()` dans
+ *    src/stores/index.ts qui lit la liste active ;
  *  - `setItems(items)` (sync), `reset()`.
+ * `origins` (id placard → semaine de la liste d'origine) : le surplus d'une liste
+ * n'est PAS redéduit de cette même liste (il serait compté deux fois).
  * La liste de courses déduit automatiquement le placard (planStore se charge
  * de la régénérer quand le placard change).
- * Sélecteurs purs : `pantryIngredientIds(items)`, `expiringItems(items, now?, days?)`.
+ * Sélecteurs purs : `pantryIngredientIds(items)`, `expiringItems(items, now?, days?)`,
+ * `pantryForWeekList(items, origins, weekStart)`.
  * Hooks : `useLeftoverSuggestions(limit?)` (recettes sûres qui écoulent les restes),
  * `useExpiringSoon(days?)`.
  */
@@ -39,11 +43,13 @@ export interface PantryInput {
 export interface PantryState {
   hydrated: boolean;
   items: PantryItem[];
+  /** Id d'article du placard → semaine (lundi) de la liste dont il provient. */
+  origins: Record<string, string>;
   add(input: PantryInput): PantryItem | null;
   update(id: string, patch: Partial<Omit<PantryItem, 'id' | 'addedAt'>>): void;
   remove(id: string): void;
   consume(id: string, quantity: number): void;
-  addFromShopping(items: readonly ShoppingListItem[]): number;
+  addFromShopping(items: readonly ShoppingListItem[], weekStart?: string): number;
   setItems(items: PantryItem[]): void;
   reset(): void;
 }
@@ -60,6 +66,7 @@ export const usePantryStore = create<PantryState>()(
     (set, get) => ({
       hydrated: false,
       items: [],
+      origins: {},
       add(input) {
         const label = input.label.trim();
         if (!label || !(input.quantity > 0)) return null;
@@ -90,30 +97,39 @@ export const usePantryStore = create<PantryState>()(
         });
       },
       remove(id) {
-        set({ items: get().items.filter((p) => p.id !== id) });
+        const { [id]: _gone, ...origins } = get().origins;
+        set({ items: get().items.filter((p) => p.id !== id), origins });
       },
       consume(id, quantity) {
         if (!(quantity > 0)) return;
         set({ items: consumePantry(get().items, id, quantity) });
       },
-      addFromShopping(items) {
+      addFromShopping(items, weekStart) {
         const incoming = pantryItemsFromShopping(items, new Date().toISOString());
         if (incoming.length === 0) return 0;
         // Ids stables (`pantry_<itemId>`) : un second passage remplace au lieu de doubler.
         const ids = new Set(incoming.map((i) => i.id));
-        set({ items: [...get().items.filter((p) => !ids.has(p.id)), ...incoming] });
+        const origins = { ...get().origins };
+        for (const p of incoming) {
+          if (weekStart) origins[p.id] = weekStart;
+          else delete origins[p.id];
+        }
+        set({ items: [...get().items.filter((p) => !ids.has(p.id)), ...incoming], origins });
+        track('pantry_item_added', { source: 'shopping', count: incoming.length });
         return incoming.length;
       },
       setItems(items) {
-        set({ items: items.slice() });
+        const ids = new Set(items.map((p) => p.id));
+        const origins = Object.fromEntries(Object.entries(get().origins).filter(([id]) => ids.has(id)));
+        set({ items: items.slice(), origins });
       },
       reset() {
-        set({ items: [] });
+        set({ items: [], origins: {} });
       },
     }),
     {
       ...basePersistOptions<Partial<PantryState>>('pantry'),
-      partialize: (s) => ({ items: s.items }),
+      partialize: (s) => ({ items: s.items, origins: s.origins }),
     },
   ),
 );
@@ -125,6 +141,15 @@ registerPersistedStore('pantry', usePantryStore);
 /** Ingrédients présents (bonus anti-gaspi du moteur de repas). */
 export function pantryIngredientIds(items: readonly PantryItem[]): string[] {
   return Array.from(new Set(items.filter((p) => p.ingredientId && p.quantity > 0).map((p) => p.ingredientId as string)));
+}
+
+/** Placard à déduire de la liste d'une semaine (sans le surplus issu de cette même liste). */
+export function pantryForWeekList(
+  items: readonly PantryItem[],
+  origins: Readonly<Record<string, string>>,
+  weekStart: string,
+): PantryItem[] {
+  return items.filter((p) => origins[p.id] !== weekStart);
 }
 
 export function expiringItems(items: readonly PantryItem[], nowIso = new Date().toISOString(), days = 3): PantryItem[] {
