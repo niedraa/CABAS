@@ -323,7 +323,7 @@ export default function WeekScreen() {
           <SegmentedControl<WeekKey>
             options={[
               { value: 'current', label: 'Cette semaine' },
-              { value: 'next', label: 'Semaine prochaine' },
+              { value: 'next', label: 'La prochaine' },
             ]}
             value={weekKey}
             onChange={switchWeek}
