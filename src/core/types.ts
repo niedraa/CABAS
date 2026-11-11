@@ -111,7 +111,26 @@ export type BaseUnit = 'g' | 'ml' | 'piece';
 
 export type MealType = 'dejeuner' | 'diner';
 
-export type StoreChain = 'leclerc' | 'carrefour' | 'auchan' | 'intermarche' | 'lidl' | 'monoprix';
+/**
+ * Enseignes couvertes (un « magasin » national par enseigne : `Store.id === chain`).
+ * L'ordre est celui d'affichage par défaut (hypers, puis discount, puis proximité).
+ */
+export const STORE_CHAINS = [
+  'leclerc',
+  'carrefour',
+  'auchan',
+  'intermarche',
+  'superu',
+  'lidl',
+  'aldi',
+  'netto',
+  'monoprix',
+  'franprix',
+] as const;
+export type StoreChain = (typeof STORE_CHAINS)[number];
+
+/** Mode de retrait proposé par l'enseigne (`none` : courses en magasin uniquement). */
+export type PickupMode = 'drive' | 'click_collect' | 'none';
 
 // ─── Profil ──────────────────────────────────────────────────────────────────
 
@@ -222,54 +241,136 @@ export interface Recipe {
   costLevel: 1 | 2 | 3;
 }
 
+/**
+ * Une enseigne, vue comme un magasin « national » : ses prix sont la médiane
+ * des relevés de tous ses magasins français (voir `CatalogMeta`).
+ * Frais, minimums et services sont INDICATIFS (variables selon le magasin).
+ */
 export interface Store {
   id: string;
   chain: StoreChain;
+  /** Nom affiché de l'enseigne (« E.Leclerc », « Super U »…). */
   name: string;
+  /** Zone couverte par les prix (« France » pour un prix national d'enseigne). */
   city: string;
-  /** Frais de retrait drive / livraison, centimes. */
+  /** Retrait : drive, click & collect, ou aucun (courses en magasin). */
+  pickup: PickupMode;
+  /** Frais de retrait (drive / click & collect), centimes ; 0 si gratuit ou sans objet. */
   driveFeeCents: number;
+  /** Frais de livraison indicatifs, centimes ; `null` = pas de livraison. */
   deliveryFeeCents: number | null;
-  /** Montant minimum de commande drive, centimes. */
+  /** Montant minimum de commande en ligne, centimes (0 = aucun). */
   minOrderCents: number;
-  /** Gabarit d'URL de recherche drive — `{query}` est remplacé. */
+  /**
+   * Gabarit d'URL de recherche produit — `{query}` est remplacé. Sans `{query}`,
+   * l'URL est ouverte telle quelle (enseigne sans recherche adressable).
+   */
   searchUrlTemplate: string;
-  /** URL d'accueil du drive de l'enseigne. */
+  /** URL d'accueil des courses en ligne de l'enseigne (ou du site). */
   driveUrl: string;
 }
 
 export interface Product {
   id: string;
-  /** Code-barres EAN-13 (Open Food Facts). */
-  ean: string;
+  /**
+   * Code-barres réel (GTIN-13 ou GTIN-8, clé vérifiée) du produit Open Food
+   * Facts. Absent pour un produit vendu en vrac (voir `offCategoryTag`).
+   */
+  ean?: string;
+  /**
+   * Vrac sans code-barres : catégorie Open Food Facts des relevés Open Prices
+   * « au kilo » ou « à la pièce » (ex. `en:tomatoes`).
+   */
+  offCategoryTag?: string;
   name: string;
   brand: string;
   /** Marque distributeur (MDD) — alternative « moins chère ». */
   isStoreBrand: boolean;
-  /** Enseigne propriétaire si MDD (le produit n'existe que chez elle). */
-  storeChain?: StoreChain;
+  /**
+   * Enseignes qui vendent cette MDD (une MDD des Mousquetaires est vendue chez
+   * Intermarché ET Netto sous le même code-barres). Vide / absent si marque nationale.
+   */
+  storeChains?: StoreChain[];
   ingredientId: string;
   /** Contenance du conditionnement, exprimée dans `packUnit`. */
   packSize: number;
   packUnit: BaseUnit;
   nutriScore?: 'A' | 'B' | 'C' | 'D' | 'E';
+  /**
+   * Allergènes du produit : ceux de l'ingrédient ∪ ceux déclarés par Open Food
+   * Facts (principe de prudence : jamais moins que l'ingrédient).
+   */
   allergens: Allergen[];
   /** Produit bio. */
   organic?: boolean;
 }
 
-export type PriceSource = 'open_prices' | 'partner' | 'collect' | 'demo';
+/**
+ * Provenance d'un prix :
+ * - `open_prices` : médiane de relevés réels en magasin (Open Prices, ODbL) ;
+ * - `estimate` : estimation calculée (aucun relevé pour ce produit dans cette
+ *   enseigne) — TOUJOURS signalée comme telle à l'utilisateur ;
+ * - `partner` / `collect` : flux futurs ; `demo` : ancien catalogue fictif (caches).
+ */
+export type PriceSource = 'open_prices' | 'partner' | 'collect' | 'estimate' | 'demo';
+
+/** Méthode d'une estimation (voir `src/core/openPrices.ts`). */
+export type EstimateMethod =
+  /** Prix relevé ailleurs × indice de prix de l'enseigne. */
+  | 'chain_index'
+  /** Prix unitaire d'une MDD équivalente relevée ailleurs, ramené à l'enseigne. */
+  | 'mdd_ratio'
+  /** Médiane nationale de la catégorie (vrac) × indice de l'enseigne. */
+  | 'category_median';
 
 export interface Price {
   productId: string;
   storeId: string;
   priceCents: number;
-  /** Prix promo en cours, s'il existe. */
+  /** Prix promo en cours, s'il existe (jamais sur une estimation). */
   promoPriceCents?: number;
   promoLabel?: string;
   promoUntil?: string;
+  /**
+   * `open_prices` : date du relevé le plus récent pris en compte (ISO) ;
+   * `estimate` : date de l'instantané qui a servi au calcul.
+   */
   updatedAt: string;
   source: PriceSource;
+  /** Nombre de relevés agrégés (médiane) — `open_prices` uniquement. */
+  observationCount?: number;
+  /** Date (YYYY-MM-DD) du plus ancien relevé pris en compte — `open_prices` uniquement. */
+  observedFrom?: string;
+  /** Méthode d'estimation — `estimate` uniquement. */
+  estimateMethod?: EstimateMethod;
+  /** Nombre de prix réels sur lesquels repose l'estimation — `estimate` uniquement. */
+  estimateBasisCount?: number;
+}
+
+/** Indice de prix d'une enseigne (Leclerc = 1). */
+export interface ChainPriceIndex {
+  value: number;
+  /** `measured` : calculé sur l'instantané ; `press` : comparatif public (faute de données). */
+  basis: 'measured' | 'press';
+  /** Produits communs ayant servi au calcul (`measured`). */
+  commonProducts: number;
+}
+
+/** Description de l'instantané de données ouvertes d'où vient le catalogue. */
+export interface CatalogMeta {
+  /** Date de l'instantané (ISO). */
+  snapshotAt: string;
+  /** Fenêtre des relevés retenus (YYYY-MM-DD). */
+  pricesFrom: string;
+  pricesTo: string;
+  /** Nombre de prix relevés / estimés dans le catalogue. */
+  observedPrices: number;
+  estimatedPrices: number;
+  chainIndex: Record<StoreChain, ChainPriceIndex>;
+  /** Couverture par enseigne (nombre de prix relevés / estimés). */
+  coverage: Record<StoreChain, { observed: number; estimated: number }>;
+  /** Sources et licences à créditer. */
+  sources: { name: string; url: string; license: string }[];
 }
 
 // ─── Planning ────────────────────────────────────────────────────────────────
