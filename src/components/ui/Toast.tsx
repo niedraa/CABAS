@@ -15,6 +15,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Platform, StyleSheet, View } from 'react-native';
 import Animated, { FadeInUp, FadeOutUp, LinearTransition } from 'react-native-reanimated';
+import { initialWindowMetrics } from 'react-native-safe-area-context';
 import { FullWindowOverlay } from 'react-native-screens';
 import { CircleAlert, CircleCheck, Info, Sparkles, type LucideIcon } from 'lucide-react-native';
 
@@ -161,10 +162,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 function ToastViewport({ items, onHide }: { items: ToastItem[]; onHide: (id: number) => void }) {
   const t = useTheme();
   const insets = useSafeInsets();
+  // iOS : la FullWindowOverlay est en coordonnées de la FENÊTRE, alors qu'un
+  // écran présenté en modal (paywall, commande) fournit une marge haute de 0.
+  // On prend donc au moins la marge de la fenêtre (app en portrait).
+  const top = Platform.OS === 'ios' ? Math.max(insets.top, initialWindowMetrics?.insets.top ?? 0) : insets.top;
   const viewport = (
     <View
       pointerEvents="box-none"
-      style={[styles.viewport, { top: insets.top + t.spacing.sm, zIndex: t.zIndex.toast }]}
+      style={[styles.viewport, { top: top + t.spacing.sm, zIndex: t.zIndex.toast }]}
     >
       {items.map((item) => (
         <ToastCard key={item.id} item={item} onHide={() => onHide(item.id)} />

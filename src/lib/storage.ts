@@ -51,22 +51,39 @@ export function storageKey(name: string): string {
  * écriture interrompue) ou si AsyncStorage échoue deux fois de suite, le store
  * démarre sur son état initial. Sinon `persist` ne marquerait jamais le store
  * comme relu et l'app resterait bloquée sur l'écran de lancement.
+ *
+ * Échec d'entrée/sortie (données sans doute intactes) : la clé passe en
+ * lecture seule pour la session (l'app tourne en mémoire) afin de ne jamais
+ * écraser le disque avec l'état initial. JSON illisible : on repart de zéro.
  */
 export function persistStorage<S>(): PersistStorage<S> {
   const base = createJSONStorage<S>(() => AsyncStorage) as PersistStorage<S>;
+  const readFailed = new Set<string>();
   return {
     ...base,
     getItem: async (name) => {
+      let ioError = false;
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
-          return await base.getItem(name);
+          const value = await base.getItem(name);
+          readFailed.delete(name);
+          return value;
         } catch (err) {
-          // JSON illisible : inutile de relire.
-          if (err instanceof SyntaxError) break;
+          // JSON illisible : inutile de relire, et rien à préserver.
+          if (err instanceof SyntaxError) {
+            ioError = false;
+            break;
+          }
+          ioError = true;
         }
       }
+      if (ioError) readFailed.add(name);
       if (__DEV__) console.warn(`Stockage : « ${name} » illisible, état initial utilisé.`);
       return null;
+    },
+    setItem: (name, value) => {
+      if (readFailed.has(name)) return;
+      return base.setItem(name, value);
     },
   };
 }

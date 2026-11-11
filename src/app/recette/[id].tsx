@@ -56,11 +56,24 @@ import { boxShadow, useTheme } from '@/theme';
 
 const HERO_H = 300;
 
-/** Minuteurs du mode cuisine → notifications locales (sans effet sur le web). */
-const TIMER_ALERTS: TimerAlerts = {
-  schedule: (key, endsAt, content) => void scheduleCookingTimerAlert(key, new Date(endsAt), content),
-  cancel: (key) => void cancelCookingTimerAlert(key),
-};
+/**
+ * Minuteurs du mode cuisine → notifications locales (sans effet sur le web).
+ * Toucher la notification rouvre la recette (sinon `data.url` vaut « / »).
+ * Un objet stable par recette : CookingMode peut s'en servir en dépendance.
+ */
+const timerAlertsByRecipe = new Map<string, TimerAlerts>();
+function timerAlertsFor(recipeId: string): TimerAlerts {
+  let alerts = timerAlertsByRecipe.get(recipeId);
+  if (!alerts) {
+    const url = `/recette/${encodeURIComponent(recipeId)}`;
+    alerts = {
+      schedule: (key, endsAt, content) => void scheduleCookingTimerAlert(key, new Date(endsAt), { ...content, url }),
+      cancel: (key) => void cancelCookingTimerAlert(key),
+    };
+    timerAlertsByRecipe.set(recipeId, alerts);
+  }
+  return alerts;
+}
 
 export default function RecipeScreen() {
   const t = useTheme();
@@ -349,7 +362,7 @@ export default function RecipeScreen() {
         steps={recipe.steps}
         initialStep={cooking.step}
         sessionKey={recipe.id}
-        timerAlerts={TIMER_ALERTS}
+        timerAlerts={timerAlertsFor(recipe.id)}
         onClose={() => setCooking((s) => ({ ...s, open: false }))}
       />
     </View>
