@@ -3,10 +3,10 @@ name: Démo web (GitHub Pages)
 # Publie la version web de Cabas (mode démo : catalogue embarqué, aucun
 # service externe) sur https://<propriétaire>.github.io/<dépôt>/.
 # Prérequis (une fois) : Settings → Pages → Source « GitHub Actions ».
+# Lancement manuel (onglet Actions → « Run workflow ») : tant que Pages n'est
+# pas activé, un déclenchement à chaque push échouerait à l'étape Publier.
 
 on:
-  push:
-    branches: [main, claude/eager-goldberg-sdops9]
   workflow_dispatch:
 
 permissions:
