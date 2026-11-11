@@ -60,7 +60,7 @@ src/components/  Kit UI (ui/), marque (brand/), composants métier (feature/)
 src/stores/      État client (zustand + persistance → hors-ligne)
 src/services/    Supabase, RevenueCat, notifications, analytique, RGPD
 src/core/        Logique métier PURE, partagée avec les Edge Functions
-src/data/        Catalogue de démonstration
+src/data/        Catalogue : recettes, ingrédients, produits et prix réels (données ouvertes)
 src/theme/       Tokens de la direction artistique
 supabase/        Migrations Postgres + RLS, Edge Functions Deno, seed
 e2e/             Tests de bout en bout (Playwright)

@@ -1,5 +1,5 @@
 /**
- * Base de recettes du catalogue de démonstration Cabas.
+ * Base de recettes du catalogue Cabas.
  *
  * Cuisine du quotidien, ingrédients accessibles en supermarché, quantités
  * écrites pour `servings` portions dans des unités naturelles (g, ml, cs,

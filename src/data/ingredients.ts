@@ -1,5 +1,5 @@
 /**
- * Référentiel des ingrédients du catalogue de démonstration Cabas.
+ * Référentiel des ingrédients du catalogue Cabas.
  *
  * Source de vérité pour :
  *  - les ALLERGÈNES (14 allergènes réglementaires UE, règlement INCO 1169/2011) ;

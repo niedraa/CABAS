@@ -70,6 +70,13 @@ async function main() {
       // Presse-papiers (copie de la liste) autorisé.
       await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: baseUrl });
       await context.clock.install({ time: NOW });
+      // Tests hermétiques : tout ce qui sort de l'app (site du drive ouvert en
+      // popup, fiche Open Food Facts…) reçoit une page vide locale. L'URL
+      // demandée reste vérifiable, sans dépendre du réseau ni du site tiers.
+      await context.route(
+        (url) => !url.href.startsWith(baseUrl) && /^https?:/.test(url.protocol),
+        (route) => route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>Cabas e2e</title>' }),
+      );
       const page = await context.newPage();
       const h = createHarness({ page, baseUrl, dir, config, now: NOW });
       console.log(`\n■ ${config.name}`);
