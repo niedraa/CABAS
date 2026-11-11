@@ -1,5 +1,13 @@
 import { assert, assertEquals, assertFalse } from '@std/assert';
-import type { BasketPlan, Entitlement, ShoppingListItem } from '../_shared/core/index.ts';
+import type {
+  Allergen,
+  BasketPlan,
+  CatalogMeta,
+  Entitlement,
+  Price,
+  Product,
+  ShoppingListItem,
+} from '../_shared/core/index.ts';
 import { HttpError } from '../_shared/http.ts';
 import { silentLogger } from '../_shared/logger.ts';
 import { INGREDIENTS, PRICES, PRODUCTS, STORES } from '../_shared/testing/fixtures.ts';
@@ -53,7 +61,17 @@ const ITEMS: ShoppingListItem[] = [
   },
 ];
 
-function fakeRepo(opts: { entitlement?: Entitlement; preferred?: string[]; saveFails?: boolean } = {}) {
+function fakeRepo(
+  opts: {
+    entitlement?: Entitlement;
+    preferred?: string[];
+    saveFails?: boolean;
+    prices?: Price[];
+    products?: Product[];
+    allergens?: Allergen[] | 'error';
+    meta?: CatalogMeta | null | 'error';
+  } = {},
+) {
   const saved: { plan: BasketPlan; listId?: string }[] = [];
   const offerCalls: string[][] = [];
   const repo: BasketRepository = {
@@ -62,10 +80,16 @@ function fakeRepo(opts: { entitlement?: Entitlement; preferred?: string[]; saveF
     loadStores: () => Promise.resolve(STORES),
     loadOffers(ids) {
       offerCalls.push(ids);
-      const products = PRODUCTS.filter((p) => ids.includes(p.ingredientId));
+      const products = (opts.products ?? PRODUCTS).filter((p) => ids.includes(p.ingredientId));
       const pids = new Set(products.map((p) => p.id));
-      return Promise.resolve({ products, prices: PRICES.filter((p) => pids.has(p.productId)) });
+      return Promise.resolve({ products, prices: (opts.prices ?? PRICES).filter((p) => pids.has(p.productId)) });
     },
+    loadAllergens: () =>
+      opts.allergens === 'error' ? Promise.reject(new Error('db')) : Promise.resolve(opts.allergens ?? []),
+    loadCatalogMeta: () =>
+      opts.meta === 'error'
+        ? Promise.reject(new Error('db'))
+        : Promise.resolve(opts.meta === undefined ? null : opts.meta),
     loadIngredients: (ids) => Promise.resolve(INGREDIENTS.filter((i) => ids.includes(i.id))),
     saveBasketPlan(plan, listId) {
       if (opts.saveFails) return Promise.reject(new Error('db'));
@@ -109,6 +133,59 @@ Deno.test('comparaison : chaque article comparé dans ≥ 3 enseignes, prix au k
   assertEquals(byId.sacs.offers.length, 0);
   assertEquals(data.meta.itemsWithoutOffer, ['sacs']);
   assertEquals(data.meta.storesCompared, 4);
+});
+
+Deno.test("provenance : prix estimés comptés (panier et comparaison), date de l'instantané", async () => {
+  // Tous les prix Lidl deviennent des estimations (enseigne sans relevé).
+  const prices: Price[] = PRICES.map((p) =>
+    p.storeId === 'lidl'
+      ? {
+        ...p,
+        source: 'estimate',
+        estimateMethod: 'chain_index',
+        estimateBasisCount: 4,
+        updatedAt: '2026-11-11T00:00:00.000Z',
+      }
+      : { ...p, source: 'open_prices', observationCount: 3, observedFrom: '2026-06-01' }
+  );
+  const meta = { snapshotAt: '2026-11-11' } as CatalogMeta;
+  const { repo } = fakeRepo({ prices, meta });
+  const { data } = await call(repo, { items: ITEMS, mode: 'single_store', storeIds: ['lidl'] });
+  assertEquals(data.plan.parts[0].storeId, 'lidl');
+  assertEquals(data.meta.pricing.estimatedPrices, data.plan.parts[0].lines.length);
+  assertEquals(data.meta.pricing.observedPrices, 0);
+  assertEquals(data.meta.pricing.estimatedItemIds, ['oignon', 'riz', 'tomate']);
+  assertEquals(data.meta.pricing.estimatedOffers, 3, 'une offre Lidl estimée par article');
+  assertEquals(data.meta.pricing.snapshotAt, '2026-11-11');
+  const leclerc = await call(repo, { items: ITEMS, mode: 'single_store', storeIds: ['leclerc'] });
+  assertEquals(leclerc.data.meta.pricing.estimatedPrices, 0);
+  assertEquals(leclerc.data.meta.pricing.observedPrices, 3);
+  // Méta indisponible : le panier est calculé quand même.
+  const { repo: failing } = fakeRepo({ prices, meta: 'error' });
+  const r = await call(failing, { items: ITEMS, mode: 'single_store' });
+  assertEquals(r.status, 200);
+  assertFalse('snapshotAt' in r.data.meta.pricing);
+});
+
+Deno.test("allergènes : un produit contenant un allergène déclaré n'est jamais proposé", async () => {
+  // Open Food Facts déclare du gluten (traces) sur la MDD Lidl, la moins chère.
+  const products = PRODUCTS.map((p) => (p.id === 'prd_riz_mdd_lidl' ? { ...p, allergens: ['gluten' as Allergen] } : p));
+  const safe = await call(fakeRepo({ products, allergens: ['gluten'] }).repo, { items: ITEMS, mode: 'cheapest' });
+  assertEquals(safe.status, 200);
+  const riz = safe.data.comparisons.find((c: { itemId: string }) => c.itemId === 'riz');
+  assertFalse(riz.offers.some((o: { productId: string }) => o.productId === 'prd_riz_mdd_lidl'));
+  assertEquals(riz.cheaperAlternative, undefined);
+  assertFalse(JSON.stringify(safe.data.plan).includes('prd_riz_mdd_lidl'));
+  assertEquals(safe.data.meta.allergenExcludedProducts, 1);
+  // Sans allergie déclarée : la MDD redevient la meilleure offre.
+  const open = await call(fakeRepo({ products, allergens: [] }).repo, { items: ITEMS, mode: 'cheapest' });
+  assertEquals(
+    open.data.comparisons.find((c: { itemId: string }) => c.itemId === 'riz').best.productId,
+    'prd_riz_mdd_lidl',
+  );
+  // Profil illisible : erreur plutôt qu'une offre non filtrée.
+  const failing = await call(fakeRepo({ products, allergens: 'error' }).repo, { items: ITEMS, mode: 'cheapest' });
+  assertEquals(failing.status, 500);
 });
 
 Deno.test('premium : « le moins cher » multi-magasins', async () => {

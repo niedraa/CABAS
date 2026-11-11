@@ -122,6 +122,47 @@ Géométrie (viewBox 120) : `src/components/brand/basket.ts`, recopiée dans
 Couleurs des **enseignes** (`storeColors`) et des **rayons** (`aisleColors`) :
 réservées aux monogrammes et aux pastilles de rayon, jamais à l'interface.
 
+#### Monogrammes des 10 enseignes
+
+Un repère de couleur et d'initiales, **jamais un logo** (droit des marques).
+Initiales uniques ; texte / fond ≥ 4,5:1 ; un fond clair porte un filet
+(`border`) pour rester visible sur le papier. Vérifié par
+`src/theme/__tests__/contrast.test.ts` (exhaustivité contre `STORE_CHAINS`)
+et `src/components/ui/__tests__/display.test.tsx` (initiales, noms).
+
+| Famille | Enseigne | Initiales | Fond | Texte | Filet |
+|---|---|---|---|---|---|
+| Hypers & supers | E.Leclerc | `L` | `#0058A6` | `#FFFFFF` | — |
+| | Carrefour | `C` | `#E3ECF8` | `#B3121E` | `#8FA9D6` |
+| | Auchan | `A` | `#C8102E` | `#FFFFFF` | — |
+| | Intermarché | `I` | `#1E1E1E` | `#FF6B5E` | — |
+| | Super U | `U` | `#38308C` | `#FFFFFF` | — |
+| Discount | Lidl | `Li` | `#FFE500` | `#0050AA` | `#C9B200` |
+| | Aldi | `Al` | `#0B1F4D` | `#FFB21E` | — |
+| | Netto | `N` | `#E09B00` | `#1A1A1A` | — |
+| Proximité | Monoprix | `M` | `#F2EEE6` | `#1A1A1A` | `#BFB5A3` |
+| | Franprix | `F` | `#C2410C` | `#FFFFFF` | — |
+| (inconnue) | 1re lettre du nom | | forêt 600 | lin | — |
+
+Nom d'une enseigne dans l'interface : **un seul helper**, `storeDisplayName`
+(`src/core/labels.ts`) — nom officiel dans les titres et listes (« E.Leclerc »),
+`{ short: true }` dans une phrase (« Commander chez Leclerc »).
+
+#### Provenance des prix
+
+Les prix viennent de relevés en magasin (Open Prices) ; faute de relevé, ils
+sont **estimés** et toujours signalés :
+
+- relevé : légende `caption` `textSecondary` « Relevé le 5 nov. · 3 relevés » ;
+- estimé : `Badge` « Estimé » (ton `neutral`) + la méthode en légende
+  (« D'après les prix relevés ailleurs ») ; au panier et à la commande
+  « dont 2 prix estimés », dans le texte copié « (prix estimé) » ;
+- lecteurs d'écran : « prix relevé en magasin le 5 novembre, 3 relevés » /
+  « prix estimé, faute de relevé dans cette enseigne » ;
+- « Pas de prix connu chez X » (jamais « pas en rayon » : on ne sait pas) ;
+- Nutri-Score en lettre texte, jamais le logo officiel ; fiche produit :
+  lien vers Open Food Facts (bouton ⓘ, ≥ 44 pt).
+
 ### 4.3 Contrastes (WCAG 2.1)
 
 Tous les couples texte/fond utilisés sont **AA** (≥ 4,5:1), sauf `textTertiary`
@@ -221,7 +262,7 @@ prix en `<PriceTag>` / `<AnimatedPrice>` (centimes surélevés au-delà de 26 pt
 | **Cercles doux superposés** (forêt 600 sur forêt 800, petite pastille moutarde) | `CircleDecor`, `Card variant="hero"` | Bandeaux héros, onboarding, paywall, icône d'app. Toujours débordant d'un coin, jamais centré. |
 | **Ticket dentelé** | `ReceiptEdge`, `ReceiptCard`, `Divider variant="dashed"`, `KeyValueRow leader` | Tout ce qui parle d'argent : récapitulatif du panier, commande, détail de prix. |
 | **Panier** | `BasketMark`, `EmptyBasket`, `Celebration` | Marque, états vides, réussite. |
-| **Monogrammes d'enseigne** | `StoreBadge`, `StoreBadgeStack` | Cercle aux couleurs de la chaîne + initiale(s) (`L`, `C`, `A`, `I`, `Li`, `M`). **Aucun logo officiel.** |
+| **Monogrammes d'enseigne** | `StoreBadge`, `StoreBadgeStack` | Cercle aux couleurs de la chaîne + initiale(s) (`L`, `C`, `A`, `I`, `U`, `Li`, `Al`, `N`, `M`, `F` — voir § 4). **Aucun logo officiel.** La pile se lit comme une image : « Enseignes : E.Leclerc, Lidl et Aldi » (ou un libellé de contexte : « 4 enseignes comparées »). |
 | **Emoji sur pastel** | `RecipeThumb`, `Avatar` | Vignettes de recettes / produits : pastel déterministe dérivé du nom (8 pastels, version sombre dédiée). |
 
 ---

@@ -12,3 +12,4 @@ export { BasketSkeleton, ComparisonRowSkeleton } from './BasketSkeleton';
 export { OfferRow, ProductChoiceRow, type ProductChoiceRowProps } from './OfferRow';
 export * from './basketView';
 export * from './comparatorView';
+export * from './provenanceView';

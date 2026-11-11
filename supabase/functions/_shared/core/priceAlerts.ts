@@ -7,7 +7,7 @@
  * send-notifications et par l'écran « Alertes ».
  */
 import type { OrderHandoff, Price } from './types.ts';
-import { effectivePrice, isPreferredPrice, isUsablePrice } from './priceComparison.ts';
+import { effectivePrice, isEstimatedPrice, isPreferredPrice, isUsablePrice } from './priceComparison.ts';
 
 export interface PriceWatch {
   productId: string;
@@ -25,7 +25,10 @@ export interface PriceDrop {
   dropPct: number;
 }
 
-/** Baisses de prix ≥ seuil (5 % par défaut), triées de la plus forte à la plus faible. */
+/**
+ * Baisses de prix ≥ seuil (5 % par défaut), triées de la plus forte à la plus
+ * faible. Les prix ESTIMÉS sont ignorés : seule une baisse constatée compte.
+ */
 export function detectPriceDrops(
   watch: readonly PriceWatch[],
   prices: readonly Price[],
@@ -36,6 +39,8 @@ export function detectPriceDrops(
   const latest = new Map<string, Price>();
   for (const p of prices) {
     if (!isUsablePrice(p)) continue; // prix NaN / nul / négatif : jamais une « baisse »
+    // Une estimation n'est pas un prix constaté : aucune « baisse » calculée dessus.
+    if (isEstimatedPrice(p)) continue;
     const key = `${p.productId}|${p.storeId}`;
     const prev = latest.get(key);
     if (!prev || isPreferredPrice(p, prev)) latest.set(key, p);
@@ -89,7 +94,8 @@ export function habitualProducts(
 
 /**
  * Prix de référence des produits habituels : le dernier prix payé dans les
- * commandes (total de la ligne / nombre de conditionnements).
+ * commandes (total de la ligne / nombre de conditionnements), hors lignes au
+ * prix estimé.
  */
 export function watchesFromHandoffs(handoffs: readonly OrderHandoff[], minOccurrences = 2): PriceWatch[] {
   const habitual = new Set(habitualProducts(handoffs, minOccurrences).map((h) => `${h.productId}|${h.storeId}`));
@@ -97,7 +103,8 @@ export function watchesFromHandoffs(handoffs: readonly OrderHandoff[], minOccurr
   for (const h of handoffs) {
     for (const l of h.lines) {
       const key = `${l.productId}|${h.storeId}`;
-      if (!habitual.has(key) || !(l.packs > 0)) continue;
+      // Ligne payée à un prix ESTIMÉ : pas une référence (la baisse serait calculée sur une estimation).
+      if (!habitual.has(key) || !(l.packs > 0) || l.priceSource === 'estimate') continue;
       const prev = lastPaid.get(key);
       if (!prev || h.createdAt >= prev.at) lastPaid.set(key, { at: h.createdAt, cents: Math.round(l.totalCents / l.packs) });
     }

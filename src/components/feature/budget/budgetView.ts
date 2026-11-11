@@ -16,8 +16,8 @@ import {
   relativeDayLabel,
   spendingByMonth,
   spendingByWeek,
-  STORE_CHAIN_LABELS,
   startOfWeek,
+  storeDisplayName,
   WEEKDAY_SHORT,
   weekdayIndex,
 } from '@/core';
@@ -195,11 +195,9 @@ export function recentDayChoices(today: string, count = 7): { value: string; lab
 
 // ─── Lignes de dépenses ──────────────────────────────────────────────────────
 
-/** Nom de l'enseigne (« Leclerc »), sinon l'identifiant. */
-export function storeLabel(storeId: string, storesById: Record<string, Store | undefined>): string {
-  const store = storesById[storeId];
-  if (!store) return storeId.charAt(0).toUpperCase() + storeId.slice(1);
-  return STORE_CHAIN_LABELS[store.chain] ?? store.name;
+/** Nom d'une enseigne d'après son id (« E.Leclerc »), sinon l'id en majuscule initiale. */
+function storeNameOf(storeId: string, storesById: Record<string, Store | undefined>): string {
+  return storeDisplayName(storesById[storeId], { fallback: storeId.charAt(0).toUpperCase() + storeId.slice(1) });
 }
 
 /** « Sam. 7 nov. » (ou « Aujourd’hui », « Hier »). */
@@ -218,7 +216,7 @@ export function entryTexts(
   storesById: Record<string, Store | undefined>,
   today: string,
 ): { title: string; day: string; source: string; store: string } {
-  const store = storeLabel(entry.storeId, storesById);
+  const store = storeNameOf(entry.storeId, storesById);
   const label = entry.label?.trim();
   return {
     title: label ? label : store,

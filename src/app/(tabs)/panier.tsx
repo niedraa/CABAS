@@ -6,13 +6,14 @@
  * (Premium : 2 magasins max, frais inclus — un compte gratuit reçoit une
  * invitation Premium chiffrée), canal drive / livraison, ticket dentelé
  * (total, frais, économie), magasins du panier avec « Commander chez … »,
- * comparaison article par article et articles introuvables.
+ * comparaison article par article et articles introuvables. Pied de page :
+ * provenance des prix (Open Prices, part d'estimés) et lien « Sources et licences ».
  */
 import { router, useIsFocused, type Href } from 'expo-router';
 import React, { useEffect, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, LinearTransition } from 'react-native-reanimated';
-import { CalendarDays, Crown, ListChecks, RotateCcw } from 'lucide-react-native';
+import { CalendarDays, Crown, Info, ListChecks, RotateCcw } from 'lucide-react-native';
 
 import { CookingPot, EmptyBasket, EmptyList } from '@/components/brand';
 import {
@@ -32,7 +33,9 @@ import {
   savingsLabel,
   StorePartCard,
 } from '@/components/feature/basket';
+import { priceDataNotice } from '@/components/feature/sources';
 import {
+  Button,
   Divider,
   EmptyState,
   InfoBanner,
@@ -121,6 +124,7 @@ export default function PriceScreen() {
   // (Le retour haptique des boutons vient du kit : pas de doublon ici.)
   const retry = () => void useBasketStore.getState().compute();
   const goPremium = () => router.push('/premium' as Href);
+  const goSources = () => router.push('/parametres/sources' as Href);
   const openItem = (itemId: string) =>
     router.push({ pathname: '/comparateur/[itemId]', params: { itemId } } as unknown as Href);
   const openOrder = (storeId: string) =>
@@ -261,7 +265,16 @@ export default function PriceScreen() {
                 <SectionHeader
                   title="Article par article"
                   subtitle="Meilleur prix, toutes enseignes."
-                  right={comparedChains.length > 0 ? <StoreBadgeStack chains={comparedChains} size="xs" max={5} /> : null}
+                  right={
+                    comparedChains.length > 0 ? (
+                      <StoreBadgeStack
+                        chains={comparedChains}
+                        size="xs"
+                        max={5}
+                        accessibilityLabel={`${plural(comparedChains.length, 'enseigne comparée', 'enseignes comparées')}`}
+                      />
+                    ) : null
+                  }
                 />
               </Animated.View>
               <View
@@ -290,9 +303,22 @@ export default function PriceScreen() {
             </Animated.View>
           ) : null}
 
-          <Text variant="footnote" color="textTertiary" align="center">
-            Prix relevés en ligne, promos comprises. Ils peuvent varier en magasin.
-          </Text>
+          <View style={[styles.footer, { gap: t.spacing.xs }]}>
+            <Text variant="footnote" color="textSecondary" align="center" testID="price-notice">
+              {priceDataNotice(catalog.meta)}
+            </Text>
+            <Button
+              label="Sources et licences"
+              variant="ghost"
+              size="sm"
+              leftIcon={Info}
+              onPress={goSources}
+              hitSlop={(t.layout.minTouchTarget - t.controlHeight.sm) / 2}
+              accessibilityRole="link"
+              style={styles.center}
+              testID="price-sources"
+            />
+          </View>
         </View>
       ) : null}
     </Screen>
@@ -306,4 +332,6 @@ const MODE_HEADER: Record<BasketMode, string> = {
 
 const styles = StyleSheet.create({
   card: { overflow: 'hidden' },
+  footer: { alignItems: 'center' },
+  center: { alignSelf: 'center' },
 });

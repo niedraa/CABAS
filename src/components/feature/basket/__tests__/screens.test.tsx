@@ -1,6 +1,8 @@
 /**
  * Parcours des écrans « Prix » → détail d'un article → commande, branchés
  * sur les vrais stores (mode démo : catalogue embarqué, calcul local).
+ * Articles CHOISIS dans le catalogue réel (chiffrés chez Leclerc, Carrefour et
+ * Auchan) : attendus dérivés des données, jamais de prix en dur.
  */
 import React from 'react';
 import { Platform, StyleSheet } from 'react-native';
@@ -11,8 +13,10 @@ import * as WebBrowser from 'expo-web-browser';
 
 import { ToastProvider } from '@/components/ui';
 import type { ShoppingListItem } from '@/core';
-import { formatPrice } from '@/core';
+import { allOffersForItem, formatPrice } from '@/core';
+import { ingredients } from '@/data';
 import { __setBasketServiceForTests, createBasketService, type BasketService } from '@/services/basket';
+import { buildCatalogSnapshot, getCatalogSnapshot, setCatalogSnapshot } from '@/services/catalog';
 import {
   nextWeekStartOf,
   resetAllStores,
@@ -30,6 +34,9 @@ import {
 import ComparatorScreen from '@/app/comparateur/[itemId]';
 import OrderScreen from '@/app/commande/[storeId]';
 import PriceScreen from '@/app/(tabs)/panier';
+
+import { comparedStoreIds, lineForItem, needLabel, productChoices } from '../index';
+import { comparableItems, manualItem } from './catalogPicks';
 
 const mockRouter = { push: jest.fn(), navigate: jest.fn(), back: jest.fn(), replace: jest.fn(), canGoBack: jest.fn(() => true) };
 let mockParams: Record<string, string> = {};
@@ -55,27 +62,10 @@ jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn(async () => ({ 
 jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }));
 jest.mock('react-native-purchases', () => ({ __esModule: true, default: {}, PURCHASES_ERROR_CODE: {} }));
 
-function item(id: string, ingredientId: string | undefined, label: string, quantity: number): ShoppingListItem {
-  return {
-    id,
-    ...(ingredientId ? { ingredientId } : {}),
-    label,
-    quantity,
-    unit: ingredientId ? 'g' : 'piece',
-    aisle: 'fruits_legumes',
-    checked: false,
-    source: ingredientId ? 'plan' : 'manual',
-    recipeIds: ingredientId ? ['rec_a'] : [],
-  };
-}
-
-const ITEMS = [
-  item('i-champi', 'champignons_paris', 'Champignons de Paris', 190),
-  item('i-gingembre', 'gingembre', 'Gingembre frais', 40),
-  item('i-escalope', 'escalope_dinde', 'Escalope de dinde', 400),
-  item('i-carotte', 'carotte', 'Carotte', 600),
-  item('i-eau', undefined, 'Eau gazeuse', 1),
-];
+const MY_STORES = ['leclerc', 'carrefour', 'auchan'];
+const PRICED = comparableItems(getCatalogSnapshot().index, ingredients, { storeIds: MY_STORES, count: 4 });
+const ITEMS: ShoppingListItem[] = [...PRICED, manualItem('i-eau', 'Eau gazeuse')];
+const item = (id: string, label: string) => manualItem(id, label);
 
 function setList(items: ShoppingListItem[]) {
   const ws = useWeekStore.getState().activeWeekStart;
@@ -148,12 +138,17 @@ describe('Onglet Prix', () => {
     const plan = useBasketStore.getState().plan;
     expect(plan?.parts).toHaveLength(1);
     expect(screen.getByText('Ticket · Un seul magasin')).toBeTruthy();
-    expect(screen.getByText('4 articles comparés dans 5 enseignes')).toBeTruthy();
+    const chains = comparedStoreIds(useBasketStore.getState().comparisons).length;
+    expect(screen.getByText(`4 articles comparés dans ${chains} enseigne${chains > 1 ? 's' : ''}`)).toBeTruthy();
+    // Provenance des prix et lien vers les sources.
+    expect(screen.getByTestId('price-notice')).toHaveTextContent(/Open Prices/);
+    await fireEvent.press(screen.getByRole('link', { name: 'Sources et licences' }));
+    expect(mockRouter.push).toHaveBeenLastCalledWith('/parametres/sources');
     expect(screen.getByTestId('comparison-list')).toBeTruthy();
     expect(screen.getByText('Eau gazeuse')).toBeTruthy();
     // Un article → son détail ; un magasin → sa commande.
     await fireEvent.press(screen.getByTestId('compare-0'));
-    expect(mockRouter.push).toHaveBeenLastCalledWith({ pathname: '/comparateur/[itemId]', params: { itemId: 'i-champi' } });
+    expect(mockRouter.push).toHaveBeenLastCalledWith({ pathname: '/comparateur/[itemId]', params: { itemId: ITEMS[0].id } });
     const storeId = plan?.parts[0].storeId as string;
     await fireEvent.press(screen.getByTestId(`store-part-${storeId}-order`));
     expect(mockRouter.push).toHaveBeenLastCalledWith({ pathname: '/commande/[storeId]', params: { storeId } });
@@ -233,7 +228,7 @@ describe('Onglet Prix', () => {
 
   it('articles hors catalogue : « Rien à comparer », pas « ajoute un magasin »', async () => {
     useBasketStore.setState({ channel: 'delivery' });
-    setList([item('m-lait', undefined, 'Lait', 1), item('m-lessive', undefined, 'Lessive', 1)]);
+    setList([item('m-lait', 'Lait'), item('m-lessive', 'Lessive')]);
     await render(<PriceScreen />, { wrapper });
     await waitFor(() => expect(screen.getByTestId('price-ready')).toBeTruthy());
     expect(screen.getByText('Ces articles ne sont pas encore dans notre catalogue.')).toBeTruthy();
@@ -273,26 +268,67 @@ describe('Onglet Prix', () => {
 
 describe('Détail d’un article', () => {
   it('montre les offres par enseigne et choisit un autre produit', async () => {
-    setList(ITEMS);
+    // Mes 3 enseignes ; un article qui a au moins 2 produits au choix dans le magasin du panier.
+    onboard();
+    const candidates = comparableItems(getCatalogSnapshot().index, ingredients, { storeIds: MY_STORES, count: 40 });
+    setList(candidates);
     await act(async () => {
       await useBasketStore.getState().compute();
     });
-    mockParams = { itemId: 'i-champi' };
+    const catalog = getCatalogSnapshot();
+    const plan = useBasketStore.getState().plan;
+    const target = candidates.find((it) => {
+      const line = lineForItem(plan, it.id);
+      return !!line && productChoices(allOffersForItem(it, catalog.index), line.storeId, catalog.productsById, line.productId).length >= 2;
+    }) as ShoppingListItem;
+    expect(target).toBeDefined();
+    mockParams = { itemId: target.id };
     await render(<ComparatorScreen />, { wrapper });
-    expect(screen.getByText('Champignons de Paris')).toBeTruthy();
-    expect(screen.getByText('Besoin : 190 g · 1 recette')).toBeTruthy();
+    expect(screen.getByText(target.label)).toBeTruthy();
+    expect(screen.getByText(`Besoin : ${needLabel(target)} · 1 recette`)).toBeTruthy();
     expect(screen.getByText('Par enseigne')).toBeTruthy();
     expect(screen.getAllByText('Meilleur prix').length).toBeGreaterThanOrEqual(1);
     const radios = screen.getAllByRole('radio');
     expect(radios.length).toBeGreaterThanOrEqual(2);
     expect(radios[0]).toBeChecked();
     await fireEvent.press(radios[1]);
-    await waitFor(() => expect(Object.keys(useBasketStore.getState().selectedAlternatives)).toEqual(['i-champi']));
+    await waitFor(() => expect(Object.keys(useBasketStore.getState().selectedAlternatives)).toEqual([target.id]));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Revenir au moins cher' })).toBeTruthy());
     await fireEvent.press(screen.getByRole('button', { name: 'Revenir au moins cher' }));
     await waitFor(() => expect(useBasketStore.getState().selectedAlternatives).toEqual({}));
     await fireEvent.press(screen.getByRole('button', { name: 'Fermer' }));
     expect(mockRouter.back).toHaveBeenCalled();
+  });
+
+  it('ne propose jamais un produit contenant un allergène déclaré du profil (panier, offres, choix)', async () => {
+    const real = getCatalogSnapshot();
+    const candidates = comparableItems(real.index, ingredients, { storeIds: ['leclerc'], count: 1, minStores: 1, choicesAt: 'leclerc' });
+    const target = candidates[0];
+    expect(target).toBeDefined();
+    // Le produit le moins cher chez Leclerc « déclare » de l'arachide (copie du catalogue).
+    const tainted = allOffersForItem(target, real.index).filter((o) => o.storeId === 'leclerc')[0].productId;
+    const products = real.products.map((p) => (p.id === tainted ? { ...p, allergens: [...p.allergens, 'arachides' as const] } : p));
+    setCatalogSnapshot(buildCatalogSnapshot({ ...real, products }, 'local'));
+    try {
+      useProfileStore.getState().updateDraft({ ...PROFILE, preferredStoreIds: ['leclerc'], allergens: ['arachides'] });
+      useProfileStore.getState().setHealthDataConsent(true);
+      expect(useProfileStore.getState().completeOnboarding().ok).toBe(true);
+      setList([target]);
+      await act(async () => {
+        await useBasketStore.getState().compute();
+      });
+      const st = useBasketStore.getState();
+      expect(st.allergens).toEqual(['arachides']);
+      expect(st.plan?.parts.flatMap((p) => p.lines).some((l) => l.productId === tainted)).toBe(false);
+      expect(st.comparisons.flatMap((c) => c.offers).some((o) => o.productId === tainted)).toBe(false);
+      mockParams = { itemId: target.id };
+      await render(<ComparatorScreen />, { wrapper });
+      const offered = new Set(allOffersForItem(target, real.index).filter((o) => o.storeId === 'leclerc').map((o) => o.productId));
+      // Tous les produits de Leclerc sauf celui qui contient l'allergène.
+      expect(screen.queryAllByRole('radio')).toHaveLength(offered.size - 1 >= 2 ? offered.size - 1 : 0);
+    } finally {
+      setCatalogSnapshot(real);
+    }
   });
 
   it('article disparu : état vide honnête', async () => {
@@ -316,7 +352,7 @@ describe('Commande', () => {
 
   it('gratuit : copier la liste, ouvrir le site, valider → célébration et budget', async () => {
     const storeId = await openOrderScreen();
-    expect(screen.getByText('Ta commande en 2 étapes')).toBeTruthy();
+    expect(screen.getByText(/^(Ta commande|Tes courses) en 2 étapes$/)).toBeTruthy();
     expect(useOrderStore.getState().orders).toHaveLength(0);
     await fireEvent.press(screen.getByRole('button', { name: 'Copier la liste' }));
     await waitFor(() => expect(Clipboard.setStringAsync).toHaveBeenCalledTimes(1));

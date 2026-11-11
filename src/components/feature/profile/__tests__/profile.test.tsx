@@ -9,8 +9,8 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { DEFAULT_DRAFT } from '@/stores';
-import { DEFAULT_MEAL_SLOTS, generateMealPlan, type Household } from '@/core';
-import { ingredients, ingredientsById, recipes, recipesById } from '@/data';
+import { DEFAULT_MEAL_SLOTS, generateMealPlan, NNBSP, STORE_CHAIN_GROUPS, STORE_CHAINS, storeDisplayName, type Household } from '@/core';
+import { ingredients, ingredientsById, recipes, recipesById, stores } from '@/data';
 import { ThemeProvider } from '@/theme';
 
 import { BudgetTimeSection } from '../BudgetTimeSection';
@@ -25,7 +25,9 @@ import {
   NO_EQUIPMENT_HINT,
   NO_EQUIPMENT_SUMMARY,
   normalizeCookTimes,
+  STORES_MAX,
 } from '../profileOptions';
+import { groupStores, storeServiceLabels, StoresSection } from '../StoresSection';
 
 function wrap(node: React.ReactNode) {
   return (
@@ -152,5 +154,66 @@ describe('recherche « je n’aime pas »', () => {
     expect(onSearchResults).toHaveBeenCalledTimes(1);
     await fireEvent.changeText(field, 'tom');
     expect(onSearchResults).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ─── Magasins (10 enseignes) ─────────────────────────────────────────────────
+
+describe('StoresSection', () => {
+  it('groupe les 10 enseignes : Hypers & supers, Discount, Proximité', () => {
+    const groups = groupStores(stores);
+    expect(groups.map((g) => g.label)).toEqual(['Hypers & supers', 'Discount', 'Proximité']);
+    expect(groups.map((g) => g.stores.map((s) => s.id))).toEqual(STORE_CHAIN_GROUPS.map((g) => [...g.chains]));
+    expect(groups.flatMap((g) => g.stores)).toHaveLength(STORE_CHAINS.length);
+    // Enseigne inconnue (ancien cache) : « Autres enseignes », jamais perdue.
+    const extra = { ...stores[0], id: 'biocoop', chain: 'biocoop' as never, name: 'Biocoop' };
+    expect(groupStores([...stores, extra]).at(-1)).toMatchObject({ label: 'Autres enseignes', stores: [extra] });
+  });
+
+  it('dit le service depuis le mode de retrait et les frais (indicatifs)', () => {
+    const base = stores.find((s) => s.id === 'leclerc') as (typeof stores)[number];
+    expect(storeServiceLabels({ ...base, pickup: 'drive', driveFeeCents: 0, deliveryFeeCents: 690, minOrderCents: 0 })).toEqual({
+      pickup: 'Drive gratuit',
+      delivery: `Livraison ≈ 6,90${NNBSP}€`,
+    });
+    expect(storeServiceLabels({ ...base, pickup: 'click_collect', driveFeeCents: 0, deliveryFeeCents: null, minOrderCents: 6000 })).toEqual({
+      pickup: `Click & collect · dès 60${NNBSP}€`,
+      delivery: 'Pas de livraison',
+    });
+    expect(storeServiceLabels({ ...base, pickup: 'none', driveFeeCents: 0, deliveryFeeCents: null, minOrderCents: 0 }).pickup).toBe('Courses en magasin');
+    expect(storeServiceLabels({ ...base, pickup: 'drive', driveFeeCents: 300, deliveryFeeCents: 0, minOrderCents: 0 })).toEqual({
+      pickup: `Drive ≈ 3,00${NNBSP}€`,
+      delivery: 'Livraison gratuite',
+    });
+    // Les vraies enseignes : chacune a un libellé de retrait et de livraison.
+    for (const s of stores) {
+      const l = storeServiceLabels(s);
+      expect(l.pickup.length).toBeGreaterThan(0);
+      expect(l.delivery).toEqual(s.deliveryFeeCents === null ? 'Pas de livraison' : s.deliveryFeeCents === 0 ? 'Livraison gratuite' : expect.stringMatching(/^Livraison ≈ /));
+    }
+  });
+
+  it('sélectionne jusqu’à 5 enseignes, cartes de 44 pt au moins, libellés lisibles', async () => {
+    const onChange = jest.fn();
+    const view = await render(wrap(<StoresSection value={[]} onChange={onChange} stores={stores} />));
+    for (const g of ['hyper', 'discount', 'proximite']) expect(screen.getByTestId(`stores-group-${g}`)).toBeTruthy();
+    for (const s of stores) {
+      const card = screen.getByTestId(`stores-${s.id}`);
+      expect(StyleSheet.flatten(card.props.style).minHeight).toBeGreaterThanOrEqual(44);
+      const { pickup, delivery } = storeServiceLabels(s);
+      expect(card.props.accessibilityLabel).toBe(`${storeDisplayName(s)}. ${pickup}. ${delivery}.`);
+    }
+    await fireEvent.press(screen.getByTestId('stores-aldi'));
+    expect(onChange).toHaveBeenLastCalledWith(['aldi']);
+    // 5 enseignes : les autres sont désactivées.
+    const five = ['leclerc', 'carrefour', 'auchan', 'lidl', 'aldi'];
+    await view.rerender(wrap(<StoresSection value={five} onChange={onChange} stores={stores} />));
+    expect(screen.getByTestId('stores-netto')).toBeDisabled();
+    expect(screen.getByText('C’est le maximum : retire une enseigne pour en choisir une autre.')).toBeTruthy();
+    expect(screen.getByLabelText('Enseignes : E.Leclerc, Carrefour, Auchan, Lidl et Aldi')).toBeTruthy();
+    onChange.mockClear();
+    await fireEvent.press(screen.getByTestId('stores-netto'));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(STORES_MAX).toBe(5);
   });
 });

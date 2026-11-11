@@ -81,6 +81,7 @@ import {
   StaggeredList,
   Stepper,
   StoreBadge,
+  STORE_MONOGRAMS,
   StoreBadgeStack,
   Switch,
   Text,
@@ -533,7 +534,7 @@ function Gallery({ pref, onPref }: { pref: ThemePreference; onPref: (p: ThemePre
                 <Badge label="Premium" tone="premium" variant="solid" size="sm" icon={Crown} />
               </Row>
               <InfoBanner tone="tip" title="Astuce" message="Coche les articles déjà dans ton placard : ils disparaissent de la commande." />
-              <InfoBanner tone="info" message="Prix relevés il y a 2 jours dans 4 enseignes." />
+              <InfoBanner tone="info" message="Prix relevés en magasin par la communauté Open Prices, dans 10 enseignes." />
               <InfoBanner tone="success" message="Ta liste est disponible hors-ligne." />
               <InfoBanner tone="warning" title="Budget presque atteint" message="Il te reste 6,20 € sur ton budget de la semaine." />
               <InfoBanner tone="danger" title="Allergène détecté" message="Ce plat contient des fruits à coque : il ne te sera jamais proposé." />
@@ -565,8 +566,8 @@ function Gallery({ pref, onPref }: { pref: ThemePreference; onPref: (p: ThemePre
                   <Badge label="Le moins cher" tone="success" />
                 </Row>
                 <Divider variant="dashed" spacing={6} />
-                <KeyValueRow label="Leclerc Drive" value={formatCents(3812)} leader />
-                <KeyValueRow label="Lidl" value={formatCents(2530)} leader />
+                <KeyValueRow label="E.Leclerc" value={formatCents(3812)} leader />
+                <KeyValueRow label="Lidl" value={formatCents(2530)} leader hint="dont 2 prix estimés" />
                 <KeyValueRow label="Frais de retrait" value="Offerts" valueColor="success" leader />
                 <KeyValueRow label="Économie" value={formatCents(-714)} valueColor="savings" leader hint="vs. un seul magasin" />
                 <Divider variant="dashed" spacing={6} />
@@ -576,10 +577,21 @@ function Gallery({ pref, onPref }: { pref: ThemePreference; onPref: (p: ThemePre
                 <Button label="+ 4,99 €" size="sm" variant="tonal" onPress={() => setTotal((v) => v + 499)} />
                 <Button label="− 12,30 €" size="sm" variant="tonal" onPress={() => setTotal((v) => Math.max(0, v - 1230))} />
               </Row>
+              {/* Les 10 enseignes (initiales uniques, couleurs AA) + une enseigne inconnue. */}
               <Row gap="md" wrap>
-                {['leclerc', 'carrefour', 'auchan', 'intermarche', 'lidl', 'monoprix', 'biocoop'].map((ch) => (
+                {[...Object.keys(STORE_MONOGRAMS), 'biocoop'].map((ch) => (
                   <StoreBadge key={ch} chain={ch} name={ch === 'biocoop' ? 'Biocoop' : undefined} size="lg" />
                 ))}
+              </Row>
+              {/* Provenance d'un prix : relevé (date, nombre) ou estimé. */}
+              <Row gap="sm" wrap align="center">
+                <Badge label="Estimé" size="sm" accessibilityLabel="Prix estimé" />
+                <Text variant="caption" color="textSecondary">
+                  Relevé le 5 nov. · 3 relevés
+                </Text>
+                <Text variant="caption" color="textSecondary">
+                  D’après les prix relevés ailleurs
+                </Text>
               </Row>
               <Row gap="md" wrap>
                 <StoreBadge chain="carrefour" size="xs" />
@@ -588,7 +600,7 @@ function Gallery({ pref, onPref }: { pref: ThemePreference; onPref: (p: ThemePre
                 <StoreBadge chain="carrefour" size="lg" />
                 <StoreBadge chain="carrefour" size="xl" />
               </Row>
-              <StoreBadgeStack chains={['leclerc', 'carrefour', 'auchan', 'lidl', 'monoprix', 'intermarche']} size="md" />
+              <StoreBadgeStack chains={['leclerc', 'carrefour', 'auchan', 'superu', 'lidl', 'aldi', 'netto', 'franprix']} size="md" max={5} />
             </Stack>
           </Section>
 
@@ -788,11 +800,11 @@ function Gallery({ pref, onPref }: { pref: ThemePreference; onPref: (p: ThemePre
 
       <Sheet visible={snapSheet} onClose={() => setSnapSheet(false)} title="Comparer les prix" snapPoints={[0.5, 0.9]} scrollable>
         <Stack gap="xs">
-          {['leclerc', 'lidl', 'carrefour', 'auchan', 'intermarche', 'monoprix'].map((ch, i) => (
+          {Object.keys(STORE_MONOGRAMS).map((ch, i) => (
             <ListRow
               key={ch}
               left={<StoreBadge chain={ch} />}
-              title={`Tomates grappe · ${['E.Leclerc', 'Lidl', 'Carrefour', 'Auchan', 'Intermarché', 'Monoprix'][i]}`}
+              title={`Tomates grappe · ${STORE_MONOGRAMS[ch].name}`}
               subtitle="1 kg"
               right={<PriceTag cents={239 + i * 23} best={i === 0} size="sm" align="right" />}
             />

@@ -84,7 +84,10 @@ const onboarding = {
 
     // 5. Magasins : au moins un exigé.
     await h.see('onboarding-magasins');
+    // 10 enseignes en 3 familles (hypers & supers, discount, proximité).
+    for (const g of ['hyper', 'discount', 'proximite']) await h.see(`stores-group-${g}`);
     for (const id of ['leclerc', 'carrefour', 'lidl']) await h.tap(`stores-${id}`);
+    await h.seeText('Cabas comparera les prix entre ces 3 enseignes');
     await h.shot('magasins');
     await next(h);
 
@@ -174,6 +177,8 @@ const prices = {
     await h.see('price-screen');
     await h.see('price-ready', 20_000);
     await h.see('basket-receipt');
+    // Provenance des prix (Open Prices) en pied de page.
+    await h.see('price-notice');
     await h.shot('prix', 1000);
 
     // Compte gratuit : « le moins cher » → meilleur magasin + invitation Premium chiffrée.
@@ -196,7 +201,8 @@ const comparator = {
     await h.see('comparison-list');
     await h.tap('compare-0');
     await h.see('comparator-content');
-    const offers = await h.waitForCount('[data-testid^="offer-"]', -1, 1500);
+    // Une ligne par enseigne (pas les sous-éléments « -provenance » / « -sheet »).
+    const offers = await h.waitForCount('[data-testid^="offer-"]:not([data-testid$="-provenance"]):not([data-testid$="-sheet"])', -1, 1500);
     h.expect(offers >= 3, `Au moins 3 enseignes attendues, ${offers} affichées`);
     await h.shot('comparateur', 900);
     if (await h.count('choice-1')) {
@@ -220,7 +226,16 @@ const order = {
     await h.shot('commande', 900);
     if (await h.count('order-actions-copy')) {
       await h.tap('order-actions-copy');
-      const copied = await h.page.evaluate(() => navigator.clipboard.readText().catch(() => ''));
+      // Lecture du presse-papiers : page au premier plan (Chromium exige le focus) et
+      // délai borné, pour qu'un blocage du navigateur échoue au lieu de figer le parcours.
+      await h.page.bringToFront();
+      let timer;
+      const copied = await Promise.race([
+        h.page.evaluate(() => navigator.clipboard.readText().catch(() => '')),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error('Presse-papiers illisible (10 s)')), 10_000);
+        }),
+      ]).finally(() => clearTimeout(timer));
       h.expect(copied.length > 20, 'La liste aurait dû être copiée dans le presse-papiers');
     }
     // Le drive s'ouvre dans un nouvel onglet : on vérifie l'URL (UTM) puis on le ferme.
@@ -343,6 +358,15 @@ const profile = {
     await h.tap(`theme-picker-${other}`);
     await h.shot(`apparence-${other}`, 800);
     await h.tap('theme-picker-system');
+    await h.page.goBack();
+    await h.see('profile-screen');
+
+    // À propos › Sources et licences : Open Food Facts, Open Prices, OpenStreetMap (ODbL).
+    await h.tap('settings-sources');
+    await h.see('settings-sources-screen');
+    await h.see('source-open_prices');
+    await h.see('sources-chains');
+    await h.shot('sources', 900);
     await h.page.goBack();
     await h.see('profile-screen');
   },

@@ -16,23 +16,39 @@ import type {
   Store,
   StoreOffer,
 } from '@/core';
-import { formatPrice, formatQuantity, optimizeBasket, STORE_CHAIN_LABELS, storeFees } from '@/core';
+import { formatPrice, formatQuantity, hasEstimatedPrice, optimizeBasket, storeDisplayName, storeFees } from '@/core';
 
 // ─── Libellés ────────────────────────────────────────────────────────────────
 
-/** Nom court d'une enseigne, comme on le dit (« Leclerc », « Auchan »). */
-export function storeShortName(store: Pick<Store, 'chain' | 'name'> | null | undefined): string {
-  if (!store) return 'l’enseigne';
-  const base = STORE_CHAIN_LABELS[store.chain] ?? store.name.replace(/\s+drive$/i, '');
-  return base.replace(/^E\.\s?/, '');
-}
-
-/** CTA de commande : « Commander chez Leclerc ». */
-export function orderCtaLabel(store: Pick<Store, 'chain' | 'name'> | null | undefined): string {
-  return `Commander chez ${storeShortName(store)}`;
+/** CTA de commande : « Commander chez Leclerc » (« Ma liste pour Lidl » sans commande en ligne). */
+export function orderCtaLabel(store: Pick<Store, 'chain' | 'name'> & Partial<Pick<Store, 'pickup'>> | null | undefined): string {
+  const name = storeDisplayName(store, { short: true });
+  return store?.pickup === 'none' ? `Ma liste pour ${name}` : `Commander chez ${name}`;
 }
 
 export const CHANNEL_LABELS: Record<OrderChannel, string> = { drive: 'Drive', delivery: 'Livraison' };
+
+/**
+ * Service réellement rendu par un magasin pour le canal : « Drive »,
+ * « Click & collect », « En magasin » (enseigne sans retrait en ligne) ou
+ * « Livraison ».
+ */
+export function serviceLabel(store: Partial<Pick<Store, 'pickup'>> | null | undefined, channel: OrderChannel): string {
+  if (channel === 'delivery') return CHANNEL_LABELS.delivery;
+  if (store?.pickup === 'click_collect') return 'Click & collect';
+  if (store?.pickup === 'none') return 'En magasin';
+  return CHANNEL_LABELS.drive;
+}
+
+/** Nombre de lignes au prix estimé. */
+export function estimatedCount(lines: readonly Pick<BasketLine, 'priceSource'>[]): number {
+  return lines.reduce((n, l) => n + (hasEstimatedPrice(l) ? 1 : 0), 0);
+}
+
+/** « dont 1 prix estimé », « dont 3 prix estimés » (vide sans estimation). */
+export function estimatedNote(count: number): string {
+  return count > 0 ? `dont ${count} prix estimé${count > 1 ? 's' : ''}` : '';
+}
 
 /** « Frais de retrait » / « Frais de livraison ». */
 export function feesLabel(channel: OrderChannel): string {
@@ -113,6 +129,8 @@ export interface ReceiptPart {
   store: Store | undefined;
   name: string;
   items: number;
+  /** Lignes au prix estimé. */
+  estimated: number;
   subtotalCents: number;
   feesCents: number;
 }
@@ -122,6 +140,8 @@ export interface ReceiptSummary {
   parts: ReceiptPart[];
   chains: string[];
   items: number;
+  /** Articles au prix estimé (aucun relevé dans l'enseigne). */
+  estimated: number;
   subtotalCents: number;
   feesCents: number;
   totalCents: number;
@@ -135,8 +155,9 @@ export function receiptSummary(plan: BasketPlan, storesById: Record<string, Stor
     return {
       storeId: p.storeId,
       store,
-      name: store?.name ?? p.storeId,
+      name: storeDisplayName(store, { fallback: p.storeId }),
       items: p.lines.length,
+      estimated: estimatedCount(p.lines),
       subtotalCents: p.subtotalCents,
       feesCents: p.feesCents,
     };
@@ -146,6 +167,7 @@ export function receiptSummary(plan: BasketPlan, storesById: Record<string, Stor
     parts,
     chains: parts.map((p) => p.store?.chain ?? p.storeId),
     items: parts.reduce((s, p) => s + p.items, 0),
+    estimated: parts.reduce((s, p) => s + p.estimated, 0),
     subtotalCents: parts.reduce((s, p) => s + p.subtotalCents, 0),
     feesCents: parts.reduce((s, p) => s + p.feesCents, 0),
     totalCents: plan.totalCents,
@@ -202,6 +224,8 @@ export interface ComparisonRowData {
   basket: { storeId: string; totalCents: number; extraCents: number } | null;
   inBasket: boolean;
   mdd: MddSignal | null;
+  /** Le meilleur prix est une ESTIMATION (aucun relevé dans cette enseigne). */
+  bestEstimated: boolean;
 }
 
 /** Lignes du comparateur : seulement les articles qui ont au moins une offre. */
@@ -223,6 +247,7 @@ export function comparisonRows(comparisons: readonly ItemComparison[], plan: Bas
       basket: line && (line.storeId !== best.storeId || extra > 0) ? { storeId: line.storeId, totalCents: line.totalCents, extraCents: Math.max(0, extra) } : null,
       inBasket: !!line,
       mdd: mddSignal(c),
+      bestEstimated: hasEstimatedPrice(best),
     });
   }
   return rows;

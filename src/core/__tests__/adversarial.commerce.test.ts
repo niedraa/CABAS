@@ -183,6 +183,7 @@ function store(id: string, chain: Store['chain'], o: Partial<Store> = {}): Store
     chain,
     name: id,
     city: 'Nantes',
+    pickup: 'drive',
     driveFeeCents: 0,
     deliveryFeeCents: 500,
     minOrderCents: 0,
@@ -276,7 +277,7 @@ describe('comparateur — données sales', () => {
   });
 
   it('MDD : jamais proposée dans une autre enseigne, ni comme alternative', () => {
-    const ps = [prod('p_nat', 'riz', 1000, 'g'), prod('p_mdd_lec', 'riz', 1000, 'g', { isStoreBrand: true, storeChain: 'leclerc' })];
+    const ps = [prod('p_nat', 'riz', 1000, 'g'), prod('p_mdd_lec', 'riz', 1000, 'g', { isStoreBrand: true, storeChains: ['leclerc'] })];
     const prices = [
       price('p_nat', 's1', 300),
       price('p_nat', 's2', 280),
@@ -293,7 +294,7 @@ describe('comparateur — données sales', () => {
   });
 
   it('alternative MDD : jamais d’économie nulle ou négative', () => {
-    const ps = [prod('p_nat', 'riz', 1000, 'g'), prod('p_mdd', 'riz', 1000, 'g', { isStoreBrand: true, storeChain: 'leclerc' })];
+    const ps = [prod('p_nat', 'riz', 1000, 'g'), prod('p_mdd', 'riz', 1000, 'g', { isStoreBrand: true, storeChains: ['leclerc'] })];
     for (const mdd of [300, 350]) {
       const cmp = compareItem(item('riz', 900), buildCatalogIndex(ps, [price('p_nat', 's1', 300), price('p_mdd', 's1', mdd)], [S1]), NOW);
       expect(cmp.cheaperAlternative).toBeUndefined();
@@ -366,7 +367,7 @@ describe('comparateur — déterminisme (ordre des entrées indifférent)', () =
         for (let k = 0; k < n; k++) {
           const mdd = rand() < 0.3;
           const unit = INGREDIENTS_BY_ID[ing].baseUnit;
-          const p = prod(`${ing}_${k}`, ing, unit === 'piece' ? 1 + Math.floor(rand() * 6) : 250 * (1 + Math.floor(rand() * 4)), unit, mdd ? { isStoreBrand: true, storeChain: stores[Math.floor(rand() * stores.length)].chain } : {});
+          const p = prod(`${ing}_${k}`, ing, unit === 'piece' ? 1 + Math.floor(rand() * 6) : 250 * (1 + Math.floor(rand() * 4)), unit, mdd ? { isStoreBrand: true, storeChains: [stores[Math.floor(rand() * stores.length)].chain] } : {});
           products.push(p);
           for (const s of stores) {
             if (rand() < 0.25) continue;
@@ -391,7 +392,7 @@ describe('comparateur — déterminisme (ordre des entrées indifférent)', () =
         for (let i = 1; i < cmp.offers.length; i++) expect(cmp.offers[i].totalCents).toBeGreaterThanOrEqual(cmp.offers[i - 1].totalCents);
         for (const o of cmp.offers) {
           const p = products.find((x) => x.id === o.productId)!;
-          if (p.isStoreBrand) expect(stores.find((s) => s.id === o.storeId)?.chain).toBe(p.storeChain);
+          if (p.isStoreBrand) expect(p.storeChains).toContain(stores.find((s) => s.id === o.storeId)?.chain);
         }
         if (cmp.cheaperAlternative) expect(cmp.cheaperAlternative.savingsCents).toBeGreaterThan(0);
       }

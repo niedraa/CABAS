@@ -8,13 +8,14 @@
  *  - `downgraded` : un compte gratuit a demandé « le moins cher » et reçoit
  *    « un seul magasin » (→ proposer Premium) ;
  *  - `status: 'idle' | 'computing' | 'ready' | 'error'`, `error`, `source` ;
- *  - `weekStart` / `listUpdatedAt` / `storeIds` : liste et magasins qui ont servi
- *    au calcul (voir `isBasketStale`) ;
+ *  - `weekStart` / `listUpdatedAt` / `storeIds` / `allergens` : liste, magasins et
+ *    allergènes du profil qui ont servi au calcul (voir `isBasketStale`) ;
  *  - `entitlement` : droit (gratuit / Premium) appliqué au calcul (voir `basketRightsChanged`) ;
  *  - `selectedAlternatives: Record<itemId, productId>` (ex. MDD moins chère choisie).
  * Actions (async) :
  *  - `compute()` : articles NON cochés de la liste active, magasins préférés du profil
- *    (tous si aucun) ; comparaison toujours disponible, panier multi-magasins Premium ;
+ *    (tous si aucun), allergènes déclarés du profil (aucun produit qui en contient) ;
+ *    comparaison toujours disponible, panier multi-magasins Premium ;
  *  - `setMode(mode)`, `setChannel(channel)` : recalculent si un panier existe ;
  *  - `selectAlternative(itemId, productId | null)` : recalcule ;
  *  - `reset()`.
@@ -25,7 +26,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-import type { BasketMode, BasketPlan, Entitlement, ItemComparison, OrderChannel, ShoppingList } from '@/core';
+import type { Allergen, BasketMode, BasketPlan, Entitlement, ItemComparison, OrderChannel, ShoppingList } from '@/core';
 import { track } from '@/services/analytics';
 import { getBasketService, type BasketResult } from '@/services/basket';
 import { captureError } from '@/services/monitoring';
@@ -51,6 +52,8 @@ export interface BasketState {
   weekStart: string | null;
   listUpdatedAt: string | null;
   storeIds: string[];
+  /** Allergènes du profil appliqués au dernier calcul (aucun produit qui en contient). */
+  allergens: Allergen[];
   /** Droit utilisé au dernier calcul réussi (null : jamais calculé). */
   entitlement: Entitlement | null;
   selectedAlternatives: Record<string, string>;
@@ -61,8 +64,8 @@ export interface BasketState {
   reset(): void;
 }
 
-/** Mêmes magasins, dans n'importe quel ordre. */
-function sameStoreIds(a: readonly string[], b: readonly string[]): boolean {
+/** Mêmes éléments (magasins, allergènes), dans n'importe quel ordre. */
+function sameSet(a: readonly string[], b: readonly string[]): boolean {
   const sa = new Set(a);
   const sb = new Set(b);
   return sa.size === sb.size && [...sa].every((id) => sb.has(id));
@@ -70,17 +73,20 @@ function sameStoreIds(a: readonly string[], b: readonly string[]): boolean {
 
 /**
  * Le panier ne correspond plus à la liste (articles cochés / ajoutés depuis)
- * ou, si `preferredStoreIds` est fourni, aux magasins préférés du profil.
+ * ou, si `preferredStoreIds` / `profileAllergens` sont fournis, aux magasins
+ * préférés ou aux allergènes déclarés du profil.
  */
 export function isBasketStale(
-  state: Pick<BasketState, 'weekStart' | 'listUpdatedAt' | 'plan'> & Partial<Pick<BasketState, 'storeIds'>>,
+  state: Pick<BasketState, 'weekStart' | 'listUpdatedAt' | 'plan'> & Partial<Pick<BasketState, 'storeIds' | 'allergens'>>,
   list: ShoppingList | null,
   weekStart: string,
   preferredStoreIds?: readonly string[],
+  profileAllergens?: readonly Allergen[],
 ): boolean {
   if (!state.plan) return true;
   if (state.weekStart !== weekStart) return true;
-  if (preferredStoreIds && !sameStoreIds(state.storeIds ?? [], preferredStoreIds)) return true;
+  if (preferredStoreIds && !sameSet(state.storeIds ?? [], preferredStoreIds)) return true;
+  if (profileAllergens && !sameSet(state.allergens ?? [], profileAllergens)) return true;
   return (list?.updatedAt ?? null) !== state.listUpdatedAt;
 }
 
@@ -115,6 +121,7 @@ export const useBasketStore = create<BasketState>()(
       weekStart: null,
       listUpdatedAt: null,
       storeIds: [],
+      allergens: [],
       entitlement: null,
       selectedAlternatives: {},
 
@@ -124,6 +131,7 @@ export const useBasketStore = create<BasketState>()(
         const list = getList(ws);
         const profile = useProfileStore.getState().profile;
         const storeIds = profile?.preferredStoreIds ?? [];
+        const allergens = profile?.allergens ?? [];
         const { mode, channel, selectedAlternatives } = get();
         set({ status: 'computing', error: null });
         try {
@@ -135,6 +143,8 @@ export const useBasketStore = create<BasketState>()(
             channel,
             entitlement,
             productChoices: selectedAlternatives,
+            // Jamais de produit contenant un allergène déclaré (offre, alternative, choix).
+            allergens,
           });
           // Un calcul plus récent a été lancé entre-temps : on l'ignore.
           if (seq !== computeSeq) return get().plan;
@@ -147,6 +157,7 @@ export const useBasketStore = create<BasketState>()(
             weekStart: ws,
             listUpdatedAt: list.updatedAt,
             storeIds,
+            allergens: [...allergens],
             entitlement,
           });
           track('basket_computed', {
@@ -203,6 +214,7 @@ export const useBasketStore = create<BasketState>()(
           weekStart: null,
           listUpdatedAt: null,
           storeIds: [],
+          allergens: [],
           entitlement: null,
           selectedAlternatives: {},
         });
@@ -220,6 +232,7 @@ export const useBasketStore = create<BasketState>()(
         weekStart: s.weekStart,
         listUpdatedAt: s.listUpdatedAt,
         storeIds: s.storeIds,
+        allergens: s.allergens,
         entitlement: s.entitlement,
         selectedAlternatives: s.selectedAlternatives,
       }),
@@ -235,10 +248,11 @@ export const useBasketStore = create<BasketState>()(
 registerPersistedStore('basket', useBasketStore);
 
 const NO_STORES: readonly string[] = [];
+const NO_ALLERGENS: readonly Allergen[] = [];
 
 /**
  * Vrai si le panier doit être recalculé : liste modifiée, autre semaine,
- * magasins préférés changés dans le profil, ou jamais calculé.
+ * magasins préférés ou allergènes changés dans le profil, ou jamais calculé.
  */
 export function useBasketIsStale(): boolean {
   const ws = useWeekStore((s) => s.activeWeekStart);
@@ -247,7 +261,9 @@ export function useBasketIsStale(): boolean {
   const weekStart = useBasketStore((s) => s.weekStart);
   const listUpdatedAt = useBasketStore((s) => s.listUpdatedAt);
   const storeIds = useBasketStore((s) => s.storeIds);
-  // Mêmes magasins que `compute()` : ceux du profil (aucun = tous).
+  const allergens = useBasketStore((s) => s.allergens);
+  // Mêmes magasins et allergènes que `compute()` : ceux du profil (aucun magasin = tous).
   const preferred = useProfileStore((s) => s.profile?.preferredStoreIds) ?? NO_STORES;
-  return isBasketStale({ plan, weekStart, listUpdatedAt, storeIds }, list, ws, preferred);
+  const profileAllergens = useProfileStore((s) => s.profile?.allergens) ?? NO_ALLERGENS;
+  return isBasketStale({ plan, weekStart, listUpdatedAt, storeIds, allergens }, list, ws, preferred, profileAllergens);
 }

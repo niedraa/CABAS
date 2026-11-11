@@ -113,9 +113,10 @@ function store(id: Store['chain'], driveFee = 0): Store {
     id,
     chain: id,
     name: `${id} Drive`,
-    city: 'Lyon',
+    city: 'France',
+    pickup: id === 'lidl' ? 'none' : 'drive',
     driveFeeCents: driveFee,
-    deliveryFeeCents: 599,
+    deliveryFeeCents: id === 'lidl' ? null : 599,
     minOrderCents: 0,
     searchUrlTemplate: `https://${id}.example/s?q={query}`,
     driveUrl: `https://${id}.example/drive`,
@@ -124,10 +125,18 @@ function store(id: Store['chain'], driveFee = 0): Store {
 
 export const STORES: Store[] = [store('leclerc'), store('carrefour'), store('auchan'), store('lidl', 0)];
 
+/** GTIN-13 valide (clé GS1) et fictif (préfixe 399…), pour les doublures. */
+export function fakeGtin(seq: number): string {
+  const body = String(399_000_000_000 + seq).padStart(12, '0');
+  let sum = 0;
+  for (let k = 0; k < body.length; k++) sum += (body.charCodeAt(body.length - 1 - k) - 48) * (k % 2 === 0 ? 3 : 1);
+  return `${body}${(10 - (sum % 10)) % 10}`;
+}
+
 function product(id: string, ingredientId: string, packSize: number, extra: Partial<Product> = {}): Product {
-  return {
+  const p: Product = {
     id,
-    ean: String(3000000000000 + PRODUCTS_SEQ.next++),
+    ean: fakeGtin(PRODUCTS_SEQ.next++),
     name: id,
     brand: 'Marque',
     isStoreBrand: false,
@@ -137,13 +146,18 @@ function product(id: string, ingredientId: string, packSize: number, extra: Part
     allergens: [],
     ...extra,
   };
+  // Vrac : pas de code-barres.
+  if (p.offCategoryTag) delete p.ean;
+  return p;
 }
 const PRODUCTS_SEQ = { next: 1 };
 
 export const PRODUCTS: Product[] = [
   product('prd_riz', 'riz', 1000),
-  product('prd_riz_mdd_lidl', 'riz', 1000, { isStoreBrand: true, storeChain: 'lidl' }),
+  product('prd_riz_mdd_lidl', 'riz', 1000, { isStoreBrand: true, storeChains: ['lidl'] }),
   product('prd_tomate', 'tomate', 1000),
+  // Vrac (sans code-barres) : relevés Open Prices « au kilo » de la catégorie.
+  product('prd_tomate_vrac', 'tomate', 1000, { offCategoryTag: 'en:tomatoes', brand: 'Vrac' }),
   product('prd_oignon', 'oignon', 1000),
 ];
 

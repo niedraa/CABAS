@@ -3,7 +3,8 @@
  * WCAG AA (4,5:1 texte courant, 3:1 texte large / éléments d'interface).
  * Les ratios sont documentés dans docs/brand/README.md.
  */
-import { contrastRatio, darkColors, lightColors, withAlpha, type ColorScheme } from '@/theme';
+import { STORE_CHAINS } from '@/core';
+import { contrastRatio, darkColors, lightColors, relativeLuminance, storeColors, withAlpha, type ColorScheme } from '@/theme';
 
 type Pair = [keyof ColorScheme, keyof ColorScheme, number];
 
@@ -53,5 +54,32 @@ describe('utilitaires couleur', () => {
     expect(withAlpha('#173A2C', 0.5)).toBe('rgba(23, 58, 44, 0.5)');
     expect(withAlpha('#173A2C', 2)).toBe('rgba(23, 58, 44, 1)');
     expect(() => withAlpha('nope', 1)).toThrow();
+  });
+});
+
+describe('monogrammes d’enseigne (storeColors)', () => {
+  it('couvrent exactement les 10 enseignes (+ repli « default »)', () => {
+    expect(Object.keys(storeColors).filter((k) => k !== 'default').sort()).toEqual([...STORE_CHAINS].sort());
+    expect(storeColors.default).toBeDefined();
+  });
+
+  it.each([...STORE_CHAINS, 'default'])('%s : initiales lisibles (texte / fond ≥ 4,5:1)', (chain) => {
+    const { bg, fg } = storeColors[chain];
+    expect(contrastRatio(fg, bg)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('un fond clair porte un filet visible sur le papier du thème clair', () => {
+    for (const chain of STORE_CHAINS) {
+      const { bg, border } = storeColors[chain];
+      if (relativeLuminance(bg) > 0.5) {
+        expect(border).toBeDefined();
+        expect(contrastRatio(border as string, lightColors.surface)).toBeGreaterThanOrEqual(1.8);
+      }
+    }
+  });
+
+  it('deux enseignes n’ont jamais la même paire de couleurs', () => {
+    const pairs = STORE_CHAINS.map((c) => `${storeColors[c].bg}|${storeColors[c].fg}`);
+    expect(new Set(pairs).size).toBe(pairs.length);
   });
 });

@@ -16,10 +16,16 @@ function getProduct(products: ProductLookup, id: string): Product | undefined {
   return products instanceof Map ? products.get(id) : products[id];
 }
 
-/** URL de recherche drive pour un produit (« {query} » remplacé, encodé). */
+/**
+ * URL de recherche drive pour un produit (« {query} » remplacé, encodé).
+ * Gabarit sans `{query}` (enseigne sans recherche adressable : Netto,
+ * Franprix) : l'URL est ouverte telle quelle.
+ */
 export function buildProductSearchUrl(store: Store, product: Product): string {
+  const template = store.searchUrlTemplate ?? '';
+  if (!template.includes('{query}')) return template;
   const query = `${product.name} ${product.brand ?? ''}`.replace(/\s+/g, ' ').trim();
-  return store.searchUrlTemplate.split('{query}').join(encodeURIComponent(query));
+  return template.split('{query}').join(encodeURIComponent(query));
 }
 
 function safeDecode(s: string): string {
@@ -87,7 +93,9 @@ export function formatOrderAsText(handoff: OrderHandoff, store: Store, productsB
   for (const l of handoff.lines) {
     const p = getProduct(productsById, l.productId);
     const name = p ? `${p.name}${p.brand ? ` (${p.brand})` : ''}` : l.label;
-    lines.push(`• ${l.packs} × ${name} — ${formatPrice(l.totalCents)}`);
+    // Prix sans relevé dans l'enseigne : toujours signalé.
+    const estimated = l.priceSource === 'estimate' ? ' (prix estimé)' : '';
+    lines.push(`• ${l.packs} × ${name} — ${formatPrice(l.totalCents)}${estimated}`);
     linesTotal += l.totalCents;
   }
   const fees = handoff.totalCents - linesTotal;

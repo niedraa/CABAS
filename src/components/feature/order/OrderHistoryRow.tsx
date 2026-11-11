@@ -6,11 +6,11 @@ import { StyleSheet, View } from 'react-native';
 
 import { Badge, StoreBadge, Text } from '@/components/ui';
 import type { OrderHandoff, Store } from '@/core';
-import { formatPrice } from '@/core';
+import { formatPrice, storeDisplayName } from '@/core';
 import { formatPriceForA11y } from '@/lib/a11y';
 import { useTheme } from '@/theme';
 
-import { CHANNEL_LABELS, plural, storeShortName } from '../basket/basketView';
+import { plural, serviceLabel } from '../basket/basketView';
 import { ORDER_STATUS_LABELS } from './orderView';
 
 export interface OrderHistoryRowProps {
@@ -24,7 +24,7 @@ export interface OrderHistoryRowProps {
 export function OrderHistoryRow({ order, store, when, testID }: OrderHistoryRowProps) {
   const t = useTheme();
   const c = t.colors;
-  const name = storeShortName(store);
+  const name = storeDisplayName(store, { short: true });
   return (
     <View
       testID={testID}
@@ -35,7 +35,7 @@ export function OrderHistoryRow({ order, store, when, testID }: OrderHistoryRowP
       <StoreBadge chain={store?.chain ?? 'default'} name={store?.name} size="md" />
       <View style={styles.flex}>
         <Text variant="bodyMedium" numberOfLines={1}>
-          {name} · {CHANNEL_LABELS[order.channel]}
+          {name} · {serviceLabel(store, order.channel)}
         </Text>
         <Text variant="footnote" color="textSecondary">
           {when} · {plural(order.lines.length, 'article')}

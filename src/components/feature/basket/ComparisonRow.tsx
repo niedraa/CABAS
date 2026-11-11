@@ -1,8 +1,8 @@
 /**
  * Une ligne du comparateur : article, meilleure offre mise en avant
  * (`priceBest`, prix au kilo), nombre d'enseignes comparées, promo, MDD
- * moins chère, et le prix payé dans le panier s'il diffère. Toucher la
- * ligne ouvre le détail des prix de l'article.
+ * moins chère, meilleur prix ESTIMÉ (badge « Estimé »), et le prix payé dans
+ * le panier s'il diffère. Toucher la ligne ouvre le détail des prix de l'article.
  */
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -10,11 +10,11 @@ import { ChevronRight, Lightbulb, ShoppingBasket } from 'lucide-react-native';
 
 import { Badge, PressableScale, StoreBadge, Text } from '@/components/ui';
 import type { Store } from '@/core';
-import { formatPrice, formatPricePerUnit } from '@/core';
+import { formatPrice, formatPricePerUnit, storeDisplayName } from '@/core';
 import { formatPriceForA11y } from '@/lib/a11y';
 import { useTheme } from '@/theme';
 
-import { plural, savingsLabel, storeShortName, type ComparisonRowData } from './basketView';
+import { plural, savingsLabel, type ComparisonRowData } from './basketView';
 
 export interface ComparisonRowProps {
   row: ComparisonRowData;
@@ -29,18 +29,19 @@ export function ComparisonRow({ row, storesById, totalStores = 0, onPress, testI
   const t = useTheme();
   const c = t.colors;
   const bestStore = storesById[row.bestStoreId];
-  const bestName = storeShortName(bestStore);
+  const bestName = storeDisplayName(bestStore, { short: true, fallback: row.bestStoreId });
   const perUnit = formatPricePerUnit(row.best.pricePerBaseUnitCents, row.best.referenceUnit);
   const basketStore = row.basket ? storesById[row.basket.storeId] : undefined;
   const mdd = row.mdd;
-  const mddStore = mdd ? storeShortName(storesById[mdd.storeId]) : '';
+  const mddStore = mdd ? storeDisplayName(storesById[mdd.storeId], { short: true }) : '';
+  const basketName = storeDisplayName(basketStore, { short: true });
 
   const a11y = [
     row.label,
-    `meilleur prix ${formatPriceForA11y(row.best.totalCents)} chez ${bestName}`,
+    `meilleur prix ${formatPriceForA11y(row.best.totalCents)} chez ${bestName}${row.bestEstimated ? ', prix estimé' : ''}`,
     plural(row.stores, 'enseigne comparée', 'enseignes comparées'),
     row.best.isPromo ? 'en promo' : '',
-    row.basket ? `dans ton panier : ${formatPriceForA11y(row.basket.totalCents)} chez ${storeShortName(basketStore)}` : '',
+    row.basket ? `dans ton panier : ${formatPriceForA11y(row.basket.totalCents)} chez ${basketName}` : '',
     mdd?.kind === 'chosen' ? `marque distributeur, ${formatPriceForA11y(mdd.savingsCents)} de moins que la marque` : '',
     mdd?.kind === 'available' ? `marque distributeur moins chère chez ${mddStore}` : '',
   ]
@@ -75,13 +76,14 @@ export function ComparisonRow({ row, storesById, totalStores = 0, onPress, testI
           <View style={[styles.hint, { gap: t.spacing.xs }]}>
             <ShoppingBasket size={t.iconSize.xs} color={c.textSecondary} />
             <Text variant="footnote" color="textSecondary" numberOfLines={1} tabular style={styles.flex}>
-              {storeShortName(basketStore)} {formatPrice(row.basket.totalCents)}
+              {basketName} {formatPrice(row.basket.totalCents)}
               {row.basket.extraCents > 0 ? ` (+${formatPrice(row.basket.extraCents)})` : ''}
             </Text>
           </View>
         ) : null}
-        {row.best.isPromo || mdd ? (
+        {row.best.isPromo || row.bestEstimated || mdd ? (
           <View style={[styles.badges, { gap: t.spacing.xs, marginTop: t.spacing.xxs }]}>
+            {row.bestEstimated ? <Badge label="Estimé" tone="neutral" size="sm" accessibilityLabel="Meilleur prix estimé" /> : null}
             {row.best.isPromo ? <Badge label="Promo" tone="accent" size="sm" /> : null}
             {mdd?.kind === 'chosen' ? (
               <Badge label={`MDD ${savingsLabel(mdd.savingsCents)}`} tone="danger" size="sm" accessibilityLabel="Marque distributeur moins chère" />

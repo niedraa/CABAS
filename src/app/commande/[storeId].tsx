@@ -21,7 +21,7 @@ import { SafeAreaProvider, type Metrics } from 'react-native-safe-area-context';
 import { ArrowLeft, CircleCheck, ExternalLink, RotateCcw } from 'lucide-react-native';
 
 import { Celebration, EmptyBasket } from '@/components/brand';
-import { CHANNEL_LABELS, plural, storeShortName } from '@/components/feature/basket';
+import { plural, serviceLabel } from '@/components/feature/basket';
 import {
   historyOrder,
   OrderActions,
@@ -51,7 +51,7 @@ import {
   useToast,
 } from '@/components/ui';
 import type { OrderChannel } from '@/core';
-import { formatPrice, formatWeekRange } from '@/core';
+import { formatPrice, formatWeekRange, storeDisplayName } from '@/core';
 import { useSubscription } from '@/hooks';
 import { useCatalog } from '@/services/catalog';
 import {
@@ -97,7 +97,7 @@ function OrderScreen() {
   const catalog = useCatalog();
   const { storeId = '' } = useLocalSearchParams<{ storeId?: string }>();
   const store = catalog.storesById[storeId];
-  const short = storeShortName(store);
+  const short = storeDisplayName(store, { short: true });
 
   const ws = useWeekStore((s) => s.activeWeekStart);
   const today = useWeekStore((s) => s.today);
@@ -130,6 +130,8 @@ function OrderScreen() {
   }, [stage, part, order]);
   const savings = stage === 'ready' ? (part ? partSavingsCents(plan, part) : 0) : (order?.savingsCents ?? 0);
   const shownChannel = stage === 'ready' ? channel : (order?.channel ?? channel);
+  // Enseigne sans drive ni click & collect : la liste part en magasin.
+  const inStoreOnly = store?.pickup === 'none' && shownChannel === 'drive';
   const history = historyOrder(lastOfWeek, order, stage);
   const canReorder = stage === 'confirmed' && !!part && !!order && !orderMatchesPart(order, part, channel);
 
@@ -211,7 +213,7 @@ function OrderScreen() {
   const footer =
     stage === 'ready' ? (
       <Button
-        label={`Ouvrir ${short}`}
+        label={inStoreOnly ? `Voir le site de ${short}` : `Ouvrir ${short}`}
         size="lg"
         rightIcon={ExternalLink}
         fullWidth
@@ -232,7 +234,7 @@ function OrderScreen() {
       <Screen
         key={stage === 'confirmed' ? 'confirmed' : 'live'}
         title={`Chez ${short}`}
-        eyebrow={`${CHANNEL_LABELS[shownChannel]} · semaine du ${formatWeekRange(order?.weekStart ?? orderWeek)}`}
+        eyebrow={`${serviceLabel(store, shownChannel)} · semaine du ${formatWeekRange(order?.weekStart ?? orderWeek)}`}
         onBack={close}
         backIcon="close"
         footer={footer}
@@ -243,10 +245,10 @@ function OrderScreen() {
             <StoreBadge chain={store.chain} name={store.name} size="xl" />
             <View style={[styles.flex, { gap: t.spacing.xs }]}>
               <Text variant="headline" numberOfLines={1}>
-                {store.name}
+                {storeDisplayName(store)}
               </Text>
               <Text variant="footnote" color="textSecondary">
-                {plural(lines.length, 'article')} · {feesLine(shownChannel, totals.feesCents)}
+                {plural(lines.length, 'article')} · {inStoreOnly ? 'courses en magasin' : feesLine(shownChannel, totals.feesCents)}
               </Text>
               {stage !== 'ready' ? (
                 <Badge
@@ -279,6 +281,7 @@ function OrderScreen() {
               totalCents={totals.totalCents}
               savingsCents={savings}
               channel={shownChannel}
+              service={serviceLabel(store, shownChannel)}
               testID="order-receipt"
             />
           </Animated.View>
@@ -289,6 +292,7 @@ function OrderScreen() {
                 stage={stage}
                 oneClick={oneClick}
                 storeName={short}
+                inStoreOnly={inStoreOnly}
                 copied={copied}
                 busy={busy}
                 onCopy={() => void copy()}

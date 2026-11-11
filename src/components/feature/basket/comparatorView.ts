@@ -3,8 +3,8 @@
  * « comparateur ») : offres par enseigne, enseignes sans l'article, produits
  * au choix dans le magasin du panier. Aucun import React.
  */
-import type { BasketLine, ItemComparison, Product, ShoppingListItem, Store, StoreOffer } from '@/core';
-import { formatPieces, formatQuantity } from '@/core';
+import type { Allergen, BasketLine, ItemComparison, Product, ShoppingListItem, Store, StoreOffer } from '@/core';
+import { formatPieces, formatQuantity, productContainsAllergen } from '@/core';
 
 /** Quantité nécessaire : « 500 g », « 1,5 l », « 3 pièces ». */
 export function needLabel(item: Pick<ShoppingListItem, 'quantity' | 'unit'>): string {
@@ -40,7 +40,7 @@ export function storeOfferRows(
   }));
 }
 
-/** Enseignes du catalogue qui ne vendent pas l'article. */
+/** Enseignes du catalogue sans prix connu pour l'article (ni relevé, ni estimation). */
 export function storesWithoutItem(comparison: ItemComparison, stores: readonly Store[]): Store[] {
   const has = new Set(comparison.offers.map((o) => o.storeId));
   return stores.filter((s) => !has.has(s.id));
@@ -63,17 +63,27 @@ export interface ProductChoice {
 }
 
 /**
- * Produits au choix dans un magasin (toutes offres de l'article, catalogue
- * brut), du moins cher au plus cher. `currentProductId` : produit du panier.
+ * Produits au choix dans un magasin (toutes offres de l'article), du moins
+ * cher au plus cher. `currentProductId` : produit du panier. Un produit qui
+ * contient un allergène déclaré du profil (`allergens`) n'est JAMAIS proposé,
+ * ni un produit inconnu du catalogue quand le profil déclare des allergènes
+ * (on ne peut pas vérifier sa composition) — même si les offres reçues en
+ * contiennent (défense en profondeur : l'index est déjà filtré en amont).
  */
 export function productChoices(
   allOffers: readonly StoreOffer[],
   storeId: string,
   productsById: Record<string, Product>,
   currentProductId: string | null,
+  allergens: readonly Allergen[] = [],
 ): ProductChoice[] {
+  const safe = (productId: string) => {
+    if (allergens.length === 0) return true;
+    const p = productsById[productId];
+    return !!p && !productContainsAllergen(p, allergens);
+  };
   const inStore = allOffers
-    .filter((o) => o.storeId === storeId)
+    .filter((o) => o.storeId === storeId && safe(o.productId))
     .slice()
     .sort((a, b) => a.totalCents - b.totalCents || a.pricePerBaseUnitCents - b.pricePerBaseUnitCents || (a.productId < b.productId ? -1 : 1));
   const seen = new Set<string>();

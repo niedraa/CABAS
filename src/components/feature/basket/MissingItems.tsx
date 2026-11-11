@@ -9,10 +9,10 @@ import { SearchX } from 'lucide-react-native';
 
 import { Text } from '@/components/ui';
 import type { Store } from '@/core';
-import { formatPrice } from '@/core';
+import { formatPrice, storeDisplayName } from '@/core';
 import { useTheme } from '@/theme';
 
-import { plural, storeShortName, type MissingRow } from './basketView';
+import { plural, type MissingRow } from './basketView';
 
 export interface MissingItemsProps {
   rows: MissingRow[];
@@ -21,8 +21,8 @@ export interface MissingItemsProps {
 }
 
 export function missingReason(row: MissingRow, storesById: Record<string, Store>): string {
-  if (row.reason === 'nowhere' || !row.elsewhere) return 'Introuvable dans nos enseignes : à acheter à part.';
-  return `Pas dans tes magasins. Dispo chez ${storeShortName(storesById[row.elsewhere.storeId])} à ${formatPrice(row.elsewhere.totalCents)}.`;
+  if (row.reason === 'nowhere' || !row.elsewhere) return 'Pas de prix connu dans nos enseignes : à acheter à part.';
+  return `Pas dans tes magasins. Dispo chez ${storeDisplayName(storesById[row.elsewhere.storeId], { short: true })} à ${formatPrice(row.elsewhere.totalCents)}.`;
 }
 
 export function MissingItems({ rows, storesById, testID }: MissingItemsProps) {

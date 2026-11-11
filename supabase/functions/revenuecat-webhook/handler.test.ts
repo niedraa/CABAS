@@ -87,11 +87,11 @@ function handler(repo: SubscriptionRepository, secret = SECRET) {
   return createRevenueCatWebhookHandler({ repo, webhookSecret: secret, logger: silentLogger, now: () => NOW });
 }
 
-// deno-lint-ignore no-explicit-any
 async function send(
   h: (r: Request) => Promise<Response>,
   ev: RevenueCatEvent | unknown,
   auth: string | null = SECRET,
+  // deno-lint-ignore no-explicit-any
 ): Promise<{ status: number; data: any }> {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (auth !== null) headers.authorization = auth;

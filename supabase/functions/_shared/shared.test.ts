@@ -18,13 +18,16 @@ import { HttpError, readJson, withHandler } from './http.ts';
 import { memoryLogger, redact } from './logger.ts';
 import {
   effectiveEntitlement,
+  pgArray,
   priceToRow,
+  rowToCatalogMeta,
   rowToIngredient,
   rowToMealPlan,
   rowToPrice,
   rowToProduct,
   rowToProfile,
   rowToRecipe,
+  rowToStore,
   rowToSubscription,
 } from './mappers.ts';
 import { DbError, fetchAll, unwrap } from './supabaseClient.ts';
@@ -293,32 +296,119 @@ Deno.test('mappers : produit / prix (RPC get_prices_for_ingredients) et aller-re
   const row = {
     product_id: 'prd',
     ean: '3000000000001',
+    off_category_tag: null,
     product_name: 'Riz',
     brand: 'X',
     is_store_brand: true,
-    store_chain: 'lidl',
+    store_chain: 'intermarche',
+    store_chains: ['intermarche', 'netto'],
     ingredient_id: 'riz',
     pack_size: '1000.000',
     pack_unit: 'g',
     nutri_score: 'A',
     allergens: [],
     organic: false,
-    store_id: 'lidl',
+    store_id: 'netto',
     price_cents: 129,
     promo_price_cents: 99,
     promo_label: '-20 %',
     promo_until: '2026-11-17',
-    source: 'demo',
+    source: 'open_prices',
     price_updated_at: '2026-11-09 06:00:00+00',
+    observation_count: 14,
+    observed_from: '2026-01-04',
+    estimate_method: null,
+    estimate_basis_count: null,
   };
   const p = rowToProduct(row);
   assertEquals(p.packSize, 1000);
-  assertEquals(p.storeChain, 'lidl');
+  assertEquals(p.storeChains, ['intermarche', 'netto']);
+  assertEquals(p.ean, '3000000000001');
+  assertFalse('offCategoryTag' in p);
   assertEquals(p.name, 'Riz');
   const price = rowToPrice(row);
   assertEquals(price.updatedAt, '2026-11-09T06:00:00.000Z');
   assertEquals(price.promoPriceCents, 99);
+  assertEquals([price.observationCount, price.observedFrom], [14, '2026-01-04']);
+  assertFalse('estimateMethod' in price);
   assertEquals(rowToPrice(priceToRow(price)), price);
+});
+
+Deno.test('mappers : vrac sans code-barres, ancienne colonne store_chain, littéral de tableau, estimation', () => {
+  const vrac = rowToProduct({
+    id: 'prd_tomate_vrac',
+    ean: null,
+    off_category_tag: 'en:tomatoes',
+    name: 'Tomates, en vrac',
+    is_store_brand: false,
+    store_chains: '{}',
+    ingredient_id: 'tomate',
+    pack_size: 1000,
+    pack_unit: 'g',
+    allergens: [],
+  });
+  assertFalse('ean' in vrac);
+  assertEquals(vrac.offCategoryTag, 'en:tomatoes');
+  assertFalse('storeChains' in vrac);
+  // Ancien schéma : store_chain seule ; littéral Postgres « {a,b} » ; enseigne inconnue ignorée.
+  assertEquals(rowToProduct({ id: 'x', is_store_brand: true, store_chain: 'lidl' }).storeChains, ['lidl']);
+  assertEquals(
+    rowToProduct({ id: 'x', is_store_brand: true, store_chains: '{intermarche,netto,pirate}' }).storeChains,
+    [
+      'intermarche',
+      'netto',
+    ],
+  );
+  assertEquals(pgArray('{}'), []);
+  assertEquals(pgArray(['a', 1, 'b']), ['a', 'b']);
+  assertEquals(pgArray(null), []);
+  const est = rowToPrice({
+    product_id: 'p',
+    store_id: 'aldi',
+    price_cents: '249',
+    source: 'estimate',
+    updated_at: '2026-11-11',
+    estimate_method: 'category_median',
+    estimate_basis_count: 31,
+    observation_count: null,
+  });
+  assertEquals([est.source, est.estimateMethod, est.estimateBasisCount], ['estimate', 'category_median', 31]);
+  assertFalse('observationCount' in est);
+  assertEquals(rowToPrice({ ...priceToRow(est) }), est);
+  assertEquals(priceToRow(est).observation_count, null, 'colonnes absentes remises à null (contraintes de la base)');
+  assertEquals(
+    rowToPrice({ product_id: 'p', store_id: 's', price_cents: 1, source: 'estimate', estimate_method: 'magie' })
+      .estimateMethod,
+    undefined,
+  );
+});
+
+Deno.test("mappers : magasin (retrait, livraison absente) et description de l'instantané", () => {
+  const s = rowToStore({
+    id: 'lidl',
+    chain: 'lidl',
+    name: 'Lidl',
+    pickup: 'none',
+    delivery_fee_cents: null,
+    drive_fee_cents: 0,
+  });
+  assertEquals([s.pickup, s.deliveryFeeCents], ['none', null]);
+  assertEquals(rowToStore({ id: 'x', chain: 'leclerc', pickup: 'téléportation' }).pickup, 'drive');
+  assertEquals(rowToCatalogMeta(null), null);
+  assertEquals(rowToCatalogMeta({ meta: { snapshotAt: 'x' } }), null);
+  const meta = {
+    snapshotAt: '2026-11-11',
+    pricesFrom: '2025-11-11',
+    pricesTo: '2026-11-11',
+    observedPrices: 812,
+    estimatedPrices: 2300,
+    chainIndex: { leclerc: { value: 1, basis: 'measured', commonProducts: 20785 } },
+    coverage: { leclerc: { observed: 300, estimated: 10 } },
+    sources: [{ name: 'Open Prices', url: 'https://prices.openfoodfacts.org', license: 'ODbL' }, { name: 1 }],
+  };
+  const m = rowToCatalogMeta({ meta })!;
+  assertEquals(m.observedPrices, 812);
+  assertEquals(m.sources, [{ name: 'Open Prices', url: 'https://prices.openfoodfacts.org', license: 'ODbL' }]);
 });
 
 Deno.test('mappers : profil (créneaux invalides filtrés) et planning', () => {

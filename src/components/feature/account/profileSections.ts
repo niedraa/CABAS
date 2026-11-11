@@ -5,7 +5,7 @@
  * par la revérification automatique du planning.
  */
 import type { MealPlan, Store, UserProfile } from '@/core';
-import { ALLERGEN_LABELS, CUISINE_LABELS, DIET_LABELS, EQUIPMENT_LABELS, formatPrice, joinFr, STORE_CHAIN_LABELS } from '@/core';
+import { ALLERGEN_LABELS, CUISINE_LABELS, DIET_LABELS, EQUIPMENT_LABELS, formatPrice, joinFr, storeDisplayName } from '@/core';
 import type { ProfileDraft } from '@/stores';
 
 import { householdSummary } from '../onboarding/steps';
@@ -70,7 +70,7 @@ export const PROFILE_SECTIONS: readonly ProfileSectionMeta[] = [
     emoji: '🛒',
     title: 'Magasins',
     screenTitle: 'Tes magasins',
-    subtitle: 'Cabas compare les prix entre ces enseignes.',
+    subtitle: 'Où fais-tu tes courses ? Choisis jusqu’à 5 enseignes.',
     fields: ['preferredStoreIds'],
     savedMessage: 'Le comparateur suit tes enseignes.',
   },
@@ -101,10 +101,6 @@ export function sectionHref(id: ProfileSectionId): string {
 
 function cookLabel(min: number): string {
   return COOK_TIME_CHOICES.find((c) => c.value === nearestCookTime(min))?.label ?? `${min} min`;
-}
-
-function storeName(store: Store): string {
-  return STORE_CHAIN_LABELS[store.chain] ?? store.name.replace(/ Drive$/, '');
 }
 
 /** Résumé d'une section (valeur principale + détail facultatif), prêt à afficher. */
@@ -139,7 +135,7 @@ export function sectionSummary(
     }
     case 'magasins': {
       const chosen = p.preferredStoreIds.map((sid) => stores.find((s) => s.id === sid)).filter((s): s is Store => !!s);
-      return { value: chosen.length ? joinFr(chosen.map(storeName)) : 'Aucun magasin', detail: null };
+      return { value: chosen.length ? joinFr(chosen.map((s) => storeDisplayName(s))) : 'Aucun magasin', detail: null };
     }
     case 'creneaux':
     default: {

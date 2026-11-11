@@ -12,19 +12,33 @@
  *   quand le catalogue distant arrive) ;
  * - champs : `recipes`, `ingredients`, `stores`, `products`, `prices`,
  *   `recipesById`, `ingredientsById`, `storesById`, `productsById`,
- *   `index` (core › buildCatalogIndex, pour le comparateur), `source`, `version`.
+ *   `index` (core › buildCatalogIndex, pour le comparateur), `meta`
+ *   (description de l'instantané de données ouvertes : base distante, sinon
+ *   catalogue embarqué), `source`, `version` ;
+ * - `getCatalogMeta()` : `meta` de l'instantané courant (dates, indices,
+ *   couverture, sources ODbL à créditer) ;
+ * - `catalogIndexWithoutAllergens(snapshot, allergens)` : index du comparateur
+ *   SANS les produits contenant un allergène déclaré (jamais proposés).
  * - `refreshCatalog()` : charge le catalogue distant (production) — appelé au
  *   démarrage par `useAppBootstrap`. Sans effet en mode démo.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { useSyncExternalStore } from 'react';
 
-import type { CatalogIndex, Ingredient, Price, Product, Recipe, Store } from '@/core';
+import type { Allergen, CatalogIndex, CatalogMeta, Ingredient, Price, Product, Recipe, Store } from '@/core';
 import { buildCatalogIndex } from '@/core';
-import { catalog as localData } from '@/data';
+import { catalog as localData, catalogMeta as localMeta } from '@/data';
 import { readJSON, storageKey, writeJSON } from '@/lib/storage';
 
-import { rowToIngredient, rowToPrice, rowToProduct, rowToRecipe, rowToStore, type Row } from './mappers';
+import {
+  rowToCatalogMeta,
+  rowToIngredient,
+  rowToPrice,
+  rowToProduct,
+  rowToRecipe,
+  rowToStore,
+  type Row,
+} from './mappers';
 import { getSupabase } from './supabase';
 
 // ─── Dépôts ──────────────────────────────────────────────────────────────────
@@ -37,6 +51,8 @@ export interface CatalogRepository {
   getProducts(): Promise<Product[]>;
   /** Prix, éventuellement filtrés par produits et / ou magasins. */
   getPrices(productIds?: readonly string[], storeIds?: readonly string[]): Promise<Price[]>;
+  /** Description de l'instantané de données ouvertes (null : aucune). */
+  getCatalogMeta(): Promise<CatalogMeta | null>;
 }
 
 export interface CatalogData {
@@ -45,7 +61,12 @@ export interface CatalogData {
   stores: Store[];
   products: Product[];
   prices: Price[];
+  /** Absente des anciens caches disque : on retombe alors sur l'instantané embarqué. */
+  meta?: CatalogMeta | null;
 }
+
+/** Instantané embarqué (src/data/meta.ts). */
+const LOCAL_META: CatalogMeta | null = localMeta ?? null;
 
 function filterPrices(prices: readonly Price[], productIds?: readonly string[], storeIds?: readonly string[]): Price[] {
   const p = productIds && productIds.length > 0 ? new Set(productIds) : null;
@@ -62,6 +83,7 @@ export const localCatalogRepository: CatalogRepository = {
   getStores: async () => localData.stores,
   getProducts: async () => localData.products,
   getPrices: async (productIds, storeIds) => filterPrices(localData.prices, productIds, storeIds),
+  getCatalogMeta: async () => LOCAL_META,
 };
 
 const PAGE_SIZE = 1000;
@@ -129,6 +151,11 @@ export function createSupabaseCatalogSource(client: SupabaseClient): CatalogRepo
       }
       return out;
     },
+    async getCatalogMeta() {
+      const { data, error } = await client.from('catalog_meta').select('meta').eq('id', true).maybeSingle();
+      if (error) throw error;
+      return rowToCatalogMeta(data as Row | null);
+    },
   };
 }
 
@@ -177,6 +204,20 @@ export function createRemoteCatalogRepository(
       const all = await cached('prices', () => source.getPrices(), () => fallback.getPrices());
       return filterPrices(all, productIds, storeIds);
     },
+    // Base distante, sinon cache disque, sinon instantané embarqué.
+    getCatalogMeta: async () => {
+      if (memory.has('meta')) return memory.get('meta') as CatalogMeta | null;
+      let meta: CatalogMeta | null = null;
+      try {
+        meta = await source.getCatalogMeta();
+      } catch {
+        const disk = await readJSON<CatalogCacheFile | null>(CACHE_KEY, null);
+        meta = disk?.data?.meta ?? null;
+      }
+      const value = meta ?? (await fallback.getCatalogMeta());
+      memory.set('meta', value);
+      return value;
+    },
   };
 }
 
@@ -198,6 +239,8 @@ export interface CatalogSnapshot extends CatalogData {
   productsById: Record<string, Product>;
   /** Index du comparateur (core › buildCatalogIndex), ingrédients compris. */
   index: CatalogIndex;
+  /** Description de l'instantané de données ouvertes (base distante, sinon embarqué ; null : aucune). */
+  meta: CatalogMeta | null;
   /** Provenance : embarqué, cache disque ou réseau. */
   source: 'local' | 'cache' | 'remote';
   /** Incrémenté à chaque remplacement (dépendance de mémo). */
@@ -222,9 +265,45 @@ export function buildCatalogSnapshot(data: CatalogData, source: CatalogSnapshot[
     storesById: byId(data.stores),
     productsById: byId(data.products),
     index: buildCatalogIndex(data.products, data.prices, data.stores, data.ingredients),
+    meta: data.meta ?? LOCAL_META,
     source,
     version,
   };
+}
+
+/** Description de l'instantané courant (dates des relevés, indices, couverture, sources à créditer). */
+export function getCatalogMeta(): CatalogMeta | null {
+  return getCatalogSnapshot().meta;
+}
+
+/** Vrai si le produit contient au moins un des allergènes. */
+export function productHasAllergen(product: Pick<Product, 'allergens'>, allergens: readonly Allergen[]): boolean {
+  if (allergens.length === 0) return false;
+  const set = new Set(allergens);
+  return product.allergens.some((a) => set.has(a));
+}
+
+const safeIndexCache = new WeakMap<CatalogSnapshot, Map<string, CatalogIndex>>();
+
+/**
+ * Index du comparateur SANS les produits contenant un allergène déclaré du
+ * profil : un tel produit n'est jamais proposé (offre, alternative MDD, choix).
+ * Sans allergène, l'index habituel. Mémoïsé par instantané.
+ */
+export function catalogIndexWithoutAllergens(snapshot: CatalogSnapshot, allergens: readonly Allergen[] | undefined): CatalogIndex {
+  if (!allergens || allergens.length === 0) return snapshot.index;
+  const key = Array.from(new Set(allergens)).sort().join(',');
+  let byKey = safeIndexCache.get(snapshot);
+  if (!byKey) {
+    byKey = new Map();
+    safeIndexCache.set(snapshot, byKey);
+  }
+  const hit = byKey.get(key);
+  if (hit) return hit;
+  const products = snapshot.products.filter((p) => !productHasAllergen(p, allergens));
+  const index = buildCatalogIndex(products, snapshot.prices, snapshot.stores, snapshot.ingredients);
+  byKey.set(key, index);
+  return index;
 }
 
 let snapshot: CatalogSnapshot | null = null;
@@ -278,17 +357,19 @@ export function refreshCatalog(opts: { force?: boolean } = {}): Promise<CatalogS
     if (fresh && !opts.force) return getCatalogSnapshot();
     const source = createSupabaseCatalogSource(client);
     try {
-      const [recipes, ingredients, stores, products, prices] = await Promise.all([
+      const [recipes, ingredients, stores, products, prices, meta] = await Promise.all([
         source.getRecipes(),
         source.getIngredients(),
         source.getStores(),
         source.getProducts(),
         source.getPrices(),
+        // Facultatif : une erreur ici ne bloque pas le catalogue (repli embarqué).
+        source.getCatalogMeta().catch(() => null),
       ]);
       if (recipes.length === 0 || ingredients.length === 0 || stores.length === 0) {
         return getCatalogSnapshot();
       }
-      const data: CatalogData = { recipes, ingredients, stores, products, prices };
+      const data: CatalogData = { recipes, ingredients, stores, products, prices, meta };
       await writeJSON(CACHE_KEY, { fetchedAt: Date.now(), data } satisfies CatalogCacheFile);
       const next = buildCatalogSnapshot(data, 'remote');
       setCatalogSnapshot(next);

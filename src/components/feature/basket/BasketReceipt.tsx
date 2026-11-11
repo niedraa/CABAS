@@ -1,6 +1,8 @@
 /**
  * Ticket dentelé du panier : magasins retenus, sous-totaux, frais, économie
  * chiffrée (« −7,14 € ») et total qui défile au ressort quand il change.
+ * Les prix estimés (sans relevé dans l'enseigne) sont comptés : « dont 2 prix
+ * estimés ».
  */
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -11,7 +13,7 @@ import type { OrderChannel } from '@/core';
 import { formatPriceForA11y } from '@/lib/a11y';
 import { useTheme } from '@/theme';
 
-import { feesLabel, feesValue, MODE_COPY, plural, type ReceiptSummary } from './basketView';
+import { estimatedNote, feesLabel, feesValue, MODE_COPY, plural, type ReceiptSummary } from './basketView';
 import { ReceiptLine } from './ReceiptLine';
 
 export interface BasketReceiptProps {
@@ -47,7 +49,7 @@ export function BasketReceipt({ summary, channel, header, updating, testID }: Ba
             key={p.storeId}
             left={<StoreBadge chain={p.store?.chain ?? p.storeId} name={p.name} size="xs" />}
             label={p.name}
-            hint={plural(p.items, 'article')}
+            hint={[plural(p.items, 'article'), estimatedNote(p.estimated)].filter(Boolean).join(', ')}
             value={<AnimatedPrice cents={p.subtotalCents} variant="bodyMedium" />}
             accessibilityValue={formatPriceForA11y(p.subtotalCents)}
             testID={testID ? `${testID}-store-${p.storeId}` : undefined}
@@ -71,14 +73,17 @@ export function BasketReceipt({ summary, channel, header, updating, testID }: Ba
         <View
           style={[styles.row, { gap: t.spacing.sm }]}
           accessible
-          accessibilityLabel={`Total : ${formatPriceForA11y(summary.totalCents)}${summary.feesCents > 0 ? ', frais compris' : ''}`}
+          accessibilityLabel={`Total : ${formatPriceForA11y(summary.totalCents)}${summary.feesCents > 0 ? ', frais compris' : ''}${
+            summary.estimated > 0 ? `, ${estimatedNote(summary.estimated)}` : ''
+          }`}
         >
           <View style={styles.flex}>
             <Text variant="headline">Total</Text>
-            <Text variant="caption" color="textSecondary">
+            <Text variant="caption" color="textSecondary" testID={testID ? `${testID}-total-detail` : undefined}>
               {summary.missing > 0
                 ? `${nb(plural(summary.items, 'article'))} · ${nb(plural(summary.missing, 'introuvable'))}`
                 : `${nb(plural(summary.items, 'article'))}, frais compris`}
+              {summary.estimated > 0 ? ` · ${nb(estimatedNote(summary.estimated))}` : ''}
             </Text>
           </View>
           <AnimatedPrice cents={summary.totalCents} variant="priceLarge" testID={testID ? `${testID}-total` : undefined} />

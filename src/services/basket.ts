@@ -10,8 +10,14 @@
  *   reçoit le panier « un seul magasin » (`downgraded: true`).
  * - `applyProductChoices` : remplace l'offre d'un article par le produit
  *   choisi (ex. alternative MDD) dans les magasins qui le vendent.
+ *
+ * Allergènes : avec `allergens` (allergènes déclarés du profil), un produit
+ * qui en contient un (allergènes de l'ingrédient ∪ déclarés par Open Food
+ * Facts) n'est JAMAIS proposé — ni offre, ni alternative, ni choix. Côté
+ * serveur, `optimize-basket` applique la même règle avec le profil en base.
  */
 import type {
+  Allergen,
   BasketMode,
   BasketPlan,
   Entitlement,
@@ -22,7 +28,7 @@ import type {
 } from '@/core';
 import { allOffersForItem, canUse, compareList, optimizeBasket } from '@/core';
 
-import { getCatalogSnapshot, type CatalogSnapshot } from './catalog';
+import { catalogIndexWithoutAllergens, getCatalogSnapshot, productHasAllergen, type CatalogSnapshot } from './catalog';
 import { errorMessage, getSupabase } from './supabase';
 
 export const BASKET_TIMEOUT_MS = 9000;
@@ -36,6 +42,8 @@ export interface BasketRequest {
   entitlement: Entitlement;
   /** itemId → productId choisi (alternative MDD, marque préférée). */
   productChoices?: Record<string, string>;
+  /** Allergènes déclarés du profil : aucun produit qui en contient n'est proposé. */
+  allergens?: readonly Allergen[];
 }
 
 export interface BasketResult {
@@ -78,14 +86,17 @@ export function applyProductChoices(
   items: readonly ShoppingListItem[],
   choices: Record<string, string> | undefined,
   catalog: CatalogSnapshot = getCatalogSnapshot(),
+  allergens?: readonly Allergen[],
 ): ItemComparison[] {
   if (!choices || Object.keys(choices).length === 0) return comparisons.slice();
+  const index = catalogIndexWithoutAllergens(catalog, allergens);
   const itemsById = new Map(items.map((i) => [i.id, i]));
   return comparisons.map((c) => {
     const productId = choices[c.itemId];
     const item = itemsById.get(c.itemId);
     if (!productId || !item) return c;
-    const chosen = allOffersForItem(item, catalog.index).filter((o) => o.productId === productId);
+    // Produit choisi contenant un allergène déclaré : choix ignoré (absent de l'index sûr).
+    const chosen = allOffersForItem(item, index).filter((o) => o.productId === productId);
     if (chosen.length === 0) return c;
     const byStore = new Map(c.offers.map((o) => [o.storeId, o]));
     for (const o of chosen) byStore.set(o.storeId, o);
@@ -97,13 +108,38 @@ export function applyProductChoices(
   });
 }
 
+/**
+ * Retire d'une comparaison (ex. réponse du serveur) les offres dont le
+ * produit, connu du catalogue, contient un allergène déclaré.
+ */
+export function withoutAllergenOffers(
+  comparisons: readonly ItemComparison[],
+  allergens: readonly Allergen[] | undefined,
+  catalog: CatalogSnapshot = getCatalogSnapshot(),
+): ItemComparison[] {
+  if (!allergens || allergens.length === 0) return comparisons.slice();
+  const unsafe = (productId: string) => {
+    const p = catalog.productsById[productId];
+    return !!p && productHasAllergen(p, allergens);
+  };
+  return comparisons.map((c) => {
+    const offers = c.offers.filter((o) => !unsafe(o.productId));
+    if (offers.length === c.offers.length && !(c.cheaperAlternative && unsafe(c.cheaperAlternative.productId))) return c;
+    const next: ItemComparison = { itemId: c.itemId, label: c.label, offers };
+    if (offers[0]) next.best = offers[0];
+    if (c.cheaperAlternative && !unsafe(c.cheaperAlternative.productId)) next.cheaperAlternative = c.cheaperAlternative;
+    return next;
+  });
+}
+
 /** Comparaison locale (articles non cochés). `storeIds` restreint les offres affichées. */
 export function computeComparison(
   items: readonly ShoppingListItem[],
   storeIds?: readonly string[],
   catalog: CatalogSnapshot = getCatalogSnapshot(),
+  allergens?: readonly Allergen[],
 ): ItemComparison[] {
-  const comparisons = compareList(items, catalog.index);
+  const comparisons = compareList(items, catalogIndexWithoutAllergens(catalog, allergens));
   if (!storeIds || storeIds.length === 0) return comparisons;
   const allowed = new Set(storeIds);
   return comparisons.map((c) => {
@@ -128,7 +164,14 @@ function knownStoreIds(storeIds: readonly string[], catalog: CatalogSnapshot): s
 export function computeBasketLocal(req: BasketRequest, catalog: CatalogSnapshot = getCatalogSnapshot()): Omit<BasketResult, 'source' | 'durationMs'> {
   const mode = effectiveBasketMode(req.mode, req.entitlement);
   const nowIso = new Date().toISOString();
-  const comparisons = applyProductChoices(compareList(req.items, catalog.index, nowIso), req.items, req.productChoices, catalog);
+  const index = catalogIndexWithoutAllergens(catalog, req.allergens);
+  const comparisons = applyProductChoices(
+    compareList(req.items, index, nowIso),
+    req.items,
+    req.productChoices,
+    catalog,
+    req.allergens,
+  );
   const allowed = knownStoreIds(req.storeIds, catalog);
   const plan = optimizeBasket(comparisons, catalog.stores, mode, {
     channel: req.channel,
@@ -174,6 +217,19 @@ export function createBasketService(deps: { remote: BasketRemote | null; getCata
           );
           const parsed = parseRemoteBasket(raw);
           if (!parsed) throw new Error('réponse illisible');
+          // Défense en profondeur : le serveur filtre déjà selon le profil en base.
+          if (req.allergens && req.allergens.length > 0) {
+            const safe = withoutAllergenOffers(parsed.comparisons, req.allergens, catalog);
+            const unsafeInPlan = parsed.plan.parts.some((part) =>
+              part.lines.some((l) => {
+                const p = catalog.productsById[l.productId];
+                return !!p && productHasAllergen(p, req.allergens ?? []);
+              }),
+            );
+            // Un panier distant contenant un produit à risque est recalculé localement.
+            if (unsafeInPlan) throw new Error('panier distant non conforme aux allergies');
+            parsed.comparisons = safe;
+          }
           // Le serveur applique lui-même la limite gratuite ; on la réapplique par sécurité.
           const mode = parsed.mode ?? effectiveBasketMode(req.mode, req.entitlement);
           if (mode === 'cheapest' && !canUse('optimized_basket', req.entitlement)) throw new Error('mode non autorisé');

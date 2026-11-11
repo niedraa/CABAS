@@ -37,7 +37,15 @@ export { Avatar, type AvatarProps } from './Avatar';
 
 export { PriceTag, type PriceTagProps, type PriceTagSize } from './PriceTag';
 export { AnimatedNumber, AnimatedPrice, type AnimatedNumberProps, type AnimatedPriceProps } from './AnimatedNumber';
-export { StoreBadge, StoreBadgeStack, STORE_MONOGRAMS, type StoreBadgeProps, type StoreBadgeSize } from './StoreBadge';
+export {
+  StoreBadge,
+  StoreBadgeStack,
+  STORE_MONOGRAMS,
+  storeBadgeName,
+  storeStackLabel,
+  type StoreBadgeProps,
+  type StoreBadgeSize,
+} from './StoreBadge';
 export { RecipeThumb, pastelFor, type RecipeThumbProps, type RecipeThumbSize } from './RecipeThumb';
 
 export { ProgressBar, ProgressRing, type ProgressBarProps, type ProgressRingProps, type ProgressTone } from './Progress';

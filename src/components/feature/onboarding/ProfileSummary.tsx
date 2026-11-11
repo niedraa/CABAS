@@ -7,7 +7,7 @@ import { StyleSheet, View } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
 
 import { Badge, Card, PressableScale, StaggeredList, StoreBadgeStack, Text } from '@/components/ui';
-import { ALLERGEN_LABELS, CUISINE_LABELS, DIET_LABELS, formatPrice, joinFr, type Store } from '@/core';
+import { ALLERGEN_LABELS, CUISINE_LABELS, DIET_LABELS, formatPrice, joinFr, storeDisplayName, type Store } from '@/core';
 import type { ProfileDraft } from '@/stores';
 import { useTheme } from '@/theme';
 
@@ -89,7 +89,7 @@ export function ProfileSummary({ draft, stores, onEdit }: ProfileSummaryProps) {
           title="Magasins"
           step="magasins"
           onEdit={onEdit}
-          value={chosenStores.length ? joinFr(chosenStores.map((s) => s.name.replace(/ Drive$/, ''))) : 'Aucun magasin'}
+          value={chosenStores.length ? joinFr(chosenStores.map((s) => storeDisplayName(s))) : 'Aucun magasin'}
           right={chosenStores.length ? <StoreBadgeStack chains={chosenStores.map((s) => s.chain)} size="xs" max={5} /> : null}
         />
         <SummaryRow

@@ -1,15 +1,15 @@
 /**
  * Onglet « Profil » : en-tête (avatar, prénom, foyer), carte d'abonnement
  * (gratuit → essayer Premium ; essai / Premium → date de fin), sections du
- * profil éditables, raccourcis Placard et Budget, réglages, version de l'app
- * et mention « mode démo ».
+ * profil éditables, raccourcis Placard et Budget, réglages, « À propos »
+ * (sources des données et licences), version de l'app et mention « mode démo ».
  */
 import Constants from 'expo-constants';
 import { router, type Href } from 'expo-router';
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated from 'react-native-reanimated';
-import { Bell, Crown, Palette, ShieldCheck } from 'lucide-react-native';
+import { Bell, Crown, Database, Palette, ShieldCheck } from 'lucide-react-native';
 
 import { CabasLogo, EmptyBasket } from '@/components/brand';
 import {
@@ -130,7 +130,7 @@ export default function ProfileTab() {
                     detail={sum.detail}
                     right={
                       s.id === 'magasins' && chosenStores.length > 0 ? (
-                        <StoreBadgeStack chains={chosenStores.map((st) => st.chain)} size="xs" max={4} />
+                        <StoreBadgeStack chains={chosenStores.map((st) => st.chain)} size="xs" max={4} accessibilityLabel={`${chosenStores.length} enseigne${chosenStores.length > 1 ? 's' : ''}`} />
                       ) : null
                     }
                     onPress={() => go(sectionHref(s.id as ProfileSectionId))}
@@ -176,7 +176,20 @@ export default function ProfileTab() {
           </SettingsGroup>
         </Animated.View>
 
-        <Animated.View entering={staggerEntering(5)} style={[styles.footer, { gap: t.spacing.sm, paddingTop: t.spacing.sm }]}>
+        <Animated.View entering={staggerEntering(5)}>
+          <SettingsGroup title="À propos">
+            <SettingsRow
+              icon={Database}
+              title="Sources et licences"
+              subtitle="Prix relevés par la communauté Open Prices, produits Open Food Facts"
+              chevron
+              onPress={() => go('/parametres/sources')}
+              testID="settings-sources"
+            />
+          </SettingsGroup>
+        </Animated.View>
+
+        <Animated.View entering={staggerEntering(6)} style={[styles.footer, { gap: t.spacing.sm, paddingTop: t.spacing.sm }]}>
           <CabasLogo size={28} withWordmark />
           <Text variant="caption" color="textSecondary" align="center" testID="app-version">
             {appVersionLabel(Constants.expoConfig?.version, isDemoMode)}

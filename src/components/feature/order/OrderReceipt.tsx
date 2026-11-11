@@ -1,6 +1,7 @@
 /**
  * Ticket de la commande d'un magasin : lignes (article, produit, quantité,
- * prix), sous-total, frais, économie et total. Repliée au-delà de 6 lignes.
+ * prix — « prix estimé » signalé), sous-total (« dont 2 prix estimés »),
+ * frais, économie et total. Repliée au-delà de 6 lignes.
  */
 import React, { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -14,7 +15,7 @@ import { formatPrice } from '@/core';
 import { formatPriceForA11y } from '@/lib/a11y';
 import { useTheme } from '@/theme';
 
-import { CHANNEL_LABELS, feesLabel, feesValue, plural } from '../basket/basketView';
+import { CHANNEL_LABELS, estimatedNote, feesLabel, feesValue, plural } from '../basket/basketView';
 import { ReceiptLine } from '../basket/ReceiptLine';
 import type { OrderLineView } from './orderView';
 
@@ -25,23 +26,26 @@ export interface OrderReceiptProps {
   totalCents: number;
   savingsCents: number;
   channel: OrderChannel;
+  /** Service rendu (« Drive », « Click & collect », « En magasin »…) ; défaut : le canal. */
+  service?: string;
   testID?: string;
 }
 
 export const ORDER_COLLAPSED_LINES = 6;
 
-export function OrderReceipt({ lines, subtotalCents, feesCents, totalCents, savingsCents, channel, testID }: OrderReceiptProps) {
+export function OrderReceipt({ lines, subtotalCents, feesCents, totalCents, savingsCents, channel, service, testID }: OrderReceiptProps) {
   const t = useTheme();
   const c = t.colors;
   const [expanded, setExpanded] = useState(false);
   const shown = expanded ? lines : lines.slice(0, ORDER_COLLAPSED_LINES);
   const hidden = lines.length - ORDER_COLLAPSED_LINES;
+  const estimated = lines.filter((l) => l.isEstimate).length;
 
   return (
     <Animated.View testID={testID} layout={LinearTransition.springify().damping(t.motion.spring.damping)}>
-      <ReceiptCard header={`Ticket · ${CHANNEL_LABELS[channel]} · ${plural(lines.length, 'article')}`} edges="both">
+      <ReceiptCard header={`Ticket · ${service ?? CHANNEL_LABELS[channel]} · ${plural(lines.length, 'article')}`} edges="both">
         {shown.map((l, i) => {
-          const detail = [l.productName, l.brand, l.quantity].filter(Boolean).join(' · ');
+          const detail = [l.productName, l.brand, l.quantity, l.isEstimate ? 'prix estimé' : null].filter(Boolean).join(' · ');
           return (
             <Animated.View
               key={l.key}
@@ -85,7 +89,7 @@ export function OrderReceipt({ lines, subtotalCents, feesCents, totalCents, savi
           </PressableScale>
         ) : null}
         <Divider variant="dashed" spacing={t.spacing.xs} />
-        <ReceiptLine label="Sous-total" value={formatPrice(subtotalCents)} />
+        <ReceiptLine label="Sous-total" hint={estimatedNote(estimated) || undefined} value={formatPrice(subtotalCents)} />
         <ReceiptLine label={feesLabel(channel)} value={feesValue(feesCents)} valueColor={feesCents > 0 ? 'text' : 'success'} />
         {savingsCents > 0 ? (
           <ReceiptLine

@@ -9,11 +9,14 @@ import {
   PriceTag,
   ProgressBar,
   RecipeThumb,
+  STORE_MONOGRAMS,
   StoreBadge,
   StoreBadgeStack,
+  storeStackLabel,
   Text,
   pastelFor,
 } from '@/components/ui';
+import { STORE_CHAIN_LABELS, STORE_CHAINS } from '@/core';
 import { formatCents, formatDiscount, initialsOf, splitCents } from '@/lib/format';
 import { formatPrice } from '@/core/money';
 import { ThemeProvider, darkColors, lightColors } from '@/theme';
@@ -108,9 +111,22 @@ describe('StoreBadge', () => {
   });
 
   it('empile au plus `max` badges et compte le reste', async () => {
-    await render(<StoreBadgeStack chains={['leclerc', 'lidl', 'auchan', 'carrefour', 'monoprix']} max={3} />);
+    const view = await render(<StoreBadgeStack chains={['leclerc', 'lidl', 'auchan', 'carrefour', 'monoprix']} max={3} />);
     expect(screen.getByText('+2')).toBeTruthy();
-    expect(screen.getByLabelText('5 enseignes comparées')).toBeTruthy();
+    // Lu comme une seule image, TOUTES les enseignes nommées (même au-delà de `max`).
+    expect(screen.getByLabelText('Enseignes : E.Leclerc, Lidl, Auchan, Carrefour et Monoprix')).toBeTruthy();
+    await view.rerender(<StoreBadgeStack chains={['superu']} />);
+    expect(screen.getByLabelText('Enseigne : Super U')).toBeTruthy();
+    await view.rerender(<StoreBadgeStack chains={['leclerc', 'aldi']} accessibilityLabel="2 enseignes comparées" />);
+    expect(screen.getByLabelText('2 enseignes comparées')).toBeTruthy();
+  });
+
+  it('un monogramme unique et un nom par enseigne (10 enseignes)', () => {
+    expect(Object.keys(STORE_MONOGRAMS).sort()).toEqual([...STORE_CHAINS].sort());
+    const initials = Object.values(STORE_MONOGRAMS).map((m) => m.initials);
+    expect(new Set(initials).size).toBe(initials.length);
+    for (const chain of STORE_CHAINS) expect(STORE_MONOGRAMS[chain].name).toBe(STORE_CHAIN_LABELS[chain]);
+    expect(storeStackLabel([])).toBe('Aucune enseigne');
   });
 });
 

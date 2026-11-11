@@ -1,7 +1,9 @@
 /**
- * Section « Magasins » : cartes d'enseigne (monogramme, nom, retrait drive,
- * livraison) à sélection multiple, 1 à 5 enseignes. Composant contrôlé
- * (`value` = ids de magasins) ; la liste des magasins est passée par l'écran.
+ * Section « Magasins » : cartes d'enseigne (monogramme, nom, retrait —
+ * drive, click & collect ou en magasin —, livraison) à sélection multiple,
+ * 1 à 5 enseignes, groupées par famille (Hypers & supers / Discount /
+ * Proximité). Composant contrôlé (`value` = ids de magasins) ; la liste des
+ * magasins est passée par l'écran. Frais et services : indicatifs.
  */
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -9,7 +11,7 @@ import Animated, { FadeIn, FadeOut, LinearTransition, useAnimatedStyle, useDeriv
 import { Check, PackageCheck, Store as StoreIcon, Truck } from 'lucide-react-native';
 
 import { PressableScale, Row, Stack, StaggeredList, StoreBadge, StoreBadgeStack, Text } from '@/components/ui';
-import { formatPrice, STORE_CHAIN_LABELS, type Store } from '@/core';
+import { formatPrice, STORE_CHAIN_GROUPS, storeDisplayName, type Store } from '@/core';
 import { haptics } from '@/lib/haptics';
 import { useTheme } from '@/theme';
 
@@ -23,16 +25,54 @@ export interface StoresSectionProps {
   testID?: string;
 }
 
-/** Libellés de service d'un magasin (drive / livraison), prêts à afficher. */
-export function storeServiceLabels(store: Store): { pickup: string; delivery: string } {
-  const hasDrive = /drive/i.test(store.name);
-  const pickup = hasDrive
-    ? store.driveFeeCents === 0
-      ? 'Drive · retrait gratuit'
-      : `Drive · retrait ${formatPrice(store.driveFeeCents)}`
-    : 'Courses en magasin';
-  const delivery = store.deliveryFeeCents === null ? 'Pas de livraison' : `Livraison ${formatPrice(store.deliveryFeeCents)}`;
+/**
+ * Libellés de service d'un magasin (retrait, livraison), prêts à afficher,
+ * depuis `store.pickup` et les frais INDICATIFS (« ≈ ») : « Drive gratuit »,
+ * « Click & collect · dès 60 € », « Courses en magasin », « Livraison ≈ 6,90 € »,
+ * « Pas de livraison ».
+ */
+export function storeServiceLabels(store: Pick<Store, 'pickup' | 'driveFeeCents' | 'deliveryFeeCents' | 'minOrderCents'>): {
+  pickup: string;
+  delivery: string;
+} {
+  const fee = store.driveFeeCents ?? 0;
+  const min = store.minOrderCents > 0 ? ` · dès ${formatPrice(store.minOrderCents, { compact: true })}` : '';
+  const pickup =
+    store.pickup === 'none'
+      ? 'Courses en magasin'
+      : store.pickup === 'click_collect'
+        ? `Click & collect${fee > 0 ? ` ≈ ${formatPrice(fee)}` : ''}${min}`
+        : `${fee > 0 ? `Drive ≈ ${formatPrice(fee)}` : 'Drive gratuit'}${min}`;
+  const delivery =
+    store.deliveryFeeCents === null
+      ? 'Pas de livraison'
+      : store.deliveryFeeCents === 0
+        ? 'Livraison gratuite'
+        : `Livraison ≈ ${formatPrice(store.deliveryFeeCents)}`;
   return { pickup, delivery };
+}
+
+export interface StoreGroup {
+  id: string;
+  label: string;
+  stores: Store[];
+}
+
+/**
+ * Magasins groupés par famille d'enseignes, dans l'ordre d'affichage ; une
+ * enseigne hors familles (ancien cache) rejoint « Autres enseignes ». Les
+ * groupes vides sont omis.
+ */
+export function groupStores(stores: readonly Store[]): StoreGroup[] {
+  const used = new Set<string>();
+  const groups: StoreGroup[] = STORE_CHAIN_GROUPS.map((g) => {
+    const inGroup = g.chains.flatMap((chain) => stores.filter((s) => s.chain === chain));
+    inGroup.forEach((s) => used.add(s.id));
+    return { id: g.id, label: g.label, stores: inGroup };
+  });
+  const others = stores.filter((s) => !used.has(s.id));
+  if (others.length > 0) groups.push({ id: 'autres', label: 'Autres enseignes', stores: others });
+  return groups.filter((g) => g.stores.length > 0);
 }
 
 export function StoresSection({ value, onChange, stores, max = STORES_MAX, testID = 'stores' }: StoresSectionProps) {
@@ -59,7 +99,11 @@ export function StoresSection({ value, onChange, stores, max = STORES_MAX, testI
             title: `${n} enseigne${n > 1 ? 's' : ''} choisie${n > 1 ? 's' : ''}`,
             body: `Ajoutes-en ${STORES_RECOMMENDED - n} : au moins ${STORES_RECOMMENDED} pour de vraies économies.`,
           }
-        : { tone: 'success' as const, title: `Cabas comparera les prix entre ces ${n} enseignes`, body: 'De quoi faire de vraies économies chaque semaine.' };
+        : {
+            tone: 'success' as const,
+            title: `Cabas comparera les prix entre ces ${n} enseignes`,
+            body: n >= max ? `C’est le maximum : retire une enseigne pour en choisir une autre.` : 'De quoi faire de vraies économies chaque semaine.',
+          };
   const statusBg = status.tone === 'success' ? t.colors.successSoft : status.tone === 'tip' ? t.colors.accentSoft : t.colors.backgroundAlt;
 
   return (
@@ -89,18 +133,29 @@ export function StoresSection({ value, onChange, stores, max = STORES_MAX, testI
         </Row>
       </Animated.View>
 
-      <StaggeredList gap="sm">
-        {stores.map((store) => (
-          <StoreCard
-            key={store.id}
-            store={store}
-            selected={value.includes(store.id)}
-            disabled={!value.includes(store.id) && n >= max}
-            onPress={() => toggle(store.id)}
-            testID={`${testID}-${store.id}`}
-          />
-        ))}
-      </StaggeredList>
+      {groupStores(stores).map((group) => (
+        <View key={group.id} style={{ gap: t.spacing.sm }} testID={`${testID}-group-${group.id}`}>
+          <Text variant="overline" color="textSecondary" accessibilityRole="header" style={{ marginLeft: t.spacing.xs }}>
+            {group.label}
+          </Text>
+          <StaggeredList gap="sm">
+            {group.stores.map((store) => (
+              <StoreCard
+                key={store.id}
+                store={store}
+                selected={value.includes(store.id)}
+                disabled={!value.includes(store.id) && n >= max}
+                onPress={() => toggle(store.id)}
+                testID={`${testID}-${store.id}`}
+              />
+            ))}
+          </StaggeredList>
+        </View>
+      ))}
+
+      <Text variant="footnote" color="textSecondary" style={{ marginHorizontal: t.spacing.xs }}>
+        Prix nationaux relevés par la communauté Open Prices. Frais et services indicatifs : ils varient selon ton magasin.
+      </Text>
     </Stack>
   );
 }
@@ -120,8 +175,9 @@ function StoreCard({
 }) {
   const t = useTheme();
   const c = t.colors;
-  const name = STORE_CHAIN_LABELS[store.chain] ?? store.name;
+  const name = storeDisplayName(store);
   const { pickup, delivery } = storeServiceLabels(store);
+  const noDelivery = store.deliveryFeeCents === null;
   const p = useDerivedValue(() => withSpring(selected ? 1 : 0, t.motion.springBouncy), [selected]);
   const checkStyle = useAnimatedStyle(() => ({ opacity: Math.min(1, p.get() * 1.5), transform: [{ scale: 0.3 + 0.7 * p.get() }] }));
 
@@ -152,14 +208,18 @@ function StoreCard({
           {name}
         </Text>
         <Row gap="xs" style={styles.meta}>
-          <PackageCheck size={t.iconSize.xs} color={c.textSecondary} />
+          {store.pickup === 'none' ? (
+            <StoreIcon size={t.iconSize.xs} color={c.textSecondary} />
+          ) : (
+            <PackageCheck size={t.iconSize.xs} color={c.textSecondary} />
+          )}
           <Text variant="footnote" color="textSecondary" numberOfLines={1} style={styles.flexShrink}>
             {pickup}
           </Text>
         </Row>
         <Row gap="xs">
-          <Truck size={t.iconSize.xs} color={store.deliveryFeeCents === null ? c.textTertiary : c.textSecondary} />
-          <Text variant="footnote" color={store.deliveryFeeCents === null ? 'textTertiary' : 'textSecondary'} numberOfLines={1} style={styles.flexShrink}>
+          <Truck size={t.iconSize.xs} color={noDelivery ? c.textTertiary : c.textSecondary} />
+          <Text variant="footnote" color="textSecondary" numberOfLines={1} style={styles.flexShrink}>
             {delivery}
           </Text>
         </Row>

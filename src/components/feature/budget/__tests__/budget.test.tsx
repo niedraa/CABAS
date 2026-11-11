@@ -19,7 +19,6 @@ import {
   recentDayChoices,
   shortDayLabel,
   spendingAddedMessage,
-  storeLabel,
   weeklyBars,
 } from '../budgetView';
 import { BudgetWeekCard } from '../BudgetWeekCard';
@@ -141,11 +140,11 @@ describe('saisie d’une dépense', () => {
   });
 
   it('libellés des lignes', () => {
-    expect(storeLabel('leclerc', storesById)).toBe('E.Leclerc');
-    expect(storeLabel('marche', storesById)).toBe('Marche');
     expect(shortDayLabel('2026-11-07', '2026-11-10')).toBe('Sam. 7 nov.');
     expect(shortDayLabel('2026-11-10', '2026-11-10')).toBe('Aujourd’hui');
     expect(entryTexts(entry(), storesById, '2026-11-10')).toEqual({ title: 'E.Leclerc', day: 'Sam. 7 nov.', source: 'Commande', store: 'E.Leclerc' });
+    // Enseigne inconnue du catalogue : son identifiant, en majuscule initiale.
+    expect(entryTexts(entry({ storeId: 'marche' }), storesById, '2026-11-10').store).toBe('Marche');
     expect(entryTexts(entry({ label: ' Marché ', source: 'manual' }), storesById, '2026-11-10')).toMatchObject({
       title: 'Marché',
       source: 'Ajout manuel',

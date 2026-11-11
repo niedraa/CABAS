@@ -70,6 +70,31 @@ e2e/             Tests de bout en bout (Playwright)
 - [`docs/BACKEND.md`](docs/BACKEND.md) — schéma, RLS, API des fonctions, tâches planifiées, RGPD, déploiement.
 - [`docs/brand/README.md`](docs/brand/README.md) — direction artistique « Marché frais » : logo, couleurs, typographie, mouvement, voix.
 
+## Données
+
+Produits, prix et enseignes viennent de **données ouvertes** sous licence
+ODbL, créditées dans l'app :
+
+- [Open Food Facts](https://world.openfoodfacts.org) : fiches produit (nom, contenance, Nutri-Score, allergènes) ;
+- [Open Prices](https://prices.openfoodfacts.org) : prix relevés en magasin par la communauté ;
+- [OpenStreetMap](https://www.openstreetmap.org/copyright) : magasins et enseignes.
+
+Le prix d'une enseigne est **national** : médiane de ses relevés en France
+métropolitaine sur 365 jours, hors promotions. Sans relevé, le prix est
+**estimé** (indice de prix de l'enseigne, MDD équivalente, médiane du vrac) et
+toujours signalé « Estimé ». Les produits retenus pour chaque ingrédient sont
+listés à la main dans `src/data/productSources.ts`.
+
+| Commande | Rôle |
+|---|---|
+| `npm run data:fetch` | Télécharge les exports Open Prices et les fiches Open Food Facts dans `.cache/open-data/` |
+| `npm run data:snapshot` | Construit l'instantané versionné `src/data/openData/snapshot.json` (+ rapport de relecture) |
+| `npm run data:generate` | Régénère `src/data/products.ts`, `prices.ts`, `meta.ts` (un test vérifie qu'ils sont à jour) |
+| `npm run data:all` | Les trois à la suite |
+
+- [`docs/OPEN_DATA.md`](docs/OPEN_DATA.md) — pipeline, filtres, méthodes d'estimation, rafraîchissement.
+- [`DATA_LICENSE.md`](DATA_LICENSE.md) — licence ODbL, attribution, contenu de l'instantané.
+
 ## Livrer
 
 - Back-end : voir [`docs/BACKEND.md` § Déploiement](docs/BACKEND.md#7-déploiement) (`supabase db push`, `supabase functions deploy`).

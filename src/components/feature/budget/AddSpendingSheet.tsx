@@ -9,9 +9,10 @@ import { Euro, Plus } from 'lucide-react-native';
 
 import { Button, Chip, ChipGroup, Sheet, Stack, Text, TextField } from '@/components/ui';
 import type { Store } from '@/core';
+import { storeDisplayName } from '@/core';
 import { useTheme } from '@/theme';
 
-import { parseAmountInput, recentDayChoices, storeLabel } from './budgetView';
+import { parseAmountInput, recentDayChoices } from './budgetView';
 
 export interface AddSpendingInput {
   date: string;
@@ -53,8 +54,7 @@ export function AddSpendingSheet({ visible, onClose, onSubmit, stores, today, te
 
   const parsed = parseAmountInput(amount);
   const days = useMemo(() => recentDayChoices(today, 7), [today]);
-  const storesById = useMemo(() => Object.fromEntries(stores.map((s) => [s.id, s])), [stores]);
-  const storeOptions = useMemo(() => stores.map((s) => ({ value: s.id, label: storeLabel(s.id, storesById) })), [stores, storesById]);
+  const storeOptions = useMemo(() => stores.map((s) => ({ value: s.id, label: storeDisplayName(s) })), [stores]);
   const canSubmit = parsed.ok && !!storeId;
 
   const submit = () => {

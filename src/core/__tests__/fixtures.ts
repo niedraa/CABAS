@@ -264,6 +264,7 @@ function store(id: string, chain: Store['chain'], o: Partial<Store> = {}): Store
     chain,
     name: `${chain[0].toUpperCase()}${chain.slice(1)} Test`,
     city: 'Lyon',
+    pickup: 'drive',
     driveFeeCents: 0,
     deliveryFeeCents: 599,
     minOrderCents: 0,
@@ -296,8 +297,8 @@ function product(id: string, ingredientId: string, packSize: number, packUnit: P
 
 export const PRODUCTS: Product[] = [
   product('p_pates_barilla', 'pates', 500, 'g', { name: 'Spaghetti n°5', brand: 'Barilla' }),
-  product('p_pates_mdd_leclerc', 'pates', 1000, 'g', { name: 'Spaghetti', brand: 'Repère', isStoreBrand: true, storeChain: 'leclerc' }),
-  product('p_pates_mdd_carrefour', 'pates', 500, 'g', { name: 'Spaghetti', brand: 'Carrefour Classic', isStoreBrand: true, storeChain: 'carrefour' }),
+  product('p_pates_mdd_leclerc', 'pates', 1000, 'g', { name: 'Spaghetti', brand: 'Repère', isStoreBrand: true, storeChains: ['leclerc'] }),
+  product('p_pates_mdd_carrefour', 'pates', 500, 'g', { name: 'Spaghetti', brand: 'Carrefour Classic', isStoreBrand: true, storeChains: ['carrefour'] }),
   product('p_tomate_vrac', 'tomate', 1000, 'g', { name: 'Tomates rondes', brand: '' }),
   product('p_oignon_filet', 'oignon', 1000, 'g', { name: 'Oignons jaunes filet 1 kg', brand: '' }),
   product('p_oignon_piece', 'oignon', 1, 'piece', { name: 'Oignon à l’unité', brand: '' }),

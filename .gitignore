@@ -49,3 +49,6 @@ coverage/
 
 # e2e
 e2e/screenshots/
+
+# Données ouvertes téléchargées (npm run data:fetch)
+.cache/

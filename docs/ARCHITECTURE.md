@@ -13,7 +13,7 @@
 │ src/stores/         État client (zustand + persistance AsyncStorage → mode hors-ligne) │
 │ src/services/       Accès aux données & SDK (Supabase, RevenueCat, PostHog, Sentry…)   │
 │ src/core/           Logique métier PURE (partagée avec les Edge Functions)             │
-│ src/data/           Catalogue de démonstration (recettes, produits, prix, enseignes)   │
+│ src/data/           Catalogue embarqué : recettes, produits & prix réels (ODbL)        │
 │ src/theme/          Tokens de la direction artistique                                  │
 └────────────────────────────────────────────────────────────────────────────────────────┘
                 │ supabase-js (Auth, PostgREST, Functions)
@@ -69,13 +69,13 @@ data → core/types (imports `import type` uniquement)
 | `constraints.ts` | Allergènes / régimes / ingrédients exclus / ustensiles / temps → autorisé ou non + raisons |
 | `mealEngine.ts` | Planning hebdo déterministe (variété, temps, budget, goûts), remplacement d'un plat, prompt & validation de la réponse LLM |
 | `shoppingList.ts` | Agrégation des ingrédients, conversion, arrondi aux conditionnements réels, fusion avec les ajouts manuels |
-| `priceComparison.ts` | Meilleure offre par enseigne, prix au kilo, alternative MDD moins chère |
+| `priceComparison.ts` | Meilleure offre par enseigne, prix au kilo, alternative MDD moins chère ; provenance des prix (relevé > estimation > démo), MDD par `storeChains`, exclusion des produits allergènes |
 | `basketOptimizer.ts` | Panier « le moins cher » (multi-magasins, max 2) ou « un seul magasin » (meilleur total), frais inclus |
-| `order.ts` | Transmission de commande : URL drive pré-remplie / redirection, texte de liste |
+| `order.ts` | Transmission de commande : URL drive pré-remplie / redirection (gabarit sans `{query}` ouvert tel quel), texte de liste (« (prix estimé) ») |
 | `entitlements.ts` | Gratuit vs Premium (3 repas/semaine, panier optimisé, commande 1 clic, alertes prix) |
 | `pantry.ts` | (V2) Placard : stock maison, déduction de la liste, recettes « anti-gaspi » |
 | `budget.ts` | (V2) Dépenses par semaine / mois, économies réalisées |
-| `priceAlerts.ts` | Détection des baisses de prix sur les produits habituels |
+| `priceAlerts.ts` | Détection des baisses de prix sur les produits habituels (jamais sur une estimation) |
 
 ## État client (`src/stores`)
 
@@ -107,13 +107,45 @@ parametres/notifications    Rappels (planification, commande), baisses de prix (
 parametres/apparence        Thème (auto / clair / sombre), retour haptique
 parametres/abonnement       Statut, restauration, gestion de l'abonnement
 parametres/compte           Compte & données (RGPD) : consentements, export JSON, suppression
+parametres/sources          Sources et licences : Open Food Facts, Open Prices, OpenStreetMap (ODbL),
+                            instantané, couverture et indice de prix par enseigne, méthode des estimations
 dev/seed, design-system     Outils de développement (état de démo, galerie de la DA)
 ```
 
 Composants métier par écran : `src/components/feature/<domaine>/` (onboarding,
 profile, planning, recipe, list, pantry, basket, order, premium, account,
-budget), chacun avec sa logique de présentation pure (`*View.ts`, testée) et
-ses tests dans `__tests__/`.
+budget, sources), chacun avec sa logique de présentation pure (`*View.ts`,
+testée) et ses tests dans `__tests__/`.
+
+### Données réelles dans l'interface
+
+- **10 enseignes** (`STORE_CHAINS`, ordre d'affichage) groupées par famille
+  (`STORE_CHAIN_GROUPS` : Hypers & supers / Discount / Proximité). Nom affiché :
+  **un seul helper**, `storeDisplayName(store, { short? })` (`core/labels.ts`).
+  Monogrammes (`STORE_MONOGRAMS`, initiales uniques) et `storeColors` couvrent
+  les 10 (tests d'exhaustivité). Services depuis `Store.pickup` et les frais
+  indicatifs : « Drive gratuit », « Click & collect », « Courses en magasin »,
+  « Livraison ≈ 6,90 € » ; sans retrait en ligne (`pickup: 'none'`), la
+  commande devient « Ma liste pour Lidl ».
+- **Provenance des prix** : `core/priceComparison` copie sur chaque `StoreOffer`
+  les champs de vue OPTIONNELS `priceSource`, `priceUpdatedAt`,
+  `observationCount`, `estimateMethod` ; `BasketLine.priceSource` suit le
+  panier jusqu'à la commande (« dont N prix estimés », « (prix estimé) » dans
+  le texte copié). Présentation : `components/feature/basket/provenanceView.ts`.
+  `isPreferredPrice` classe par fiabilité (relevé > estimation > démo) puis par
+  date ; les alertes prix ignorent les estimations.
+- **MDD** : `Product.storeChains` (une MDD des Mousquetaires est vendue chez
+  Intermarché ET Netto) ; une MDD n'est proposée que dans ses enseignes.
+- **Allergènes** : un produit dont `allergens` (ingrédient ∪ Open Food Facts)
+  croise ceux du profil n'est jamais proposé — index filtré
+  (`services/catalog › catalogIndexWithoutAllergens`), option
+  `excludeAllergens` de `compareList` / `allOffersForItem`, et filtre de
+  `productChoices` (défense en profondeur). Le panier est recalculé si les
+  allergies du profil changent.
+- **Transparence** : pied de l'onglet Prix (`priceDataNotice(meta)`, même texte
+  que `PRICE_DATA_NOTICE` pour l'instantané embarqué) et écran
+  `parametres/sources` (`components/feature/sources`), qui lisent `CatalogMeta`
+  de l'instantané courant (`useCatalog().meta`).
 
 ## Qualité
 

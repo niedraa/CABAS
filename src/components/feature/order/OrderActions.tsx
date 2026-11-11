@@ -3,7 +3,9 @@
  *  - Premium : « commande en un clic » (liste copiée + site ouvert d'un seul
  *    geste ; la V1 ne pré-remplit pas le panier de l'enseigne : ne pas le promettre) ;
  *  - gratuit : 2 étapes (copier la liste, ouvrir le site) + invitation Premium sobre ;
- *  - après ouverture : « De retour ? » (rouvrir, copier) avant la confirmation.
+ *  - après ouverture : « De retour ? » (rouvrir, copier) avant la confirmation ;
+ *  - enseigne sans commande en ligne (`inStoreOnly` : Lidl, Aldi, Netto) : la
+ *    liste part en magasin, le site ne sert qu'à consulter.
  */
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -20,6 +22,8 @@ export interface OrderActionsProps {
   /** Commande en un clic (Premium). */
   oneClick: boolean;
   storeName: string;
+  /** Pas de drive ni de click & collect : courses en magasin. */
+  inStoreOnly?: boolean;
   copied: boolean;
   busy?: 'copy' | 'open' | null;
   onCopy: () => void;
@@ -28,7 +32,7 @@ export interface OrderActionsProps {
   testID?: string;
 }
 
-export function OrderActions({ stage, oneClick, storeName, copied, busy, onCopy, onOpen, onPremium, testID }: OrderActionsProps) {
+export function OrderActions({ stage, oneClick, storeName, inStoreOnly, copied, busy, onCopy, onOpen, onPremium, testID }: OrderActionsProps) {
   const t = useTheme();
   const c = t.colors;
   // Petits boutons : zone tactile portée à 44 pt.
@@ -58,7 +62,9 @@ export function OrderActions({ stage, oneClick, storeName, copied, busy, onCopy,
           De retour de chez {storeName} ?
         </Text>
         <Text variant="callout" color="textSecondary">
-          Valide ta commande sur leur site, puis confirme ici : on l’ajoute à ton budget.
+          {inStoreOnly
+            ? 'Tes courses sont faites ? Confirme ici : on les ajoute à ton budget.'
+            : 'Valide ta commande sur leur site, puis confirme ici : on l’ajoute à ton budget.'}
         </Text>
         <View style={[styles.row, { gap: t.spacing.sm }]}>
           <Button
@@ -90,7 +96,9 @@ export function OrderActions({ stage, oneClick, storeName, copied, busy, onCopy,
           </Text>
         </View>
         <Text variant="callout" color="textSecondary">
-          En un geste, ta liste est copiée et {storeName} s’ouvre : colle-la dans la recherche du site, puis valide.
+          {inStoreOnly
+            ? `En un geste, ta liste est copiée et le site de ${storeName} s’ouvre. Pas de commande en ligne : ta liste t’accompagne en magasin.`
+            : `En un geste, ta liste est copiée et ${storeName} s’ouvre : colle-la dans la recherche du site, puis valide.`}
         </Text>
         <View style={[styles.row, { gap: t.spacing.sm }]}>
           <Text variant="footnote" color="textSecondary" style={styles.flex}>
@@ -106,10 +114,14 @@ export function OrderActions({ stage, oneClick, storeName, copied, busy, onCopy,
     <View style={{ gap: t.spacing.md }} testID={testID}>
       <View style={[styles.card, { backgroundColor: c.surface, borderRadius: t.radius.xl, padding: t.spacing.lg, gap: t.spacing.lg }]}>
         <Text variant="headline" accessibilityRole="header">
-          Ta commande en 2 étapes
+          {inStoreOnly ? 'Tes courses en 2 étapes' : 'Ta commande en 2 étapes'}
         </Text>
         <Step n={1} title="Copie ta liste" body="Produits, quantités et prix, prêts à coller." done={copied} right={copyButton} />
-        <Step n={2} title={`Ouvre ${storeName}`} body="Ajoute les articles au panier du site, puis valide." />
+        {inStoreOnly ? (
+          <Step n={2} title={`Direction ${storeName}`} body="Pas de commande en ligne ici : ta liste t’accompagne en magasin." />
+        ) : (
+          <Step n={2} title={`Ouvre ${storeName}`} body="Ajoute les articles au panier du site, puis valide." />
+        )}
       </View>
       <InfoBanner
         tone="premium"

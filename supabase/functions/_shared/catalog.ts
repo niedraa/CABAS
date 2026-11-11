@@ -7,9 +7,17 @@
  * client utilisateur comme avec le client service.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Ingredient, Price, Product, Recipe, Store } from './core/index.ts';
+import type { CatalogMeta, Ingredient, Price, Product, Recipe, Store } from './core/index.ts';
 import { fetchAll, unwrap } from './supabaseClient.ts';
-import { type Row, rowToIngredient, rowToPrice, rowToProduct, rowToRecipe, rowToStore } from './mappers.ts';
+import {
+  type Row,
+  rowToCatalogMeta,
+  rowToIngredient,
+  rowToPrice,
+  rowToProduct,
+  rowToRecipe,
+  rowToStore,
+} from './mappers.ts';
 
 /** Petit cache TTL (exporté pour les tests). */
 export class TtlCache<T> {
@@ -44,6 +52,7 @@ export class TtlCache<T> {
 const CATALOG_TTL_MS = 5 * 60 * 1000;
 const recipesCache = new TtlCache<{ recipes: Recipe[]; ingredients: Ingredient[] }>(CATALOG_TTL_MS);
 const storesCache = new TtlCache<Store[]>(CATALOG_TTL_MS);
+const metaCache = new TtlCache<{ meta: CatalogMeta | null }>(CATALOG_TTL_MS);
 
 /** Recettes publiées (avec ingrédients) + référentiel des ingrédients. */
 export function loadRecipeCatalog(client: SupabaseClient): Promise<{ recipes: Recipe[]; ingredients: Ingredient[] }> {
@@ -68,6 +77,18 @@ export function loadStores(client: SupabaseClient): Promise<Store[]> {
     const rows = unwrap<Row[]>('stores', await client.from('stores').select('*').eq('is_active', true).order('id'));
     return (rows ?? []).map(rowToStore);
   });
+}
+
+/** Description de l'instantané de données ouvertes (catalog_meta), null s'il n'y en a pas. */
+export async function loadCatalogMeta(client: SupabaseClient): Promise<CatalogMeta | null> {
+  const { meta } = await metaCache.get(async () => {
+    const row = unwrap<Row | null>(
+      'catalog_meta',
+      await client.from('catalog_meta').select('meta').eq('id', true).maybeSingle(),
+    );
+    return { meta: rowToCatalogMeta(row) };
+  });
+  return meta;
 }
 
 /** Ingrédients par ids (conversions d'unités du comparateur). */

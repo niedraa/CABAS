@@ -1,9 +1,11 @@
 /**
  * Détail des prix d'un article (feuille modale) : meilleure offre et écart
  * entre enseignes, une offre par enseigne (prix total, au kilo / litre,
- * promo, MDD, « meilleur prix », « dans ton panier »), enseignes qui ne le
- * vendent pas, puis choix du produit dans le magasin du panier
- * (`selectAlternative(itemId, productId | null)` : le panier se recalcule).
+ * promo, MDD, « meilleur prix », « dans ton panier », provenance : « Relevé le
+ * 5 nov. · 3 relevés » ou « Estimé »), enseignes sans prix connu, puis choix
+ * du produit dans le magasin du panier (`selectAlternative(itemId, productId |
+ * null)` : le panier se recalcule) — jamais un produit contenant un allergène
+ * déclaré du profil. Fiche Open Food Facts d'un produit à code-barres.
  */
 import { router, Stack, useLocalSearchParams, type Href } from 'expo-router';
 import React, { useMemo, useRef, useState } from 'react';
@@ -24,14 +26,14 @@ import {
   savingsLabel,
   selectionFor,
   storeOfferRows,
-  storeShortName,
   storesWithoutItem,
 } from '@/components/feature/basket';
 import { Button, EmptyState, IconButton, InfoBanner, PriceTag, SectionHeader, Sheet, staggerEntering, Text } from '@/components/ui';
-import { allOffersForItem, formatPrice, formatPricePerUnit, joinFr } from '@/core';
+import { allOffersForItem, formatPrice, formatPricePerUnit, hasEstimatedPrice, joinFr, storeDisplayName } from '@/core';
 import { haptics } from '@/lib/haptics';
-import { useCatalog } from '@/services/catalog';
-import { comparisonFor, useBasketStore, useWeekList, useWeekStore } from '@/stores';
+import { openExternalUrl } from '@/lib/links';
+import { catalogIndexWithoutAllergens, useCatalog } from '@/services/catalog';
+import { comparisonFor, useBasketStore, useProfileStore, useWeekList, useWeekStore } from '@/stores';
 import { useTheme } from '@/theme';
 
 const IS_WEB = Platform.OS === 'web';
@@ -42,6 +44,8 @@ export default function ComparatorScreen() {
   const { itemId = '' } = useLocalSearchParams<{ itemId?: string }>();
   const catalog = useCatalog();
   const ws = useWeekStore((s) => s.activeWeekStart);
+  const today = useWeekStore((s) => s.today);
+  const allergens = useProfileStore((s) => s.profile?.allergens);
   const list = useWeekList(ws);
   const comparison = useBasketStore((s) => comparisonFor(s, itemId));
   const plan = useBasketStore((s) => s.plan);
@@ -51,15 +55,20 @@ export default function ComparatorScreen() {
 
   const item = useMemo(() => list?.items.find((i) => i.id === itemId), [list, itemId]);
   const line = useMemo(() => lineForItem(plan, itemId), [plan, itemId]);
-  const allOffers = useMemo(() => (item ? allOffersForItem(item, catalog.index) : []), [item, catalog]);
+  // Index SANS les produits contenant un allergène déclaré : jamais proposés au choix.
+  const safeIndex = useMemo(() => catalogIndexWithoutAllergens(catalog, allergens), [catalog, allergens]);
+  const allOffers = useMemo(
+    () => (item ? allOffersForItem(item, safeIndex, undefined, { excludeAllergens: allergens }) : []),
+    [item, safeIndex, allergens],
+  );
   const rows = useMemo(
     () => (comparison ? storeOfferRows(comparison, catalog.storesById, catalog.productsById, line) : []),
     [comparison, catalog, line],
   );
   const without = useMemo(() => (comparison ? storesWithoutItem(comparison, catalog.stores) : []), [comparison, catalog]);
   const choices = useMemo(
-    () => (line ? productChoices(allOffers, line.storeId, catalog.productsById, line.productId) : []),
-    [allOffers, line, catalog],
+    () => (line ? productChoices(allOffers, line.storeId, catalog.productsById, line.productId, allergens ?? []) : []),
+    [allOffers, line, catalog, allergens],
   );
   const mdd = comparison ? mddSignal(comparison) : null;
 
@@ -81,10 +90,12 @@ export default function ComparatorScreen() {
     await useBasketStore.getState().selectAlternative(itemId, productId);
     haptics.success();
   };
+  const openProduct = (url: string) => void openExternalUrl(url);
 
   const best = comparison?.best ?? comparison?.offers[0];
   const bestStore = best ? catalog.storesById[best.storeId] : undefined;
   const lineStore = line ? catalog.storesById[line.storeId] : undefined;
+  const lineStoreName = storeDisplayName(lineStore, { short: true });
   const spread = comparison ? priceSpread(comparison) : 0;
   const title = comparison?.label ?? item?.label ?? 'Article';
   const subtitle = item
@@ -117,7 +128,8 @@ export default function ComparatorScreen() {
             </Text>
             <PriceTag cents={best.totalCents} size="lg" best={false} color={c.priceBest} />
             <Text variant="footnote" color="textSecondary" tabular>
-              chez {storeShortName(bestStore)} · {formatPricePerUnit(best.pricePerBaseUnitCents, best.referenceUnit)}
+              chez {storeDisplayName(bestStore, { short: true })} · {formatPricePerUnit(best.pricePerBaseUnitCents, best.referenceUnit)}
+              {hasEstimatedPrice(best) ? ' · estimé' : ''}
             </Text>
           </View>
           {spread > 0 ? (
@@ -142,15 +154,15 @@ export default function ComparatorScreen() {
               <InfoBanner
                 tone="tip"
                 title="Une marque distributeur moins chère"
-                message={`${catalog.productsById[mdd.productId]?.name ?? 'La MDD'} chez ${storeShortName(
-                  catalog.storesById[mdd.storeId],
-                )} : ${savingsLabel(mdd.savingsCents)} par rapport à la marque.`}
+                message={`${catalog.productsById[mdd.productId]?.name ?? 'La MDD'} chez ${storeDisplayName(catalog.storesById[mdd.storeId], {
+                  short: true,
+                })} : ${savingsLabel(mdd.savingsCents)} par rapport à la marque.`}
                 action={{ label: 'Choisir la MDD', onPress: () => void choose(mdd.productId) }}
               />
             ) : (
               <InfoBanner
                 tone="success"
-                message={`Chez ${storeShortName(catalog.storesById[mdd.storeId])}, la marque distributeur coûte ${formatPrice(
+                message={`Chez ${storeDisplayName(catalog.storesById[mdd.storeId], { short: true })}, la marque distributeur coûte ${formatPrice(
                   mdd.savingsCents,
                 )} de moins que la marque.`}
               />
@@ -163,24 +175,26 @@ export default function ComparatorScreen() {
           <SectionHeader title="Par enseigne" subtitle="Prix pour la quantité dont tu as besoin." />
           {rows.map((r, i) => (
             <Animated.View key={r.offer.storeId} entering={staggerEntering(2 + i)} layout={LinearTransition.springify().damping(t.motion.spring.damping)}>
-              <OfferRow row={r} testID={`offer-${r.offer.storeId}`} />
+              <OfferRow row={r} today={today} onOpenProduct={openProduct} testID={`offer-${r.offer.storeId}`} />
             </Animated.View>
           ))}
           {without.length > 0 ? (
-            <Text variant="footnote" color="textSecondary">
-              Pas en rayon chez {joinFr(without.map((s) => storeShortName(s)))}.
+            <Text variant="footnote" color="textSecondary" testID="comparator-without">
+              Pas de prix connu chez {joinFr(without.map((s) => storeDisplayName(s, { short: true })))}.
             </Text>
           ) : null}
         </View>
 
         {/* Choix du produit dans le magasin du panier */}
         {line && choices.length > 1 ? (
-          <View style={{ gap: t.spacing.sm }} accessibilityRole="radiogroup" accessibilityLabel={`Ton produit chez ${storeShortName(lineStore)}`}>
-            <SectionHeader title={`Ton produit chez ${storeShortName(lineStore)}`} subtitle="Ton choix s’applique partout où il est vendu." />
+          <View style={{ gap: t.spacing.sm }} accessibilityRole="radiogroup" accessibilityLabel={`Ton produit chez ${lineStoreName}`}>
+            <SectionHeader title={`Ton produit chez ${lineStoreName}`} subtitle="Ton choix s’applique partout où il est vendu." />
             {choices.map((ch, i) => (
               <Animated.View key={ch.productId} entering={staggerEntering(4 + rows.length + i)}>
                 <ProductChoiceRow
                   choice={ch}
+                  today={today}
+                  onOpenProduct={openProduct}
                   disabled={computing}
                   onPress={() => {
                     if (!ch.selected) void choose(selectionFor(ch));
@@ -210,7 +224,7 @@ export default function ComparatorScreen() {
           <InfoBanner
             tone="neutral"
             title="Pas dans ton panier"
-            message="Aucun de tes magasins ne le vend. Il reste dans ta liste : achète-le ailleurs."
+            message="Pas de prix connu dans tes magasins. Il reste dans ta liste : achète-le ailleurs."
           />
         ) : null}
       </View>

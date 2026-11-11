@@ -12,10 +12,16 @@
  *   sinon magasins préférés du profil, sinon tous).
  * - Le mode « le moins cher » multi-magasins est PREMIUM : un utilisateur
  *   gratuit reçoit le panier « un seul magasin » (meta.downgraded = true).
+ * - Allergènes : un produit contenant un allergène déclaré du profil
+ *   (ingrédient ∪ Open Food Facts) n'est JAMAIS proposé (offre, alternative MDD).
+ * - meta.pricing : prix relevés / ESTIMÉS retenus (toujours signalés « Estimé »).
  */
 import type {
+  Allergen,
   BasketMode,
   BasketPlan,
+  CatalogIndex,
+  CatalogMeta,
   Entitlement,
   Ingredient,
   OrderChannel,
@@ -38,9 +44,16 @@ import type { ShoppingListItem } from '../_shared/core/index.ts';
 export interface BasketRepository {
   loadEntitlement(): Promise<Entitlement>;
   loadPreferredStoreIds(): Promise<string[]>;
+  /**
+   * Allergènes déclarés du profil (vide sans consentement) : aucun produit qui
+   * en contient un n'est proposé. Facultatif (doublures de test).
+   */
+  loadAllergens?(): Promise<Allergen[]>;
   loadStores(): Promise<Store[]>;
   loadOffers(ingredientIds: string[]): Promise<{ products: Product[]; prices: Price[] }>;
   loadIngredients(ids: string[]): Promise<Ingredient[]>;
+  /** Description de l'instantané de données ouvertes (null : aucune). Facultatif. */
+  loadCatalogMeta?(): Promise<CatalogMeta | null>;
   /** Instantané du panier (basket_plans) ; renvoie son id. */
   saveBasketPlan(plan: BasketPlan, listId?: string): Promise<string>;
 }
@@ -77,6 +90,54 @@ export function parseOptimizeRequest(body: unknown): OptimizeRequest {
   };
 }
 
+/** Provenance des prix retenus : relevés en magasin vs estimés (toujours signalés « Estimé »). */
+export interface PricingMeta {
+  /** Lignes du panier dont le prix est relevé (Open Prices, partenaire…). */
+  observedPrices: number;
+  /** Lignes du panier dont le prix est ESTIMÉ. */
+  estimatedPrices: number;
+  /** Lignes au prix de démonstration (ancien catalogue). */
+  demoPrices: number;
+  /** Articles du panier au prix estimé. */
+  estimatedItemIds: string[];
+  /** Offres estimées dans la comparaison (tous magasins). */
+  estimatedOffers: number;
+  /** Date de l'instantané de données ouvertes, s'il est connu. */
+  snapshotAt?: string;
+}
+
+/** Compte les prix estimés / relevés effectivement utilisés (même index que le comparateur). */
+export function pricingMeta(
+  plan: BasketPlan,
+  comparisons: readonly { offers: readonly { storeId: string; productId: string }[] }[],
+  index: CatalogIndex,
+): PricingMeta {
+  const sourceOf = (productId: string, storeId: string) => index.pricesByProduct.get(productId)?.get(storeId)?.source;
+  const meta: PricingMeta = {
+    observedPrices: 0,
+    estimatedPrices: 0,
+    demoPrices: 0,
+    estimatedItemIds: [],
+    estimatedOffers: 0,
+  };
+  const estimatedItems = new Set<string>();
+  for (const part of plan.parts) {
+    for (const line of part.lines) {
+      const source = sourceOf(line.productId, part.storeId);
+      if (source === 'estimate') {
+        meta.estimatedPrices++;
+        estimatedItems.add(line.itemId);
+      } else if (source === 'demo') meta.demoPrices++;
+      else if (source) meta.observedPrices++;
+    }
+  }
+  for (const c of comparisons) {
+    for (const o of c.offers) if (sourceOf(o.productId, o.storeId) === 'estimate') meta.estimatedOffers++;
+  }
+  meta.estimatedItemIds = Array.from(estimatedItems).sort();
+  return meta;
+}
+
 export function createOptimizeBasketHandler(deps: OptimizeBasketDeps): (req: Request) => Promise<Response> {
   const now = deps.now ?? (() => new Date());
   return withHandler(deps.logger, async (req, log) => {
@@ -87,13 +148,28 @@ export function createOptimizeBasketHandler(deps: OptimizeBasketDeps): (req: Req
     const ingredientIds = Array.from(
       new Set(request.items.map((i) => i.ingredientId).filter((id): id is string => typeof id === 'string')),
     );
-    const [entitlement, preferred, stores, offers, ingredients] = await Promise.all([
+    const [entitlement, preferred, stores, rawOffers, ingredients, catalogMeta, allergens] = await Promise.all([
       repo.loadEntitlement(),
       request.storeIds ? Promise.resolve([] as string[]) : repo.loadPreferredStoreIds(),
       repo.loadStores(),
       repo.loadOffers(ingredientIds),
       repo.loadIngredients(ingredientIds),
+      // Information facultative : son absence (ou son échec) ne bloque jamais le panier.
+      repo.loadCatalogMeta ? repo.loadCatalogMeta().catch(() => null) : Promise.resolve(null),
+      // Sécurité : une erreur de lecture du profil fait échouer la requête (jamais d'offre non filtrée).
+      repo.loadAllergens ? repo.loadAllergens() : Promise.resolve([] as Allergen[]),
     ]);
+
+    // Produits contenant un allergène déclaré : retirés AVANT la comparaison.
+    const declared = new Set(allergens);
+    const safeProducts = declared.size === 0
+      ? rawOffers.products
+      : rawOffers.products.filter((p) => !p.allergens.some((a) => declared.has(a)));
+    const safeIds = new Set(safeProducts.map((p) => p.id));
+    const offers = {
+      products: safeProducts,
+      prices: rawOffers.prices.filter((p) => safeIds.has(p.productId)),
+    };
 
     // Premium : panier multi-magasins.
     const premium = canUse('optimized_basket', entitlement);
@@ -126,6 +202,8 @@ export function createOptimizeBasketHandler(deps: OptimizeBasketDeps): (req: Req
     }
 
     const comparedStores = new Set(comparisons.flatMap((c) => c.offers.map((o) => o.storeId)));
+    const pricing = pricingMeta(plan, comparisons, index);
+    if (catalogMeta?.snapshotAt) pricing.snapshotAt = catalogMeta.snapshotAt;
     log.info('basket optimized', { userId, items: request.items.length, mode, downgraded, total: plan.totalCents });
     return json({
       comparisons,
@@ -140,6 +218,8 @@ export function createOptimizeBasketHandler(deps: OptimizeBasketDeps): (req: Req
         allowedStoreIds: allowedStoreIds ?? stores.map((s) => s.id),
         storesCompared: comparedStores.size,
         itemsWithoutOffer: comparisons.filter((c) => c.offers.length === 0).map((c) => c.itemId),
+        pricing,
+        allergenExcludedProducts: rawOffers.products.length - safeProducts.length,
         ...(savedId ? { basketPlanId: savedId } : {}),
       },
     });

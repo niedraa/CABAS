@@ -1,32 +1,49 @@
 /**
- * Tests d'intégrité du catalogue de démonstration.
+ * Tests d'intégrité du catalogue.
  *
  * Ils garantissent la cohérence référentielle (ids, ingrédients, produits,
  * prix), l'exactitude de l'étiquetage des allergènes (critère de sécurité du
- * dossier) et la couverture des régimes alimentaires par la base de recettes.
- * Les régimes sont TOUJOURS déduits des ingrédients, jamais des tags.
+ * dossier), la couverture des régimes alimentaires par la base de recettes et
+ * la PROVENANCE des prix (relevés Open Prices ou estimations signalées).
+ * Les attendus du catalogue sont DÉRIVÉS des données (sources, instantané),
+ * jamais des comptes en dur. Les régimes sont TOUJOURS déduits des
+ * ingrédients, jamais des tags.
  */
 import { describe, expect, it } from '@jest/globals';
 
+import { isValidGtin } from '../../core/openPrices';
 import {
   AISLES,
   ALLERGENS,
   CUISINES,
   EQUIPMENT,
+  STORE_CHAINS,
   UNITS,
   type Allergen,
   type Ingredient,
   type Price,
   type Product,
   type Recipe,
+  type StoreChain,
 } from '../../core/types';
-import { buildPrices, buildProducts, isValidEan13, ean13CheckDigit } from '../generator/buildCatalog';
+import {
+  bioProductId,
+  buildCatalog,
+  GENERALIST_CHAINS,
+  looseProductId,
+  mddProductId,
+  nationalProductId,
+  type OpenDataSnapshot,
+} from '../generator/buildCatalog';
 import {
   catalog,
+  catalogMeta,
+  DATA_ATTRIBUTION,
   DEMO_DATA_NOTICE,
   ingredients,
   ingredientsById,
   NON_PURCHASABLE_INGREDIENT_IDS,
+  PRICE_DATA_NOTICE,
   prices,
   products,
   productsById,
@@ -35,7 +52,10 @@ import {
   stores,
   storesById,
 } from '../index';
-import { productSpecs } from '../productSpecs';
+import snapshotJson from '../openData/snapshot.json';
+import { productSources } from '../productSources';
+
+const snapshot = snapshotJson as unknown as OpenDataSnapshot;
 
 // ─── Aides ───────────────────────────────────────────────────────────────────
 
@@ -89,13 +109,6 @@ function plain(text: string): string {
 /** Texte de recherche d'un ingrédient : nom + id. */
 function haystack(ing: Ingredient): string {
   return `${plain(ing.name)} ${ing.id.replace(/_/g, ' ')}`;
-}
-
-const pricesByProduct = new Map<string, Price[]>();
-for (const price of prices) {
-  const list = pricesByProduct.get(price.productId) ?? [];
-  list.push(price);
-  pricesByProduct.set(price.productId, list);
 }
 
 /** Ingrédients achetés pour les recettes (non optionnels, hors eau). */
@@ -391,83 +404,126 @@ describe('recettes', () => {
 // ─── Magasins ────────────────────────────────────────────────────────────────
 
 describe('magasins', () => {
-  it('propose 5 enseignes avec des frais et des URL cohérents', () => {
-    expect(stores.map((s) => s.id)).toEqual(['leclerc', 'carrefour', 'auchan', 'intermarche', 'lidl']);
+  it('couvre les 10 enseignes, dans l’ordre d’affichage, avec des frais et des URL cohérents', () => {
+    expect(stores.map((s) => s.id)).toEqual([...STORE_CHAINS]);
     for (const s of stores) {
       expect(s.chain).toBe(s.id);
-      expect(s.searchUrlTemplate).toMatch(/^https:\/\/.+\{query\}/);
+      expect(s.name.trim().length).toBeGreaterThan(1);
+      expect(s.city).toBe('France');
+      expect(['drive', 'click_collect', 'none']).toContain(s.pickup);
+      expect(s.searchUrlTemplate).toMatch(/^https:\/\//);
       expect(s.driveUrl).toMatch(/^https:\/\//);
       expect(Number.isInteger(s.driveFeeCents)).toBe(true);
       expect(s.driveFeeCents).toBeGreaterThanOrEqual(0);
+      expect(Number.isInteger(s.minOrderCents)).toBe(true);
       expect(s.minOrderCents).toBeGreaterThanOrEqual(0);
-      if (s.deliveryFeeCents !== null) expect(s.deliveryFeeCents).toBeGreaterThan(0);
+      if (s.deliveryFeeCents !== null) {
+        expect(Number.isInteger(s.deliveryFeeCents)).toBe(true);
+        expect(s.deliveryFeeCents).toBeGreaterThan(0);
+      }
     }
-    expect(storesById.lidl.deliveryFeeCents).toBeNull();
   });
 });
 
 // ─── Produits ────────────────────────────────────────────────────────────────
 
+type Kind = 'national' | 'bio' | 'mdd' | 'vrac';
+
+/** Produits attendus d'après productSources : id → { genre, code-barres, enseignes }. */
+const expectedProducts = new Map<string, { kind: Kind; ean?: string; chains?: StoreChain[]; categoryTags?: string[] }>();
+for (const s of productSources) {
+  if (s.national) expectedProducts.set(nationalProductId(s.ingredientId), { kind: 'national', ean: s.national.ean });
+  if (s.bio) expectedProducts.set(bioProductId(s.ingredientId), { kind: 'bio', ean: s.bio.ean });
+  for (const m of s.mdd ?? []) {
+    expectedProducts.set(mddProductId(s.ingredientId, m.chains[0]), { kind: 'mdd', ean: m.ean, chains: [...new Set(m.chains)] });
+  }
+  if (s.loose) {
+    expectedProducts.set(looseProductId(s.ingredientId), {
+      kind: 'vrac',
+      categoryTags: s.loose.categoryTags.map((t) => t.trim().toLowerCase()),
+    });
+  }
+}
+const kindOf = (p: Product): Kind => expectedProducts.get(p.id)!.kind;
+
+const pricesByProduct = new Map<string, Price[]>();
+for (const price of prices) {
+  const list = pricesByProduct.get(price.productId) ?? [];
+  list.push(price);
+  pricesByProduct.set(price.productId, list);
+}
+
 describe('produits', () => {
-  it('ont des ids et des EAN-13 uniques et valides (préfixe France 300-379)', () => {
+  it('viennent tous de productSources, avec les identifiants stables attendus', () => {
     expect(duplicates(products.map((p) => p.id))).toEqual([]);
-    expect(duplicates(products.map((p) => p.ean))).toEqual([]);
     for (const p of products) {
-      expect(isValidEan13(p.ean)).toBe(true);
-      const prefix = Number(p.ean.slice(0, 3));
-      expect(prefix).toBeGreaterThanOrEqual(300);
-      expect(prefix).toBeLessThanOrEqual(379);
+      const expected = expectedProducts.get(p.id);
+      expect(expected).toBeDefined();
+      expect(p.id).toMatch(/^prd_[a-z0-9]+(_[a-z0-9]+)*$/);
+      if (expected?.ean) expect(p.ean).toBe(expected.ean);
     }
   });
 
-  it('calcule correctement le chiffre de contrôle EAN-13', () => {
-    // Codes de référence connus.
-    expect(ean13CheckDigit('400638133393')).toBe(1); // 4006381333931
-    expect(ean13CheckDigit('301762042200')).toBe(3); // 3017620422003 (pâte à tartiner)
-    expect(isValidEan13('3017620422003')).toBe(true);
-    expect(isValidEan13('3017620422004')).toBe(false);
-    expect(isValidEan13('30176204220')).toBe(false);
+  it('ont un code-barres réel valide et unique, ou une catégorie vrac (jamais les deux)', () => {
+    const eans = products.flatMap((p) => (p.ean ? [p.ean] : []));
+    expect(duplicates(eans)).toEqual([]);
+    for (const p of products) {
+      if (kindOf(p) === 'vrac') {
+        expect(p.ean).toBeUndefined();
+        expect(expectedProducts.get(p.id)?.categoryTags).toContain(p.offCategoryTag);
+        expect(p.brand).toBe('Vrac');
+      } else {
+        expect(p.offCategoryTag).toBeUndefined();
+        expect(isValidGtin(p.ean!)).toBe(true);
+      }
+    }
   });
 
-  it('sont rattachés à un ingrédient, dans son unité de base, avec ses allergènes', () => {
+  it('sont rattachés à un ingrédient, dans son unité de base, avec des champs bien formés', () => {
     for (const p of products) {
       const ing = ingredientsById[p.ingredientId];
       expect(ing).toBeDefined();
+      expect(NON_PURCHASABLE_INGREDIENT_IDS).not.toContain(p.ingredientId);
       expect(p.packUnit).toBe(ing.baseUnit);
       expect(p.packSize).toBeGreaterThan(0);
-      expect([...p.allergens].sort()).toEqual([...ing.allergens].sort());
       if (p.nutriScore !== undefined) expect(['A', 'B', 'C', 'D', 'E']).toContain(p.nutriScore);
       expect(p.name.trim().length).toBeGreaterThan(2);
       expect(p.brand.trim().length).toBeGreaterThan(1);
+      if (kindOf(p) === 'bio') expect(p.organic).toBe(true);
     }
   });
 
-  it('distinguent marques nationales et marques distributeur', () => {
-    const chains = new Set(stores.map((s) => s.chain));
+  it('portent au moins les allergènes de l’ingrédient ET ceux déclarés par Open Food Facts', () => {
     for (const p of products) {
-      if (p.isStoreBrand) {
-        expect(p.storeChain).toBeDefined();
-        expect(chains.has(p.storeChain!)).toBe(true);
+      const declared = new Set<Allergen>([
+        ...ingredientsById[p.ingredientId].allergens,
+        ...(p.ean ? (snapshot.offProducts[p.ean]?.allergens ?? []) : []),
+      ]);
+      for (const a of declared) expect(p.allergens).toContain(a);
+      for (const a of p.allergens) expect(ALLERGENS).toContain(a);
+      expect(duplicates(p.allergens)).toEqual([]);
+      // Ordre réglementaire (sortie déterministe).
+      expect([...p.allergens].sort((a, b) => ALLERGENS.indexOf(a) - ALLERGENS.indexOf(b))).toEqual(p.allergens);
+    }
+  });
+
+  it('distinguent marques nationales et marques distributeur (MDD liées à leurs enseignes)', () => {
+    for (const p of products) {
+      const expected = expectedProducts.get(p.id)!;
+      if (expected.kind === 'mdd') {
+        expect(p.isStoreBrand).toBe(true);
+        expect(p.storeChains).toEqual(expected.chains);
+        for (const c of p.storeChains!) expect(STORE_CHAINS).toContain(c);
+        expect(p.id).toBe(mddProductId(p.ingredientId, p.storeChains![0]));
       } else {
-        expect(p.storeChain).toBeUndefined();
+        expect(p.isStoreBrand).toBe(false);
+        expect(p.storeChains).toBeUndefined();
       }
     }
-    expect(products.some((p) => p.organic)).toBe(true);
   });
 
-  it('couvrent chaque ingrédient de recette par une marque nationale, et le plus souvent une MDD', () => {
-    const recipeIngredientIds = new Set(
-      recipes.flatMap((r) => r.ingredients.map((ri) => ri.ingredientId)).filter((id) => !NON_PURCHASABLE_INGREDIENT_IDS.includes(id)),
-    );
-    let withMdd = 0;
-    for (const id of recipeIngredientIds) {
-      const list = products.filter((p) => p.ingredientId === id);
-      expect(list.some((p) => !p.isStoreBrand && p.storeChain === undefined)).toBe(true);
-      if (list.some((p) => p.isStoreBrand)) withMdd++;
-    }
-    expect(withMdd / recipeIngredientIds.size).toBeGreaterThan(0.7);
-    // Aucun produit pour l'eau du robinet.
-    expect(products.some((p) => NON_PURCHASABLE_INGREDIENT_IDS.includes(p.ingredientId))).toBe(false);
+  it('ont tous au moins un prix', () => {
+    for (const p of products) expect(pricesByProduct.get(p.id)?.length ?? 0).toBeGreaterThan(0);
   });
 });
 
@@ -482,121 +538,218 @@ describe('prix', () => {
     expect(duplicates(prices.map((p) => `${p.productId}@${p.storeId}`))).toEqual([]);
   });
 
-  it('sont réalistes (> 0 et < 100 €, centimes entiers) et datés', () => {
+  it('sont en centimes entiers réalistes, sans aucune promotion', () => {
     for (const price of prices) {
       expect(Number.isInteger(price.priceCents)).toBe(true);
       expect(price.priceCents).toBeGreaterThan(0);
       expect(price.priceCents).toBeLessThan(10_000);
-      expect(price.source).toBe('demo');
-      expect(price.updatedAt).toBe('2026-11-09T06:00:00.000Z');
+      expect(price.promoPriceCents).toBeUndefined();
+      expect(price.promoLabel).toBeUndefined();
+      expect(price.promoUntil).toBeUndefined();
+      expect(['open_prices', 'estimate']).toContain(price.source);
     }
   });
 
-  it('ont des promotions cohérentes sur environ 8 % des lignes', () => {
-    const promos = prices.filter((p) => p.promoPriceCents !== undefined);
-    const share = promos.length / prices.length;
-    expect(share).toBeGreaterThan(0.04);
-    expect(share).toBeLessThan(0.13);
-    for (const p of promos) {
-      expect(Number.isInteger(p.promoPriceCents)).toBe(true);
-      expect(p.promoPriceCents!).toBeLessThan(p.priceCents);
-      expect(p.promoPriceCents!).toBeGreaterThan(0);
-      expect(p.promoLabel).toBeTruthy();
-      expect(p.promoUntil).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-      expect(p.promoUntil! > '2026-11-10').toBe(true);
-      expect(p.promoUntil! < '2027-01-01').toBe(true);
+  it('documentent chaque relevé : nombre de relevés et dates dans la fenêtre de l’instantané', () => {
+    for (const price of prices.filter((p) => p.source === 'open_prices')) {
+      expect(Number.isInteger(price.observationCount)).toBe(true);
+      expect(price.observationCount!).toBeGreaterThanOrEqual(1);
+      expect(price.observedFrom).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(price.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(price.observedFrom! <= price.updatedAt).toBe(true);
+      expect(price.observedFrom! >= catalogMeta.pricesFrom).toBe(true);
+      expect(price.updatedAt <= catalogMeta.pricesTo).toBe(true);
+      expect(price.estimateMethod).toBeUndefined();
+      expect(price.estimateBasisCount).toBeUndefined();
     }
   });
 
-  it('placent chaque MDD uniquement dans son enseigne', () => {
+  it('reprennent exactement la médiane de l’instantané pour un produit à code-barres', () => {
+    for (const price of prices.filter((p) => p.source === 'open_prices')) {
+      const product = productsById[price.productId];
+      if (!product.ean) continue;
+      const agg = snapshot.aggregates[`ean:${product.ean}`]?.[price.storeId as StoreChain];
+      expect(agg).toBeDefined();
+      expect(price.priceCents).toBe(agg!.medianCents);
+      expect(price.observationCount).toBe(agg!.count);
+    }
+  });
+
+  it('signalent chaque estimation : méthode cohérente avec le produit, et au moins un prix réel', () => {
+    const methodFor: Record<Kind, string> = { national: 'chain_index', bio: 'chain_index', mdd: 'mdd_ratio', vrac: 'category_median' };
+    for (const price of prices.filter((p) => p.source === 'estimate')) {
+      const product = productsById[price.productId];
+      // Une MDD relevée dans une de ses enseignes est estimée dans les autres d'après SON prix.
+      const ownObserved = (pricesByProduct.get(product.id) ?? []).some((p) => p.source === 'open_prices');
+      const expected = kindOf(product) === 'mdd' && ownObserved ? 'chain_index' : methodFor[kindOf(product)];
+      expect(price.estimateMethod).toBe(expected);
+      expect(Number.isInteger(price.estimateBasisCount)).toBe(true);
+      expect(price.estimateBasisCount!).toBeGreaterThanOrEqual(1);
+      expect(price.updatedAt).toBe(catalogMeta.snapshotAt);
+      expect(price.observationCount).toBeUndefined();
+      expect(price.observedFrom).toBeUndefined();
+    }
+  });
+
+  it('n’estiment jamais une marque nationale chez un discounter (Lidl, Aldi, Netto)', () => {
+    for (const price of prices.filter((p) => p.estimateMethod === 'chain_index')) {
+      if (productsById[price.productId].isStoreBrand) continue; // MDD : vendue dans ses enseignes (test suivant)
+      expect(GENERALIST_CHAINS).toContain(storesById[price.storeId].chain);
+    }
+  });
+
+  it('estiment une MDD multi-enseignes d’après son propre prix relevé, ramené par les indices', () => {
+    const index = (storeId: string) => catalogMeta.chainIndex[storesById[storeId].chain].value;
+    const problems: string[] = [];
+    for (const price of prices.filter((p) => p.estimateMethod === 'chain_index' && productsById[p.productId].isStoreBrand)) {
+      const own = (pricesByProduct.get(price.productId) ?? []).filter((p) => p.source === 'open_prices');
+      // Bornes : chaque relevé propre converti vers l'enseigne estimée (± 1 c d'arrondi).
+      const converted = own.map((o) => (o.priceCents / index(o.storeId)) * index(price.storeId));
+      const lo = Math.min(...converted) - 1;
+      const hi = Math.max(...converted) + 1;
+      if (own.length === 0 || price.priceCents < lo || price.priceCents > hi) {
+        problems.push(`${price.productId} @ ${price.storeId} : ${price.priceCents} c hors [${lo.toFixed(0)} ; ${hi.toFixed(0)}]`);
+      }
+      expect(price.estimateBasisCount).toBe(own.reduce((s, o) => s + (o.observationCount ?? 0), 0));
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it('placent chaque MDD uniquement dans ses enseignes', () => {
     for (const price of prices) {
       const product = productsById[price.productId];
-      if (product.isStoreBrand) expect(storesById[price.storeId].chain).toBe(product.storeChain);
-    }
-    for (const product of products.filter((p) => p.isStoreBrand)) {
-      expect(pricesByProduct.get(product.id)?.length).toBe(1);
+      if (product.isStoreBrand) expect(product.storeChains).toContain(storesById[price.storeId].chain);
     }
   });
+});
 
-  it('placent chaque produit de marque nationale dans au moins 4 magasins sur 5', () => {
-    for (const product of products.filter((p) => !p.isStoreBrand)) {
-      const storesWithPrice = new Set((pricesByProduct.get(product.id) ?? []).map((p) => p.storeId));
-      expect(storesWithPrice.size).toBeGreaterThanOrEqual(4);
-    }
-  });
+// ─── Couverture (après import des produits réels) ────────────────────────────
 
-  it('permettent de comparer chaque ingrédient de recette dans au moins 3 magasins', () => {
-    const tooFew: string[] = [];
+/** Tant que productSources est vide (phase d'import en cours), il n'y a rien à couvrir. */
+const describeCatalog = productSources.length > 0 ? describe : describe.skip;
+
+describeCatalog('couverture du catalogue', () => {
+  const storesWithPrice = (ingredientId: string) =>
+    new Set(products.filter((p) => p.ingredientId === ingredientId).flatMap((p) => (pricesByProduct.get(p.id) ?? []).map((x) => x.storeId)));
+  const hasObservedPrice = (ingredientId: string) =>
+    products.some((p) => p.ingredientId === ingredientId && (pricesByProduct.get(p.id) ?? []).some((x) => x.source === 'open_prices'));
+
+  it('donne à chaque ingrédient de recette au moins un prix relevé, comparable dans au moins 3 enseignes', () => {
+    const problems: string[] = [];
     for (const id of requiredIngredientIds) {
-      const storeIds = new Set(
-        products.filter((p) => p.ingredientId === id).flatMap((p) => (pricesByProduct.get(p.id) ?? []).map((x) => x.storeId)),
-      );
-      if (storeIds.size < 3) tooFew.push(`${id} (${storeIds.size})`);
+      if (!hasObservedPrice(id)) problems.push(`${id} : aucun prix relevé`);
+      const n = storesWithPrice(id).size;
+      if (n < 3) problems.push(`${id} : prix dans ${n} enseigne(s)`);
     }
-    expect(requiredIngredientIds.length).toBeGreaterThan(100);
-    expect(tooFew).toEqual([]);
+    expect(problems).toEqual([]);
   });
 
-  it('rendent la MDD moins chère que la marque nationale (prix à l’unité, même magasin)', () => {
-    const unit = (p: Product, price: Price) => price.priceCents / p.packSize;
-    const violations: string[] = [];
-    for (const mdd of products.filter((p) => p.isStoreBrand)) {
-      const national = productsById[`prd_${mdd.ingredientId}`];
-      expect(national).toBeDefined();
-      const mddPrice = pricesByProduct.get(mdd.id)![0];
-      const natPrice = (pricesByProduct.get(national.id) ?? []).find((x) => x.storeId === mddPrice.storeId);
-      if (!natPrice) continue; // marque nationale non référencée dans ce magasin (ex. Lidl)
-      if (unit(mdd, mddPrice) >= unit(national, natPrice)) {
-        violations.push(`${mdd.id} : ${mddPrice.priceCents}/${mdd.packSize} ≥ ${natPrice.priceCents}/${national.packSize}`);
-      }
+  it('couvre par des prix RELEVÉS au moins 80 % des ingrédients achetables', () => {
+    const purchasable = Array.from(
+      new Set(recipes.flatMap((r) => r.ingredients.map((ri) => ri.ingredientId))),
+    ).filter((id) => !NON_PURCHASABLE_INGREDIENT_IDS.includes(id));
+    const covered = purchasable.filter(hasObservedPrice);
+    expect(covered.length / purchasable.length).toBeGreaterThanOrEqual(0.8);
+  });
+
+  it('propose des prix dans chacune des 10 enseignes', () => {
+    for (const chain of STORE_CHAINS) {
+      const c = catalogMeta.coverage[chain];
+      expect(c.observed + c.estimated).toBeGreaterThan(0);
     }
-    expect(violations).toEqual([]);
+  });
+});
+
+// ─── Méta & mentions ─────────────────────────────────────────────────────────
+
+describe('méta et mentions', () => {
+  it('décrit fidèlement l’instantané et la couverture', () => {
+    expect(catalogMeta.snapshotAt).toBe(snapshot.snapshotAt);
+    expect(catalogMeta.pricesFrom).toBe(snapshot.pricesFrom);
+    expect(catalogMeta.pricesTo).toBe(snapshot.pricesTo);
+    expect(catalogMeta.pricesFrom < catalogMeta.pricesTo).toBe(true);
+    expect(catalogMeta.observedPrices).toBe(prices.filter((p) => p.source === 'open_prices').length);
+    expect(catalogMeta.estimatedPrices).toBe(prices.filter((p) => p.source === 'estimate').length);
+    expect(Object.keys(catalogMeta.coverage)).toEqual([...STORE_CHAINS]);
+    for (const chain of STORE_CHAINS) {
+      const here = prices.filter((p) => storesById[p.storeId].chain === chain);
+      expect(catalogMeta.coverage[chain]).toEqual({
+        observed: here.filter((p) => p.source === 'open_prices').length,
+        estimated: here.filter((p) => p.source === 'estimate').length,
+      });
+    }
   });
 
-  it('reflètent les indices d’enseigne (Lidl et Leclerc moins chers que Carrefour en moyenne)', () => {
-    const avgRatio = (storeId: string) => {
-      const ratios: number[] = [];
-      for (const product of products.filter((p) => !p.isStoreBrand)) {
-        const list = pricesByProduct.get(product.id) ?? [];
-        const here = list.find((x) => x.storeId === storeId);
-        const ref = list.find((x) => x.storeId === 'carrefour');
-        if (here && ref) ratios.push(here.priceCents / ref.priceCents);
-      }
-      return ratios.reduce((a, b) => a + b, 0) / ratios.length;
-    };
-    expect(avgRatio('leclerc')).toBeLessThan(0.99);
-    expect(avgRatio('lidl')).toBeLessThan(0.99);
-    expect(avgRatio('intermarche')).toBeGreaterThan(0.99);
+  it('publie un indice de prix pour chaque enseigne (Leclerc = 1, bornes respectées)', () => {
+    expect(Object.keys(catalogMeta.chainIndex)).toEqual([...STORE_CHAINS]);
+    expect(catalogMeta.chainIndex.leclerc).toMatchObject({ value: 1, basis: 'measured' });
+    for (const chain of STORE_CHAINS) {
+      const ix = catalogMeta.chainIndex[chain];
+      expect(['measured', 'press']).toContain(ix.basis);
+      expect(ix.value).toBeGreaterThanOrEqual(0.85);
+      expect(ix.value).toBeLessThanOrEqual(1.6);
+      if (ix.basis === 'measured' && chain !== 'leclerc') expect(ix.commonProducts).toBeGreaterThanOrEqual(200);
+    }
   });
 
-  it('donnent des prix au kilo plausibles pour quelques produits phares', () => {
-    const perKg = (productId: string, storeId: string) => {
-      const p = productsById[productId];
-      const price = pricesByProduct.get(productId)!.find((x) => x.storeId === storeId)!;
-      return (price.priceCents / p.packSize) * 1000;
-    };
-    // Pâtes : 1,50 à 5 €/kg ; filets de poulet : 10 à 25 €/kg ; beurre : 8 à 18 €/kg.
-    expect(perKg('prd_pates_spaghetti', 'carrefour')).toBeGreaterThan(150);
-    expect(perKg('prd_pates_spaghetti', 'carrefour')).toBeLessThan(500);
-    expect(perKg('prd_blanc_poulet', 'carrefour')).toBeGreaterThan(1000);
-    expect(perKg('prd_blanc_poulet', 'carrefour')).toBeLessThan(2500);
-    expect(perKg('prd_beurre', 'carrefour')).toBeGreaterThan(800);
-    expect(perKg('prd_beurre', 'carrefour')).toBeLessThan(1800);
+  it('crédite les sources ouvertes (ODbL)', () => {
+    expect(catalogMeta.sources.map((s) => s.name)).toEqual(['Open Food Facts', 'Open Prices', 'OpenStreetMap']);
+    for (const s of catalogMeta.sources) {
+      expect(s.url).toMatch(/^https:\/\//);
+      expect(s.license).toMatch(/ODbL/);
+    }
+    expect(DATA_ATTRIBUTION).toMatch(/Open Food Facts/);
+    expect(DATA_ATTRIBUTION).toMatch(/Open Prices/);
+    expect(DATA_ATTRIBUTION).toMatch(/OpenStreetMap/);
+    expect(DATA_ATTRIBUTION).toMatch(/ODbL/);
+  });
+
+  it('explique l’origine des prix en français (et garde l’alias déprécié)', () => {
+    expect(PRICE_DATA_NOTICE).toMatch(/Open Prices/);
+    expect(PRICE_DATA_NOTICE).toMatch(/indicatifs/);
+    expect(PRICE_DATA_NOTICE).not.toMatch(/fictiv|démonstration/);
+    if (catalogMeta.estimatedPrices > 0) expect(PRICE_DATA_NOTICE).toMatch(/Estimé/);
+    expect(DEMO_DATA_NOTICE).toBe(PRICE_DATA_NOTICE);
   });
 });
 
 // ─── Générateur & index ──────────────────────────────────────────────────────
 
+/** Toutes les clés d'un objet JSON, en profondeur. */
+function deepKeys(value: unknown, out = new Set<string>()): Set<string> {
+  if (Array.isArray(value)) for (const v of value) deepKeys(v, out);
+  else if (value && typeof value === 'object') {
+    for (const [k, v] of Object.entries(value)) {
+      out.add(k);
+      deepKeys(v, out);
+    }
+  }
+  return out;
+}
+
 describe('générateur et index', () => {
-  it('products.ts et prices.ts sont à jour avec productSpecs.ts (relancer run.mjs sinon)', () => {
-    const regenerated = buildProducts(productSpecs, ingredients, stores, ALLERGENS);
-    expect(regenerated).toEqual(products);
-    expect(buildPrices(productSpecs, regenerated, stores)).toEqual(prices);
+  it('products.ts, prices.ts et meta.ts sont à jour (sinon : npm run data:generate)', () => {
+    const rebuilt = buildCatalog(productSources, snapshot, ingredients, stores, ALLERGENS);
+    expect(rebuilt.products).toEqual(products);
+    expect(rebuilt.prices).toEqual(prices);
+    expect(rebuilt.meta).toEqual(catalogMeta);
   });
 
-  it('chaque spécification produit vise un ingrédient existant, une seule fois', () => {
-    expect(duplicates(productSpecs.map((s) => s.ingredientId))).toEqual([]);
-    for (const spec of productSpecs) expect(ingredientsById[spec.ingredientId]).toBeDefined();
+  it('chaque source produit vise un ingrédient achetable existant, une seule fois', () => {
+    expect(duplicates(productSources.map((s) => s.ingredientId))).toEqual([]);
+    for (const s of productSources) {
+      expect(ingredientsById[s.ingredientId]).toBeDefined();
+      expect(NON_PURCHASABLE_INGREDIENT_IDS).not.toContain(s.ingredientId);
+    }
+  });
+
+  it('l’instantané ne contient aucune donnée personnelle (owner) et couvre 365 jours', () => {
+    const keys = deepKeys(snapshot);
+    expect(keys.has('owner')).toBe(false);
+    expect(keys.has('owner_comment')).toBe(false);
+    expect(snapshot.pricesTo).toBe(snapshot.snapshotAt);
+    const days = (Date.parse(snapshot.pricesTo) - Date.parse(snapshot.pricesFrom)) / 86_400_000;
+    expect(days).toBe(365);
   });
 
   it('expose des index par id et un objet catalogue cohérents', () => {
@@ -606,6 +759,5 @@ describe('générateur et index', () => {
     expect(Object.keys(productsById)).toHaveLength(products.length);
     expect(catalog).toEqual({ ingredients, recipes, stores, products, prices });
     expect(recipesById.rec_carbonara.title).toBe('Spaghetti carbonara');
-    expect(DEMO_DATA_NOTICE).toMatch(/démonstration/);
   });
 });

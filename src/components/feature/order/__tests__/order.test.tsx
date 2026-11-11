@@ -5,6 +5,8 @@ import type { BasketStorePart, OrderHandoff, Product, ShoppingListItem, Store } 
 import { buildCatalogIndex, buildOrderHandoff, compareList, formatWeekRange, MINUS, NNBSP, optimizeBasket } from '@/core';
 import { ingredients, prices, products, stores } from '@/data';
 
+import { comparableItems } from '../../basket/__tests__/catalogPicks';
+
 import { OrderActions } from '../OrderActions';
 import { OrderConfirmedCard } from '../OrderConfirmedCard';
 import { OrderHistoryRow } from '../OrderHistoryRow';
@@ -28,22 +30,13 @@ const index = buildCatalogIndex(products, prices, stores, ingredients);
 const storesById = Object.fromEntries(stores.map((s) => [s.id, s])) as Record<string, Store>;
 const productsById = Object.fromEntries(products.map((p) => [p.id, p])) as Record<string, Product>;
 
-const ITEMS: ShoppingListItem[] = ['champignons_paris', 'ail', 'carotte', 'gingembre', 'brocoli', 'echalote', 'beurre', 'miel'].map(
-  (ingredientId, i) => ({
-    id: `i${i}`,
-    ingredientId,
-    label: ingredientId,
-    quantity: 150,
-    unit: 'g',
-    aisle: 'fruits_legumes',
-    checked: false,
-    source: 'plan',
-    recipeIds: [],
-  }),
-);
+// Articles du catalogue réel chiffrés chez Carrefour (qui livre) : attendus dérivés des données.
+const ITEMS: ShoppingListItem[] = comparableItems(index, ingredients, { storeIds: ['carrefour'], count: 8, minStores: 1, now: NOW });
 const plan = optimizeBasket(compareList(ITEMS, index, NOW), stores, 'single_store', { allowedStoreIds: ['carrefour'], channel: 'delivery', now: NOW });
-const part = plan.parts[0] as BasketStorePart;
+// Catalogue pas encore importé : panier vide (les tests qui en dépendent échouent seuls, pas la suite).
+const part: BasketStorePart = plan.parts[0] ?? { storeId: 'carrefour', lines: [], subtotalCents: 0, feesCents: 0 };
 const store = storesById[part.storeId];
+const DELIVERY = storesById.carrefour.deliveryFeeCents as number;
 const handoff = buildOrderHandoff(part, store, productsById, 'delivery', { id: 'order_1', now: NOW });
 
 // ─── Logique ─────────────────────────────────────────────────────────────────
@@ -62,8 +55,20 @@ describe('orderView', () => {
   });
 
   it('sépare sous-total et frais', () => {
-    expect(part.feesCents).toBe(599);
-    expect(orderTotals(handoff.lines, handoff.totalCents)).toEqual({ subtotalCents: part.subtotalCents, feesCents: 599, totalCents: part.subtotalCents + 599 });
+    expect(part.feesCents).toBe(DELIVERY);
+    expect(orderTotals(handoff.lines, handoff.totalCents)).toEqual({
+      subtotalCents: part.subtotalCents,
+      feesCents: DELIVERY,
+      totalCents: part.subtotalCents + DELIVERY,
+    });
+  });
+
+  it('signale les lignes au prix estimé', () => {
+    const lines = [
+      { itemId: 'a', label: 'A', productId: part.lines[0].productId, packs: 1, totalCents: 100, priceSource: 'estimate' as const },
+      { itemId: 'b', label: 'B', productId: part.lines[0].productId, packs: 1, totalCents: 100, priceSource: 'open_prices' as const },
+    ];
+    expect(orderLineViews(lines, productsById).map((l) => l.isEstimate)).toEqual([true, false]);
   });
 
   it('reconnaît une commande qui colle encore au panier', () => {
@@ -143,7 +148,15 @@ describe('OrderReceipt', () => {
     const lines = orderLineViews(part.lines, productsById);
     expect(lines.length).toBeGreaterThan(ORDER_COLLAPSED_LINES);
     await render(
-      <OrderReceipt lines={lines} subtotalCents={part.subtotalCents} feesCents={599} totalCents={part.subtotalCents + 599} savingsCents={120} channel="delivery" testID="rc" />,
+      <OrderReceipt
+        lines={lines}
+        subtotalCents={part.subtotalCents}
+        feesCents={599}
+        totalCents={part.subtotalCents + 599}
+        savingsCents={120}
+        channel="delivery"
+        testID="rc"
+      />,
     );
     expect(screen.getByText(`Ticket · Livraison · ${lines.length} articles`)).toBeTruthy();
     expect(screen.queryByTestId(`rc-line-${ORDER_COLLAPSED_LINES}`)).toBeNull();
@@ -153,6 +166,14 @@ describe('OrderReceipt', () => {
     expect(screen.getByText(`5,99${NNBSP}€`)).toBeTruthy();
     expect(screen.getByText(`${MINUS}1,20${NNBSP}€`)).toBeTruthy();
     expect(screen.getByLabelText(/^Total : /)).toBeTruthy();
+  });
+
+  it('signale les prix estimés (ligne et sous-total)', async () => {
+    const lines = orderLineViews(part.lines, productsById).map((l, i) => ({ ...l, isEstimate: i < 2 }));
+    await render(<OrderReceipt lines={lines} subtotalCents={part.subtotalCents} feesCents={0} totalCents={part.subtotalCents} savingsCents={0} channel="drive" testID="rc" />);
+    expect(screen.getByText('dont 2 prix estimés')).toBeTruthy();
+    expect(screen.getByTestId('rc-line-0').props.accessibilityLabel).toMatch(/prix estimé/);
+    expect(screen.getByTestId('rc-line-2').props.accessibilityLabel).not.toMatch(/prix estimé/);
   });
 });
 
@@ -171,6 +192,16 @@ describe('OrderActions', () => {
     expect(h.onPremium).toHaveBeenCalledTimes(1);
     await view.rerender(<OrderActions stage="ready" oneClick={false} storeName="Carrefour" copied {...h} testID="a" />);
     expect(screen.getByRole('button', { name: 'Liste copiée, copier à nouveau' })).toBeTruthy();
+  });
+
+  it('enseigne sans commande en ligne : la liste part en magasin', async () => {
+    const h = handlers();
+    const view = await render(<OrderActions stage="ready" oneClick={false} storeName="Lidl" inStoreOnly copied={false} {...h} />);
+    expect(screen.getByText('Tes courses en 2 étapes')).toBeTruthy();
+    expect(screen.getByText('Direction Lidl')).toBeTruthy();
+    expect(screen.queryByText('Ouvre Lidl')).toBeNull();
+    await view.rerender(<OrderActions stage="opened" oneClick={false} storeName="Lidl" inStoreOnly copied={false} {...h} />);
+    expect(screen.getByText('Tes courses sont faites ? Confirme ici : on les ajoute à ton budget.')).toBeTruthy();
   });
 
   it('Premium : commande en un clic, sans invitation', async () => {
@@ -234,6 +265,9 @@ describe('OrderConfirmedCard & OrderHistoryRow', () => {
     const order: Pick<OrderHandoff, 'status' | 'totalCents' | 'channel' | 'lines'> = { ...handoff, status: 'confirmed' };
     await render(<OrderHistoryRow order={order} store={store} when="Validée hier" testID="h" />);
     expect(screen.getByText('Carrefour · Livraison')).toBeTruthy();
+    // Enseigne sans commande en ligne : « En magasin ».
+    await render(<OrderHistoryRow order={{ ...order, channel: 'drive' }} store={storesById.lidl} when="Validée hier" />);
+    expect(screen.getByText('Lidl · En magasin')).toBeTruthy();
     expect(screen.getByText('Validée')).toBeTruthy();
     expect(screen.getByText(`Validée hier · ${part.lines.length} articles`)).toBeTruthy();
   });

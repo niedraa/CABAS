@@ -2,9 +2,9 @@
  * Implémentation Supabase du BasketRepository (client UTILISATEUR → RLS).
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { BasketPlan } from '../_shared/core/index.ts';
-import { loadIngredientsByIds, loadOffers, loadStores } from '../_shared/catalog.ts';
-import { effectiveEntitlement, type Row, rowToSubscription } from '../_shared/mappers.ts';
+import type { Allergen, BasketPlan } from '../_shared/core/index.ts';
+import { loadCatalogMeta, loadIngredientsByIds, loadOffers, loadStores } from '../_shared/catalog.ts';
+import { effectiveEntitlement, pgArray, type Row, rowToSubscription } from '../_shared/mappers.ts';
 import { unwrap } from '../_shared/supabaseClient.ts';
 import type { BasketRepository } from './handler.ts';
 
@@ -24,9 +24,17 @@ export function createBasketRepository(client: SupabaseClient, userId: string, n
       );
       return Array.isArray(row?.preferred_store_ids) ? (row.preferred_store_ids as string[]) : [];
     },
+    async loadAllergens() {
+      const row = unwrap<Row | null>(
+        'profile allergens',
+        await client.from('profiles').select('allergens').eq('id', userId).maybeSingle(),
+      );
+      return pgArray(row?.allergens) as Allergen[];
+    },
     loadStores: () => loadStores(client),
     loadOffers: (ids) => loadOffers(client, ids),
     loadIngredients: (ids) => loadIngredientsByIds(client, ids),
+    loadCatalogMeta: () => loadCatalogMeta(client),
     async saveBasketPlan(plan: BasketPlan, listId?: string) {
       const row = unwrap<Row>(
         'basket_plans',

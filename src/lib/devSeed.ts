@@ -16,7 +16,7 @@
  * importé que par la route de dev, jamais par un service.
  */
 import type { Allergen, Diet, SpendingEntry, UserProfile } from '@/core';
-import { addDays, DEFAULT_MEAL_SLOTS } from '@/core';
+import { addDays, DEFAULT_MEAL_SLOTS, storeDisplayName } from '@/core';
 import { ensureSession } from '@/services/auth';
 import { getCatalogSnapshot } from '@/services/catalog';
 import { getPurchases } from '@/services/purchases';
@@ -169,7 +169,7 @@ async function runSeed(variant: SeedVariant): Promise<SeedSummary> {
     totalCents: s.totalCents,
     savingsCents: s.savingsCents,
     source: 'order',
-    label: `Courses ${catalog.storesById[s.storeId].name}`,
+    label: `Courses ${storeDisplayName(catalog.storesById[s.storeId], { short: true })}`,
   }));
   useBudgetStore.getState().setEntries(entries);
 

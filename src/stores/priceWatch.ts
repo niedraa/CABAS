@@ -12,7 +12,7 @@
 import { useMemo } from 'react';
 
 import type { PriceDrop, PriceWatch } from '@/core';
-import { canUse, detectPriceDrops, watchesFromHandoffs } from '@/core';
+import { canUse, detectPriceDrops, storeDisplayName, watchesFromHandoffs } from '@/core';
 import { getCatalogSnapshot, useCatalog } from '@/services/catalog';
 import { notifyPriceDrop } from '@/services/notifications';
 
@@ -48,7 +48,7 @@ export async function checkPriceDrops(): Promise<PriceDrop[]> {
     const id = await notifyPriceDrop({
       ...drop,
       productName: catalog.productsById[drop.productId]?.name,
-      storeName: catalog.storesById[drop.storeId]?.name,
+      storeName: catalog.storesById[drop.storeId] ? storeDisplayName(catalog.storesById[drop.storeId], { short: true }) : undefined,
     });
     if (id) {
       useSettingsStore.getState().markPriceDropNotified(key, drop.newCents);

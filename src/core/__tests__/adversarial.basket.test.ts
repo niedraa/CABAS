@@ -21,6 +21,7 @@ function st(id: string, o: Partial<Store> = {}): Store {
     chain: 'leclerc',
     name: id,
     city: 'Lille',
+    pickup: 'drive',
     driveFeeCents: 0,
     deliveryFeeCents: 0,
     minOrderCents: 0,

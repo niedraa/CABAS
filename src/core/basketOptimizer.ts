@@ -166,6 +166,8 @@ function evaluate(
       packs: best.packs,
       totalCents: best.totalCents,
     };
+    // Provenance (« prix estimé » au panier, à la commande, dans le texte copié).
+    if (best.priceSource) line.priceSource = best.priceSource;
     const lines = linesByStore.get(best.storeId);
     if (lines) lines.push(line);
     else linesByStore.set(best.storeId, [line]);

@@ -18,6 +18,8 @@ export interface OrderLineView {
   packs: number;
   totalCents: number;
   isStoreBrand: boolean;
+  /** Prix estimé (aucun relevé dans l'enseigne) : signalé « prix estimé ». */
+  isEstimate: boolean;
 }
 
 export function orderLineViews(lines: readonly BasketLine[], productsById: Record<string, Product>): OrderLineView[] {
@@ -32,6 +34,7 @@ export function orderLineViews(lines: readonly BasketLine[], productsById: Recor
       packs: l.packs,
       totalCents: l.totalCents,
       isStoreBrand: !!p?.isStoreBrand,
+      isEstimate: l.priceSource === 'estimate',
     };
   });
 }

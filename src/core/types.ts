@@ -451,6 +451,19 @@ export interface StoreOffer {
   referenceUnit: 'kg' | 'l' | 'piece';
   isStoreBrand: boolean;
   isPromo: boolean;
+  /*
+   * Provenance du prix retenu (copiée de `Price` par core/priceComparison) —
+   * champs de VUE, OPTIONNELS : absents des comparaisons calculées avant leur
+   * ajout (caches persistés, ancien serveur). Ajout additif (données réelles).
+   */
+  /** `Price.source` : relevé (`open_prices`…), estimation (`estimate`) ou ancien `demo`. */
+  priceSource?: PriceSource;
+  /** `Price.updatedAt` : dernier relevé (`open_prices`) ou date de l'instantané (`estimate`). */
+  priceUpdatedAt?: string;
+  /** `Price.observationCount` : nombre de relevés agrégés. */
+  observationCount?: number;
+  /** `Price.estimateMethod` : méthode d'estimation. */
+  estimateMethod?: EstimateMethod;
 }
 
 export interface ItemComparison {
@@ -472,6 +485,12 @@ export interface BasketLine {
   productId: string;
   packs: number;
   totalCents: number;
+  /**
+   * Provenance du prix de la ligne (`StoreOffer.priceSource`) — champ de VUE
+   * optionnel (ajout additif) : signale « prix estimé » au panier, à la
+   * commande et dans le texte copié.
+   */
+  priceSource?: PriceSource;
 }
 
 export interface BasketStorePart {

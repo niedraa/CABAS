@@ -9,11 +9,14 @@
 import type {
   Allergen,
   BaseUnit,
+  CatalogMeta,
   Diet,
   Entitlement,
+  EstimateMethod,
   Ingredient,
   MealPlan,
   MealSlotPreference,
+  PickupMode,
   PlannedMeal,
   Price,
   Product,
@@ -21,9 +24,11 @@ import type {
   RecipeIngredient,
   RecipeStep,
   Store,
+  StoreChain,
   SubscriptionState,
   UserProfile,
 } from './core/index.ts';
+import { STORE_CHAINS } from './core/index.ts';
 
 export type Row = Record<string, unknown>;
 
@@ -31,6 +36,32 @@ const str = (v: unknown, fallback = ''): string => (typeof v === 'string' ? v : 
 const optStr = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined);
 const bool = (v: unknown): boolean => v === true;
 const arr = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+
+/**
+ * Tableau Postgres : JSON (PostgREST) ou littéral « {a,b} » (certains clients
+ * renvoient ainsi les tableaux d'énumérations).
+ */
+export function pgArray(v: unknown): string[] {
+  if (Array.isArray(v)) return v.filter((x): x is string => typeof x === 'string');
+  if (typeof v === 'string' && v.startsWith('{') && v.endsWith('}')) {
+    const inner = v.slice(1, -1).trim();
+    return inner === '' ? [] : inner.split(',').map((x) => x.trim().replace(/^"(.*)"$/, '$1')).filter((x) => x !== '');
+  }
+  return [];
+}
+
+const CHAINS: ReadonlySet<string> = new Set(STORE_CHAINS);
+const PICKUP_MODES: ReadonlySet<string> = new Set(['drive', 'click_collect', 'none']);
+const ESTIMATE_METHODS: ReadonlySet<string> = new Set(['chain_index', 'mdd_ratio', 'category_median']);
+
+/** Enseignes d'une MDD : `store_chains` (référence), sinon l'ancienne colonne `store_chain`. */
+function rowStoreChains(r: Row): StoreChain[] {
+  const list = pgArray(r.store_chains).filter((c) => CHAINS.has(c)) as StoreChain[];
+  if (list.length > 0) return Array.from(new Set(list));
+  const legacy = optStr(r.store_chain);
+  return legacy && CHAINS.has(legacy) ? [legacy as StoreChain] : [];
+}
+
 export function num(v: unknown, fallback = 0): number {
   const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
   return Number.isFinite(n) ? n : fallback;
@@ -129,11 +160,13 @@ export function rowToRecipe(r: Row): Recipe {
 }
 
 export function rowToStore(r: Row): Store {
+  const pickup = str(r.pickup, 'drive');
   return {
     id: str(r.id),
     chain: str(r.chain) as Store['chain'],
     name: str(r.name),
     city: str(r.city),
+    pickup: (PICKUP_MODES.has(pickup) ? pickup : 'drive') as PickupMode,
     driveFeeCents: num(r.drive_fee_cents),
     deliveryFeeCents: r.delivery_fee_cents == null ? null : num(r.delivery_fee_cents),
     minOrderCents: num(r.min_order_cents),
@@ -146,7 +179,6 @@ export function rowToStore(r: Row): Store {
 export function rowToProduct(r: Row): Product {
   const p: Product = {
     id: str(r.product_id ?? r.id),
-    ean: str(r.ean),
     name: str(r.product_name ?? r.name),
     brand: str(r.brand),
     isStoreBrand: bool(r.is_store_brand),
@@ -155,15 +187,19 @@ export function rowToProduct(r: Row): Product {
     packUnit: str(r.pack_unit, 'piece') as BaseUnit,
     allergens: arr<Allergen>(r.allergens),
   };
-  const chain = optStr(r.store_chain);
-  if (chain) p.storeChain = chain as Product['storeChain'];
+  const ean = optStr(r.ean);
+  if (ean) p.ean = ean;
+  const category = optStr(r.off_category_tag);
+  if (category) p.offCategoryTag = category;
+  const chains = rowStoreChains(r);
+  if (chains.length > 0) p.storeChains = chains;
   const ns = optStr(r.nutri_score);
   if (ns) p.nutriScore = ns as Product['nutriScore'];
   if (bool(r.organic)) p.organic = true;
   return p;
 }
 
-/** Prix (colonnes de `prices`, ou `price_updated_at` pour la RPC). */
+/** Prix (colonnes de `prices`, ou `price_updated_at` pour la RPC), provenance comprise. */
 export function rowToPrice(r: Row): Price {
   const price: Price = {
     productId: str(r.product_id),
@@ -178,10 +214,18 @@ export function rowToPrice(r: Row): Price {
   if (label) price.promoLabel = label;
   const until = optStr(r.promo_until);
   if (until) price.promoUntil = until.slice(0, 10);
+  const count = optNum(r.observation_count);
+  if (count !== undefined) price.observationCount = count;
+  const from = optStr(r.observed_from);
+  if (from) price.observedFrom = from.slice(0, 10);
+  const method = optStr(r.estimate_method);
+  if (method && ESTIMATE_METHODS.has(method)) price.estimateMethod = method as EstimateMethod;
+  const basis = optNum(r.estimate_basis_count);
+  if (basis !== undefined) price.estimateBasisCount = basis;
   return price;
 }
 
-/** Prix domaine → ligne `prices` (upsert). */
+/** Prix domaine → ligne `prices` (upsert) : les colonnes absentes sont remises à null. */
 export function priceToRow(p: Price): Row {
   return {
     product_id: p.productId,
@@ -192,6 +236,34 @@ export function priceToRow(p: Price): Row {
     promo_until: p.promoUntil ?? null,
     source: p.source,
     updated_at: p.updatedAt,
+    observation_count: p.observationCount ?? null,
+    observed_from: p.observedFrom ?? null,
+    estimate_method: p.estimateMethod ?? null,
+    estimate_basis_count: p.estimateBasisCount ?? null,
+  };
+}
+
+/** Ligne `catalog_meta` → description de l'instantané (null si absente ou illisible). */
+export function rowToCatalogMeta(r: Row | null | undefined): CatalogMeta | null {
+  const meta = r?.meta;
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return null;
+  const m = meta as Record<string, unknown>;
+  if (typeof m.snapshotAt !== 'string' || typeof m.pricesFrom !== 'string' || typeof m.pricesTo !== 'string') {
+    return null;
+  }
+  if (!m.chainIndex || typeof m.chainIndex !== 'object' || !Array.isArray(m.sources)) return null;
+  return {
+    snapshotAt: m.snapshotAt,
+    pricesFrom: m.pricesFrom,
+    pricesTo: m.pricesTo,
+    observedPrices: num(m.observedPrices),
+    estimatedPrices: num(m.estimatedPrices),
+    chainIndex: m.chainIndex as CatalogMeta['chainIndex'],
+    coverage: (m.coverage && typeof m.coverage === 'object' ? m.coverage : {}) as CatalogMeta['coverage'],
+    sources: (m.sources as unknown[]).filter((s): s is CatalogMeta['sources'][number] =>
+      !!s && typeof s === 'object' && typeof (s as Row).name === 'string' && typeof (s as Row).url === 'string' &&
+      typeof (s as Row).license === 'string'
+    ),
   };
 }
 

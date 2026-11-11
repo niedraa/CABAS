@@ -1,8 +1,10 @@
 /**
- * Un magasin du panier : monogramme, nombre d'articles, sous-total, lignes
- * (repliées au-delà de 3, dépliage au ressort), frais, puis le CTA
- * « Commander chez <enseigne> ». Une commande déjà validée cette semaine
- * est signalée et le CTA devient « Voir ma commande ».
+ * Un magasin du panier : monogramme, nombre d'articles (« dont 2 prix
+ * estimés »), service (drive, click & collect, en magasin, livraison),
+ * sous-total, lignes (repliées au-delà de 3, dépliage au ressort ; « prix
+ * estimé » signalé), frais, puis le CTA « Commander chez <enseigne> » (« Ma
+ * liste pour <enseigne> » sans commande en ligne). Une commande déjà validée
+ * cette semaine est signalée et le CTA devient « Voir ma commande ».
  */
 import React, { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -11,11 +13,21 @@ import { ArrowRight, ChevronDown, CircleCheck, ExternalLink } from 'lucide-react
 
 import { Badge, Button, Divider, PressableScale, StoreBadge, Text } from '@/components/ui';
 import type { BasketStorePart, OrderChannel, OrderHandoff, Product, Store } from '@/core';
-import { formatPrice } from '@/core';
+import { formatPrice, hasEstimatedPrice, storeDisplayName } from '@/core';
 import { formatPriceForA11y } from '@/lib/a11y';
 import { boxShadow, useTheme } from '@/theme';
 
-import { CHANNEL_LABELS, COLLAPSED_LINES, feesLabel, orderCtaLabel, packsLabel, plural, storeShortName, visibleLines } from './basketView';
+import {
+  COLLAPSED_LINES,
+  estimatedCount,
+  estimatedNote,
+  feesLabel,
+  orderCtaLabel,
+  packsLabel,
+  plural,
+  serviceLabel,
+  visibleLines,
+} from './basketView';
 
 export interface StorePartCardProps {
   part: BasketStorePart;
@@ -35,8 +47,11 @@ export function StorePartCard({ part, store, channel, productsById, orderStatus,
   const [expanded, setExpanded] = useState(false);
   const lines = visibleLines(part, expanded);
   const hidden = part.lines.length - COLLAPSED_LINES;
-  const name = store?.name ?? part.storeId;
-  const short = storeShortName(store);
+  const name = storeDisplayName(store, { fallback: part.storeId });
+  const short = storeDisplayName(store, { short: true });
+  const service = serviceLabel(store, channel);
+  const estimated = estimatedCount(part.lines);
+  const articles = `${plural(part.lines.length, 'article')}${estimated > 0 ? `, ${estimatedNote(estimated)}` : ''}`;
 
   const rotation = useDerivedValue(() => withSpring(expanded ? 180 : 0, t.motion.springIndicator), [expanded]);
   const chevronStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${rotation.get()}deg` }] }));
@@ -63,15 +78,15 @@ export function StorePartCard({ part, store, channel, productsById, orderStatus,
         style={[styles.row, { gap: t.spacing.md }]}
         accessible
         accessibilityRole="header"
-        accessibilityLabel={`${name}, ${plural(part.lines.length, 'article')}, ${formatPriceForA11y(part.subtotalCents)}`}
+        accessibilityLabel={`${name}, ${articles}, ${service}, ${formatPriceForA11y(part.subtotalCents)}`}
       >
         <StoreBadge chain={store?.chain ?? part.storeId} name={name} size="lg" />
         <View style={styles.flex}>
           <Text variant="headline" numberOfLines={1}>
             {name}
           </Text>
-          <Text variant="footnote" color="textSecondary">
-            {plural(part.lines.length, 'article')} · {CHANNEL_LABELS[channel]}
+          <Text variant="footnote" color="textSecondary" testID={testID ? `${testID}-meta` : undefined}>
+            {articles} · {service}
           </Text>
         </View>
         <Text variant="price" tabular>
@@ -93,6 +108,7 @@ export function StorePartCard({ part, store, channel, productsById, orderStatus,
         {lines.map((l, i) => {
           const product = productsById[l.productId];
           const qty = packsLabel(l.packs, product);
+          const isEstimate = hasEstimatedPrice(l);
           return (
             <Animated.View key={l.itemId} entering={i >= COLLAPSED_LINES ? FadeIn.delay((i - COLLAPSED_LINES) * t.motion.stagger * 0.5) : undefined}>
               <PressableScale
@@ -100,7 +116,7 @@ export function StorePartCard({ part, store, channel, productsById, orderStatus,
                 disabled={!onOpenItem}
                 dimOnPress
                 scaleTo={0.99}
-                accessibilityLabel={`${l.label}, ${qty}, ${formatPriceForA11y(l.totalCents)}`}
+                accessibilityLabel={`${l.label}, ${qty}, ${formatPriceForA11y(l.totalCents)}${isEstimate ? ', prix estimé' : ''}`}
                 accessibilityHint={onOpenItem ? 'Compare les prix de cet article' : undefined}
                 style={[styles.line, { gap: t.spacing.md, minHeight: t.layout.minTouchTarget }]}
                 testID={testID ? `${testID}-line-${i}` : undefined}
@@ -111,6 +127,7 @@ export function StorePartCard({ part, store, channel, productsById, orderStatus,
                   </Text>
                   <Text variant="caption" color="textSecondary" numberOfLines={1} tabular>
                     {qty}
+                    {isEstimate ? ' · prix estimé' : ''}
                   </Text>
                 </View>
                 <Text variant="subhead" tabular>
@@ -157,7 +174,11 @@ export function StorePartCard({ part, store, channel, productsById, orderStatus,
         rightIcon={ArrowRight}
         fullWidth
         onPress={onOrder}
-        accessibilityHint={`Prépare ta commande ${CHANNEL_LABELS[channel].toLowerCase()} chez ${short}`}
+        accessibilityHint={
+          store?.pickup === 'none' && channel === 'drive'
+            ? `Prépare ta liste de courses pour ${short}`
+            : `Prépare ta commande ${service.toLowerCase()} chez ${short}`
+        }
         testID={testID ? `${testID}-order` : undefined}
       />
     </Animated.View>

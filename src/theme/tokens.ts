@@ -320,14 +320,24 @@ export const motion = {
   pressScale: 0.97,
 } as const;
 
-/** Couleurs « monogramme » des enseignes (pas de logos officiels). */
-export const storeColors: Record<string, { bg: string; fg: string }> = {
-  leclerc: { bg: '#1D5FA8', fg: '#FFFFFF' },
-  carrefour: { bg: '#2D6FB7', fg: '#FFFFFF' },
-  auchan: { bg: '#D6342C', fg: '#FFFFFF' },
-  intermarche: { bg: '#C8102E', fg: '#FFFFFF' },
-  lidl: { bg: '#F5C400', fg: '#0050AA' },
-  monoprix: { bg: '#1A1A1A', fg: '#FFFFFF' },
+/**
+ * Couleurs « monogramme » des enseignes : un repère de couleur, JAMAIS un logo
+ * (droit des marques — voir docs/brand). Une entrée par enseigne de
+ * `STORE_CHAINS` (test d'exhaustivité), texte / fond ≥ 4,5:1 (AA). Un fond
+ * clair (luminance > 0,5) porte un filet `border` pour rester visible sur le
+ * papier du thème clair.
+ */
+export const storeColors: Record<string, { bg: string; fg: string; border?: string }> = {
+  leclerc: { bg: '#0058A6', fg: '#FFFFFF' },
+  carrefour: { bg: '#E3ECF8', fg: '#B3121E', border: '#8FA9D6' },
+  auchan: { bg: '#C8102E', fg: '#FFFFFF' },
+  intermarche: { bg: '#1E1E1E', fg: '#FF6B5E' },
+  superu: { bg: '#38308C', fg: '#FFFFFF' },
+  lidl: { bg: '#FFE500', fg: '#0050AA', border: '#C9B200' },
+  aldi: { bg: '#0B1F4D', fg: '#FFB21E' },
+  netto: { bg: '#E09B00', fg: '#1A1A1A' },
+  monoprix: { bg: '#F2EEE6', fg: '#1A1A1A', border: '#BFB5A3' },
+  franprix: { bg: '#C2410C', fg: '#FFFFFF' },
   default: { bg: palette.foret600, fg: palette.lin },
 };
 

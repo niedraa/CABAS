@@ -13,14 +13,69 @@
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
 import { PGlite } from '@electric-sql/pglite';
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SUPABASE = resolve(HERE, '..');
+const ROOT = resolve(SUPABASE, '..');
 const MIGRATIONS = join(SUPABASE, 'migrations');
+
+// ─── Catalogue attendu : DÉRIVÉ de src/data (jamais de comptes en dur) ───────
+// Les fichiers de données n'importent que des types : Node les charge tels quels.
+
+const load = (rel) => import(pathToFileURL(join(ROOT, rel)).href);
+const [core, dIng, dRec, dSto, dPro, dPri] = await Promise.all(
+  ['src/core/types.ts', 'src/data/ingredients.ts', 'src/data/recipes.ts', 'src/data/stores.ts', 'src/data/products.ts', 'src/data/prices.ts'].map(load),
+);
+const DATA = {
+  ingredients: dIng.ingredients,
+  recipes: dRec.recipes,
+  stores: dSto.stores,
+  products: dPro.products,
+  prices: dPri.prices,
+};
+const N = {
+  ingredients: DATA.ingredients.length,
+  recipes: DATA.recipes.length,
+  recipeLines: DATA.recipes.reduce((n, r) => n + r.ingredients.length, 0),
+  stores: DATA.stores.length,
+  products: DATA.products.length,
+  prices: DATA.prices.length,
+};
+const PRODUCTS_BY_ID = new Map(DATA.products.map((p) => [p.id, p]));
+/** Ingrédients achetables triés par nombre de magasins avec un prix (décroissant). */
+const STORES_BY_INGREDIENT = (() => {
+  const m = new Map();
+  for (const pr of DATA.prices) {
+    const ing = PRODUCTS_BY_ID.get(pr.productId)?.ingredientId;
+    if (!ing) continue;
+    if (!m.has(ing)) m.set(ing, new Set());
+    m.get(ing).add(pr.storeId);
+  }
+  return [...m.entries()].sort((a, b) => b[1].size - a[1].size || (a[0] < b[0] ? -1 : 1));
+})();
+/**
+ * Produit et prix de TEST (hors catalogue, codes-barres fictifs « 39999… ») :
+ * les tests de comportement ne dépendent pas du contenu de src/data, qui peut
+ * être vide pendant un import.
+ */
+const FIXTURE = { productId: 'prd_test_fixture', storeId: 'leclerc', priceCents: 249 };
+async function ensureFixture() {
+  await db.query(
+    `insert into public.products (id, ean, name, brand, ingredient_id, pack_size, pack_unit)
+     values ($1, '3999999000011', 'Produit de test', 'Test', $2, 500, 'g') on conflict (id) do nothing`,
+    [FIXTURE.productId, DATA.ingredients[0].id],
+  );
+  await db.query(
+    `insert into public.prices (product_id, store_id, price_cents, source) values
+       ($1, 'leclerc', $2, 'demo'), ($1, 'lidl', $2 + 10, 'demo'), ($1, 'carrefour', $2 + 20, 'demo')
+     on conflict do nothing`,
+    [FIXTURE.productId, FIXTURE.priceCents],
+  );
+}
 
 // ─── Mini-framework de test ──────────────────────────────────────────────────
 
@@ -115,11 +170,15 @@ const userB = await createUser('bob@example.com', { full_name: 'Bob Martin' });
 // ═══ Schéma ═════════════════════════════════════════════════════════════════
 
 const EXPECTED_TABLES = [
-  'ingredients', 'recipes', 'recipe_ingredients', 'stores', 'products', 'prices', 'price_history',
+  'ingredients', 'recipes', 'recipe_ingredients', 'stores', 'products', 'prices', 'price_history', 'catalog_meta',
   'profiles', 'meal_plans', 'planned_meals', 'shopping_lists', 'shopping_list_items', 'basket_plans',
   'order_handoffs', 'pantry_items', 'spending_entries', 'consents', 'subscriptions', 'revenuecat_events',
   'notification_preferences', 'push_tokens', 'price_watches', 'notification_queue',
+  'open_prices_locations', 'price_observations', 'price_collection_state',
 ];
+
+/** Tables système sans politique : service_role uniquement. */
+const SERVICE_ONLY_TABLES = ['open_prices_locations', 'price_collection_state', 'price_observations', 'revenuecat_events'];
 
 test('toutes les tables attendues existent', async () => {
   const res = await db.query(`select tablename from pg_tables where schemaname = 'public'`);
@@ -139,13 +198,28 @@ test('RLS activée sur TOUTES les tables du schéma public', async () => {
   assert.ok(total >= EXPECTED_TABLES.length);
 });
 
-test('chaque table a au moins une politique (sauf revenuecat_events, service_role only)', async () => {
+test('chaque table a au moins une politique (sauf les tables système, service_role only)', async () => {
   const res = await db.query(
     `select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
       where n.nspname = 'public' and c.relkind = 'r'
-        and not exists (select 1 from pg_policies p where p.schemaname = 'public' and p.tablename = c.relname)`,
+        and not exists (select 1 from pg_policies p where p.schemaname = 'public' and p.tablename = c.relname)
+      order by c.relname`,
   );
-  assert.deepEqual(res.rows.map((r) => r.relname), ['revenuecat_events']);
+  assert.deepEqual(res.rows.map((r) => r.relname), SERVICE_ONLY_TABLES);
+});
+
+test('énumérations Postgres = référentiels de src/core/types.ts (valeurs ET ordre)', async () => {
+  const enumValues = async (type) =>
+    (await db.query(`select unnest(enum_range(null::public.${type}))::text as v`)).rows.map((r) => r.v);
+  assert.deepEqual(await enumValues('store_chain'), [...core.STORE_CHAINS]);
+  assert.deepEqual(await enumValues('allergen'), [...core.ALLERGENS]);
+  assert.deepEqual(await enumValues('diet'), [...core.DIETS]);
+  assert.deepEqual(await enumValues('equipment'), [...core.EQUIPMENT]);
+  assert.deepEqual(await enumValues('aisle'), [...core.AISLES]);
+  assert.deepEqual(await enumValues('cuisine'), [...core.CUISINES]);
+  assert.deepEqual(await enumValues('unit'), [...core.UNITS]);
+  assert.deepEqual(await enumValues('price_source'), ['open_prices', 'partner', 'collect', 'estimate', 'demo']);
+  assert.deepEqual(await enumValues('estimate_method'), ['chain_index', 'mdd_ratio', 'category_median']);
 });
 
 test('les colonnes sensibles portent un commentaire RGPD', async () => {
@@ -170,15 +244,67 @@ test('index des chemins chauds présents', async () => {
 
 // ═══ Seed ═══════════════════════════════════════════════════════════════════
 
-test('seed : catalogue complet chargé', async () => {
-  assert.equal(await count('select count(*) from public.ingredients'), 146);
-  assert.equal(await count('select count(*) from public.recipes'), 70);
-  assert.equal(await count('select count(*) from public.stores'), 5);
-  assert.equal(await count('select count(*) from public.products'), 780);
-  assert.equal(await count('select count(*) from public.prices'), 1383);
-  assert.ok((await count('select count(*) from public.recipe_ingredients')) > 300);
+test('seed : catalogue complet chargé (comptes dérivés de src/data)', async () => {
+  assert.equal(await count('select count(*) from public.ingredients'), N.ingredients);
+  assert.equal(await count('select count(*) from public.recipes'), N.recipes);
+  assert.equal(await count('select count(*) from public.stores'), N.stores);
+  assert.equal(await count('select count(*) from public.products'), N.products);
+  assert.equal(await count('select count(*) from public.prices'), N.prices);
+  assert.equal(await count('select count(*) from public.recipe_ingredients'), N.recipeLines);
   const steps = await one(`select steps from public.recipes where id = 'rec_curry_pois_chiches'`);
   assert.ok(Array.isArray(steps.steps) && typeof steps.steps[0].text === 'string');
+});
+
+test('seed : magasins, produits et prix restitués à l\'identique (provenance comprise)', async () => {
+  for (const s of DATA.stores) {
+    const r = await one('select chain::text, pickup, delivery_fee_cents, is_active from public.stores where id = $1', [s.id]);
+    assert.equal(s.id, s.chain, 'Store.id === chain (ids persistés des utilisateurs)');
+    assert.deepEqual(r, { chain: s.chain, pickup: s.pickup, delivery_fee_cents: s.deliveryFeeCents, is_active: true });
+  }
+  const products = new Map(
+    (await db.query('select id, ean, off_category_tag, store_chains::text[] as chains, store_chain::text as chain from public.products')).rows.map(
+      (r) => [r.id, r],
+    ),
+  );
+  for (const p of DATA.products) {
+    const r = products.get(p.id);
+    const chains = p.storeChains ?? (p.storeChain ? [p.storeChain] : []);
+    assert.equal(r.ean, p.ean ?? null, `${p.id} : ean`);
+    assert.equal(r.off_category_tag, p.offCategoryTag ?? null, `${p.id} : catégorie vrac`);
+    assert.deepEqual(r.chains, chains, `${p.id} : enseignes`);
+    assert.equal(r.chain, chains[0] ?? null, `${p.id} : store_chain (compatibilité) = 1re enseigne`);
+  }
+  const prices = new Map(
+    (
+      await db.query(
+        `select product_id || '|' || store_id as k, price_cents, promo_price_cents, source::text, observation_count,
+                observed_from::text, estimate_method::text, estimate_basis_count from public.prices`,
+      )
+    ).rows.map((r) => [r.k, r]),
+  );
+  for (const p of DATA.prices) {
+    const r = prices.get(`${p.productId}|${p.storeId}`);
+    assert.ok(r, `prix manquant ${p.productId}|${p.storeId}`);
+    assert.deepEqual(
+      r,
+      {
+        k: `${p.productId}|${p.storeId}`,
+        price_cents: p.priceCents,
+        promo_price_cents: p.promoPriceCents ?? null,
+        source: p.source,
+        observation_count: p.observationCount ?? null,
+        observed_from: p.observedFrom ? p.observedFrom.slice(0, 10) : null,
+        estimate_method: p.estimateMethod ?? null,
+        estimate_basis_count: p.estimateBasisCount ?? null,
+      },
+    );
+  }
+});
+
+test('seed : socles de collecte = prix relevés de l\'instantané', async () => {
+  const observed = DATA.prices.filter((p) => p.source === 'open_prices').length;
+  assert.equal(await count(`select count(*) from public.price_observations where kind = 'snapshot'`), observed);
+  assert.equal(await count(`select count(*) from public.price_observations where kind = 'observation'`), 0);
 });
 
 test('seed : chaque recette a des ingrédients et des étapes', async () => {
@@ -191,31 +317,47 @@ test('seed : chaque recette a des ingrédients et des étapes', async () => {
 
 test('seed : idempotent (rejouer ne duplique rien et n\'historise pas de faux changements)', async () => {
   const hist = await count('select count(*) from public.price_history');
-  assert.equal(hist, 1383, 'une ligne d\'historique par prix inséré');
+  assert.equal(hist, N.prices, 'une ligne d\'historique par prix inséré');
+  const snapshots = await count(`select count(*) from public.price_observations`);
   await db.exec(seedSql);
-  assert.equal(await count('select count(*) from public.prices'), 1383);
+  assert.equal(await count('select count(*) from public.prices'), N.prices);
+  assert.equal(await count('select count(*) from public.products'), N.products);
   assert.equal(await count('select count(*) from public.price_history'), hist);
+  assert.equal(await count(`select count(*) from public.price_observations`), snapshots);
 });
 
-test('au moins 3 enseignes comparables pour la majorité des ingrédients achetables', async () => {
+test('couverture : part des ingrédients comparables dans ≥ 3 enseignes identique à src/data', async () => {
+  const expected = STORES_BY_INGREDIENT.length === 0
+    ? null
+    : STORES_BY_INGREDIENT.filter(([, s]) => s.size >= 3).length / STORES_BY_INGREDIENT.length;
   const ratio = await one(`
     with per_ing as (
       select p.ingredient_id, count(distinct pr.store_id) as n
         from public.products p join public.prices pr on pr.product_id = p.id
        group by p.ingredient_id)
     select avg((n >= 3)::int)::float as r from per_ing`);
-  assert.ok(ratio.r >= 0.9, `seulement ${(ratio.r * 100).toFixed(0)} % des ingrédients ont ≥ 3 enseignes`);
+  if (expected === null) assert.equal(ratio.r, null);
+  else assert.ok(Math.abs(ratio.r - expected) < 1e-9, `${ratio.r} ≠ ${expected}`);
 });
 
 // ═══ Accès anonyme ══════════════════════════════════════════════════════════
 
 test('anon lit le catalogue', async () => {
+  const metaRows = await count('select count(*) from public.catalog_meta');
   await asAnon(async () => {
-    assert.equal(await count('select count(*) from public.recipes'), 70);
-    assert.equal(await count('select count(*) from public.prices'), 1383);
-    assert.ok((await count('select count(*) from public.recipe_ingredients')) > 300);
-    assert.equal(await count('select count(*) from public.stores'), 5);
+    assert.equal(await count('select count(*) from public.recipes'), N.recipes);
+    assert.equal(await count('select count(*) from public.prices'), N.prices);
+    assert.equal(await count('select count(*) from public.recipe_ingredients'), N.recipeLines);
+    assert.equal(await count('select count(*) from public.stores'), N.stores);
+    assert.equal(await count('select count(*) from public.catalog_meta'), metaRows);
   });
+});
+
+test('anon et authenticated n\'accèdent pas aux tables système de collecte', async () => {
+  for (const t of ['open_prices_locations', 'price_observations', 'price_collection_state']) {
+    await asAnon(() => expectSqlError(db.query(`select * from public.${t} limit 1`), /permission denied/, `[anon ${t}] `));
+    await asUser(userA, () => expectSqlError(db.query(`select * from public.${t} limit 1`), /permission denied/, `[user ${t}] `));
+  }
 });
 
 test('anon ne peut pas écrire dans le catalogue', async () => {
@@ -251,7 +393,11 @@ test('anon ne peut pas appeler les RPC privées', async () => {
 
 test('authenticated lit le catalogue mais ne l\'écrit pas', async () => {
   await asUser(userA, async () => {
-    assert.equal(await count('select count(*) from public.ingredients'), 146);
+    assert.equal(await count('select count(*) from public.ingredients'), N.ingredients);
+    await expectSqlError(
+      db.query(`insert into public.catalog_meta (id, meta) values (true, '{}')`),
+      /permission denied|row-level security/,
+    );
     await expectSqlError(
       db.query(`insert into public.recipes (id, title, cuisine, meal_types, servings) values ('x', 'X', 'monde', '{diner}', 2)`),
       /permission denied|row-level security/,
@@ -538,10 +684,13 @@ test('effective_entitlement : premium actif / expiré / autre utilisateur', asyn
 });
 
 test('price_watches : création réservée au Premium', async () => {
+  await ensureFixture();
+  const watch = [FIXTURE.productId, FIXTURE.storeId, FIXTURE.priceCents];
   await asUser(userB, () =>
     expectSqlError(
-      db.query(`insert into public.price_watches (user_id, product_id, store_id, reference_cents) values ($1, 'prd_oignon_jaune', 'lidl', 199)`, [
+      db.query(`insert into public.price_watches (user_id, product_id, store_id, reference_cents) values ($1, $2, $3, $4)`, [
         userB,
+        ...watch,
       ]),
       /row-level security/,
     ),
@@ -553,8 +702,8 @@ test('price_watches : création réservée au Premium', async () => {
   );
   await asUser(userA, async () => {
     await db.query(
-      `insert into public.price_watches (user_id, product_id, store_id, reference_cents) values ($1, 'prd_oignon_jaune', 'lidl', 199)`,
-      [userA],
+      `insert into public.price_watches (user_id, product_id, store_id, reference_cents) values ($1, $2, $3, $4)`,
+      [userA, ...watch],
     );
     assert.equal(await count('select count(*) from public.price_watches'), 1);
   });
@@ -614,25 +763,30 @@ test('consents : insertion par l\'app, ni modification ni suppression', async ()
 // ═══ Prix & historique ══════════════════════════════════════════════════════
 
 test('price_history : trigger à l\'insertion et à chaque changement de prix', async () => {
-  const key = ['prd_oignon_jaune', 'leclerc'];
+  await ensureFixture();
+  const key = [FIXTURE.productId, FIXTURE.storeId];
+  const newCents = FIXTURE.priceCents + 7;
   const before = await count('select count(*) from public.price_history where product_id = $1 and store_id = $2', key);
   await asService(async () => {
     await db.query(
-      `update public.prices set price_cents = 189, source = 'open_prices', updated_at = now() where product_id = $1 and store_id = $2`,
-      key,
+      `update public.prices set price_cents = $3, source = 'open_prices', observation_count = 3, observed_from = '2026-10-01',
+              estimate_method = null, estimate_basis_count = null, promo_price_cents = null, promo_label = null, promo_until = null,
+              updated_at = now()
+        where product_id = $1 and store_id = $2`,
+      [...key, newCents],
     );
     // Même prix, simple rafraîchissement de la date : pas de nouvelle ligne.
-    await db.query(`update public.prices set updated_at = now() where product_id = $1 and store_id = $2`, key);
+    await db.query(`update public.prices set updated_at = now(), observation_count = 4 where product_id = $1 and store_id = $2`, key);
     // Nouvelle promo : nouvelle ligne.
-    await db.query(`update public.prices set promo_price_cents = 159 where product_id = $1 and store_id = $2`, key);
+    await db.query(`update public.prices set promo_price_cents = $3 where product_id = $1 and store_id = $2`, [...key, newCents - 30]);
   });
   const rows = await db.query(
     'select price_cents, promo_price_cents, source from public.price_history where product_id = $1 and store_id = $2 order by id',
     key,
   );
   assert.equal(rows.rows.length, before + 2);
-  assert.deepEqual(rows.rows.at(-2), { price_cents: 189, promo_price_cents: null, source: 'open_prices' });
-  assert.deepEqual(rows.rows.at(-1), { price_cents: 189, promo_price_cents: 159, source: 'open_prices' });
+  assert.deepEqual(rows.rows.at(-2), { price_cents: newCents, promo_price_cents: null, source: 'open_prices' });
+  assert.deepEqual(rows.rows.at(-1), { price_cents: newCents, promo_price_cents: newCents - 30, source: 'open_prices' });
 });
 
 test('price_history : append-only (même pour le propriétaire de la base)', async () => {
@@ -641,27 +795,246 @@ test('price_history : append-only (même pour le propriétaire de la base)', asy
 });
 
 test('prices : prix nul ou négatif refusé', async () => {
+  await ensureFixture();
   await asService(() =>
-    expectSqlError(db.query(`update public.prices set price_cents = 0 where product_id = 'prd_oignon_jaune'`), /check constraint/),
+    expectSqlError(db.query(`update public.prices set price_cents = 0 where product_id = $1`, [FIXTURE.productId]), /check constraint/),
   );
 });
 
-test('get_prices_for_ingredients : produits × magasins, filtre magasins, accessible à anon', async () => {
-  await asAnon(async () => {
-    const all = await db.query(`select * from public.get_prices_for_ingredients(array['oignon_jaune', 'riz'])`);
-    assert.ok(all.rows.length > 10);
-    const stores = new Set(all.rows.filter((r) => r.ingredient_id === 'oignon_jaune').map((r) => r.store_id));
-    assert.ok(stores.size >= 3, `≥ 3 enseignes attendues, ${stores.size} trouvées`);
-    const r0 = all.rows[0];
-    for (const col of ['product_id', 'ean', 'pack_size', 'pack_unit', 'store_id', 'price_cents', 'source', 'price_updated_at']) {
-      assert.ok(col in r0, `colonne ${col}`);
+/** Produits et prix de test (hors catalogue), nettoyés après chaque test. */
+const TEST_INGREDIENT = DATA.ingredients[0].id;
+async function withTestRows(fn) {
+  try {
+    await fn();
+  } finally {
+    await db.query(`select set_config('cabas.allow_history_prune', 'on', false)`);
+    await db.query(`delete from public.products where id like 'prd_zz_%'`);
+    await db.query(`select set_config('cabas.allow_history_prune', 'off', false)`);
+  }
+}
+const insertProduct = (cols, values) =>
+  db.query(
+    `insert into public.products (id, name, ingredient_id, pack_size, pack_unit, ${cols.join(', ')})
+     values ($1, 'Test', '${TEST_INGREDIENT}', 1000, 'g', ${cols.map((_, i) => `$${i + 2}`).join(', ')})`,
+    values,
+  );
+
+test('products : code-barres GTIN-8 / GTIN-13 (hors poids variable), ou catégorie vrac — exactement un', async () => {
+  await withTestRows(async () => {
+    await insertProduct(['ean'], ['prd_zz_ean13', '3999999000028']);
+    await insertProduct(['ean'], ['prd_zz_ean8', '49999995']);
+    await insertProduct(['off_category_tag'], ['prd_zz_vrac', 'en:tomatoes']);
+    await insertProduct(['off_category_tag'], ['prd_zz_vrac_fr', 'fr:raisins-blancs-frais']);
+    const bad = [
+      [['ean'], ['prd_zz_b1', '301762042503'], /products_ean_gtin/, '12 chiffres'],
+      [['ean'], ['prd_zz_b2', '03017620425035'], /products_ean_gtin/, '14 chiffres'],
+      [['ean'], ['prd_zz_b3', '2012345000017'], /products_ean_gtin/, 'poids variable'],
+      [['ean'], ['prd_zz_b4', '30176204250AB'], /products_ean_gtin/, 'lettres'],
+      [['off_category_tag'], ['prd_zz_b5', 'Tomates'], /products_off_category_tag_format/, 'tag sans langue'],
+      [['off_category_tag'], ['prd_zz_b6', 'en:Tomates fraîches'], /products_off_category_tag_format/, 'tag non normalisé'],
+      [['ean', 'off_category_tag'], ['prd_zz_b7', '3999999000035', 'en:tomatoes'], /products_ean_or_category/, 'les deux'],
+      [[], ['prd_zz_b8'], /products_ean_or_category/, 'aucun'],
+    ];
+    for (const [cols, values, pattern, label] of bad) {
+      await expectSqlError(
+        cols.length > 0
+          ? insertProduct(cols, values)
+          : db.query(`insert into public.products (id, name, ingredient_id, pack_size, pack_unit) values ($1, 'Test', $2, 1, 'g')`, [
+              values[0],
+              TEST_INGREDIENT,
+            ]),
+        pattern,
+        `(${label}) `,
+      );
     }
-    const filtered = await db.query(
-      `select distinct store_id from public.get_prices_for_ingredients(array['oignon_jaune'], array['lidl', 'auchan'])`,
+  });
+});
+
+test('products : unicité du code-barres vérifiée en fin de transaction (échange d\'EAN possible)', async () => {
+  await withTestRows(async () => {
+    await insertProduct(['ean'], ['prd_zz_a', '3999999000028']);
+    await insertProduct(['ean'], ['prd_zz_b', '49999995']);
+    await db.exec(`begin;
+      update public.products set ean = '49999995' where id = 'prd_zz_a';
+      update public.products set ean = '3999999000028' where id = 'prd_zz_b';
+      commit;`);
+    assert.equal((await one(`select ean from public.products where id = 'prd_zz_a'`)).ean, '49999995');
+    await expectSqlError(insertProduct(['ean'], ['prd_zz_c', '49999995']), /duplicate key|products_ean_key/);
+  });
+});
+
+test('products : MDD ⇔ au moins une enseigne ; store_chain (compatibilité) = 1re enseigne', async () => {
+  await withTestRows(async () => {
+    await insertProduct(['ean', 'is_store_brand', 'store_chains'], ['prd_zz_mdd', '3999999000042', true, '{intermarche,netto,intermarche}']);
+    assert.deepEqual(await one(`select store_chains::text[] as c, store_chain::text as s from public.products where id = 'prd_zz_mdd'`), {
+      c: ['intermarche', 'netto'],
+      s: 'intermarche',
+    });
+    // Ancien écrivain : seule la colonne store_chain est renseignée.
+    await insertProduct(['ean', 'is_store_brand', 'store_chain'], ['prd_zz_legacy', '3999999000059', true, 'carrefour']);
+    assert.deepEqual(await one(`select store_chains::text[] as c from public.products where id = 'prd_zz_legacy'`), { c: ['carrefour'] });
+    await db.query(`update public.products set store_chain = 'auchan' where id = 'prd_zz_legacy'`);
+    assert.deepEqual(await one(`select store_chains::text[] as c from public.products where id = 'prd_zz_legacy'`), { c: ['auchan'] });
+    await db.query(`update public.products set store_chains = '{superu,leclerc}' where id = 'prd_zz_legacy'`);
+    assert.equal((await one(`select store_chain::text as s from public.products where id = 'prd_zz_legacy'`)).s, 'superu');
+    await expectSqlError(
+      insertProduct(['ean', 'is_store_brand'], ['prd_zz_mdd_sans', '3999999000066', true]),
+      /products_store_brand_chains/,
+      '(MDD sans enseigne) ',
     );
-    assert.deepEqual(filtered.rows.map((r) => r.store_id).sort(), ['auchan', 'lidl']);
+    await expectSqlError(
+      insertProduct(['ean', 'is_store_brand', 'store_chains'], ['prd_zz_mn', '3999999000066', false, '{lidl}']),
+      /products_store_brand_chains/,
+      '(marque nationale avec enseigne) ',
+    );
+  });
+});
+
+test('prices : provenance cohérente (relevé, estimation, promo)', async () => {
+  await withTestRows(async () => {
+    await insertProduct(['ean'], ['prd_zz_p', '3999999000028']);
+    const ins = (cols, values) =>
+      db.query(
+        `insert into public.prices (product_id, store_id, price_cents, ${cols.join(', ')})
+         values ('prd_zz_p', 'leclerc', 250, ${cols.map((_, i) => `$${i + 1}`).join(', ')})`,
+        values,
+      );
+    const bad = [
+      [['source'], ['open_prices'], /prices_open_prices_observed/, 'relevé sans nombre de relevés'],
+      [['source', 'observation_count'], ['open_prices', 0], /prices_observation_count_positive|prices_open_prices_observed/, 'zéro relevé'],
+      [['source'], ['estimate'], /prices_estimate_method/, 'estimation sans méthode'],
+      [['source', 'estimate_method'], ['demo', 'chain_index'], /prices_estimate_method/, 'méthode hors estimation'],
+      [['source', 'estimate_method', 'promo_price_cents'], ['estimate', 'chain_index', 199], /prices_estimate_no_promo/, 'promo estimée'],
+      [['source', 'estimate_method', 'promo_label'], ['estimate', 'mdd_ratio', 'Promo'], /prices_estimate_no_promo/, 'libellé promo estimé'],
+      [['source', 'estimate_method', 'estimate_basis_count'], ['estimate', 'category_median', 0], /prices_estimate_basis/, 'base vide'],
+      [['source', 'estimate_basis_count'], ['demo', 3], /prices_estimate_basis/, 'base hors estimation'],
+      [['source', 'estimate_method', 'observation_count'], ['estimate', 'chain_index', 2], /prices_estimate_no_observation|prices_estimate/, 'relevés sur une estimation'],
+      [['source', 'promo_price_cents'], ['demo', 250], /prices_promo_below_price/, 'promo ≥ prix'],
+    ];
+    for (const [cols, values, pattern, label] of bad) {
+      await expectSqlError(ins(cols, values), pattern, `(${label}) `);
+    }
+    await ins(['source', 'estimate_method', 'estimate_basis_count', 'updated_at'], ['estimate', 'chain_index', 12, '2026-11-10']);
+    await db.query(
+      `update public.prices set source = 'open_prices', estimate_method = null, estimate_basis_count = null,
+              observation_count = 5, observed_from = '2026-01-04', promo_price_cents = 199, promo_label = 'Promo', promo_until = '2026-11-17'
+        where product_id = 'prd_zz_p'`,
+    );
+  });
+});
+
+test('stores : mode de retrait contrôlé', async () => {
+  await asService(async () => {
+    await expectSqlError(db.query(`update public.stores set pickup = 'teleport' where id = 'leclerc'`), /stores_pickup_check/);
+  });
+});
+
+test('catalog_meta : une seule ligne, forme contrôlée, lecture publique', async () => {
+  const before = await db.query('select meta from public.catalog_meta');
+  try {
+    const meta = { snapshotAt: '2026-11-11T00:00:00.000Z', pricesFrom: '2025-11-11', pricesTo: '2026-11-10', chainIndex: {}, sources: [] };
+    await asService(() =>
+      db.query(`insert into public.catalog_meta (id, meta) values (true, $1) on conflict (id) do update set meta = excluded.meta`, [
+        JSON.stringify(meta),
+      ]),
+    );
+    await asAnon(async () => {
+      assert.deepEqual((await one('select meta from public.catalog_meta')).meta, meta);
+      await expectSqlError(db.query(`update public.catalog_meta set meta = '{}'`), /permission denied/);
+    });
+    await expectSqlError(db.query(`insert into public.catalog_meta (id, meta) values (false, $1)`, [JSON.stringify(meta)]), /catalog_meta_singleton/);
+    await expectSqlError(db.query(`update public.catalog_meta set meta = '{"snapshotAt":"x"}'`), /catalog_meta_shape/);
+  } finally {
+    await db.query('delete from public.catalog_meta');
+    for (const r of before.rows) await db.query('insert into public.catalog_meta (id, meta) values (true, $1)', [JSON.stringify(r.meta)]);
+  }
+});
+
+test('get_prices_for_ingredients : produits × magasins, provenance, filtre magasins, accessible à anon', async () => {
+  await ensureFixture();
+  const fixtureIngredient = DATA.ingredients[0].id;
+  await asAnon(async () => {
+    const rows = (await db.query(`select * from public.get_prices_for_ingredients(array[$1])`, [fixtureIngredient])).rows;
+    const mine = rows.filter((r) => r.product_id === FIXTURE.productId);
+    assert.deepEqual(mine.map((r) => r.store_id), ['carrefour', 'leclerc', 'lidl']);
+    for (const col of [
+      'product_id', 'ean', 'off_category_tag', 'store_chains', 'pack_size', 'pack_unit', 'store_id', 'price_cents', 'source',
+      'price_updated_at', 'observation_count', 'observed_from', 'estimate_method', 'estimate_basis_count',
+    ]) {
+      assert.ok(col in mine[0], `colonne ${col}`);
+    }
+    // PGlite renvoie les tableaux d'enum sous forme littérale (« {} ») ; PostgREST en JSON.
+    const chains = mine[0].store_chains;
+    assert.ok(Array.isArray(chains) ? chains.length === 0 : chains === '{}', `store_chains : ${chains}`);
+    const filtered = await db.query(
+      `select distinct store_id from public.get_prices_for_ingredients(array[$1], array['lidl', 'leclerc']) where product_id = $2`,
+      [fixtureIngredient, FIXTURE.productId],
+    );
+    assert.deepEqual(filtered.rows.map((r) => r.store_id).sort(), ['leclerc', 'lidl']);
     const none = await db.query(`select * from public.get_prices_for_ingredients(array['inconnu'])`);
     assert.equal(none.rows.length, 0);
+  });
+});
+
+test('get_prices_for_ingredients : restitue le catalogue de src/data', async () => {
+  // Catalogue vide (import en cours) : rien à comparer.
+  if (STORES_BY_INGREDIENT.length === 0) return;
+  const [[ing1, stores1], [ing2]] = [STORES_BY_INGREDIENT[0], STORES_BY_INGREDIENT[1] ?? STORES_BY_INGREDIENT[0]];
+  const expected = DATA.prices.filter((p) => [ing1, ing2].includes(PRODUCTS_BY_ID.get(p.productId)?.ingredientId)).length;
+  await asAnon(async () => {
+    const all = await db.query(
+      `select * from public.get_prices_for_ingredients(array[$1, $2]) where product_id not like 'prd_test_%'`,
+      [ing1, ing2],
+    );
+    assert.equal(all.rows.length, expected);
+    const stores = new Set(all.rows.filter((r) => r.ingredient_id === ing1).map((r) => r.store_id));
+    assert.equal(stores.size, stores1.size);
+  });
+});
+
+test('get_prices_for_ingredients : une MDD n\'est jamais proposée hors de ses enseignes', async () => {
+  await withTestRows(async () => {
+    await insertProduct(['ean', 'is_store_brand', 'store_chains'], ['prd_zz_mdd_rpc', '3999999000042', true, '{intermarche,netto}']);
+    await db.query(
+      `insert into public.prices (product_id, store_id, price_cents, source) values
+         ('prd_zz_mdd_rpc', 'intermarche', 199, 'demo'), ('prd_zz_mdd_rpc', 'netto', 189, 'demo'), ('prd_zz_mdd_rpc', 'lidl', 99, 'demo')`,
+    );
+    const rows = await asAnon(() =>
+      db.query(`select store_id from public.get_prices_for_ingredients(array[$1]) where product_id = 'prd_zz_mdd_rpc' order by store_id`, [
+        TEST_INGREDIENT,
+      ]),
+    );
+    assert.deepEqual(rows.rows.map((r) => r.store_id), ['intermarche', 'netto']);
+  });
+});
+
+test('price_observations : forme contrôlée, un relevé n\'est stocké qu\'une fois par produit', async () => {
+  await withTestRows(async () => {
+    await insertProduct(['ean'], ['prd_zz_obs', '3999999000028']);
+    const ins = (extra = {}) => {
+      const row = {
+        product_id: 'prd_zz_obs', chain: 'leclerc', kind: 'observation', open_prices_id: 42, weight: 1,
+        regular_milli: 2490, observed_on: '2026-11-03', ...extra,
+      };
+      const cols = Object.keys(row);
+      return asService(() =>
+        db.query(`insert into public.price_observations (${cols.join(', ')}) values (${cols.map((_, i) => `$${i + 1}`).join(', ')})`, Object.values(row)),
+      );
+    };
+    await ins();
+    await expectSqlError(ins(), /price_observations_source_unique|duplicate/, '(doublon) ');
+    await expectSqlError(ins({ open_prices_id: null }), /price_observations_kind_shape/, '(relevé sans id) ');
+    await expectSqlError(ins({ open_prices_id: 43, weight: 5 }), /price_observations_kind_shape/, '(relevé pondéré) ');
+    await expectSqlError(ins({ open_prices_id: 44, promo_milli: 2490 }), /check constraint/, '(promo ≥ prix) ');
+    await ins({ kind: 'snapshot', open_prices_id: null, weight: 37, observed_from: '2026-01-02' });
+    await expectSqlError(
+      ins({ kind: 'snapshot', open_prices_id: null, weight: 2 }),
+      /price_observations_snapshot_idx|duplicate/,
+      '(deux socles) ',
+    );
+    // Purge du produit : relevés supprimés en cascade.
+    await db.query(`delete from public.products where id = 'prd_zz_obs'`);
+    assert.equal(await count(`select count(*) from public.price_observations where product_id = 'prd_zz_obs'`), 0);
   });
 });
 
@@ -736,6 +1109,7 @@ test('suppression du compte auth : cascade sur toute donnée restante', async ()
 // ═══ Maintenance & cron ═════════════════════════════════════════════════════
 
 test('run_maintenance : réservé à service_role, purge les notifications traitées anciennes', async () => {
+  await ensureFixture();
   const u = await createUser('dana@example.com');
   await db.query(
     `insert into public.notification_queue (user_id, kind, title, body, status, created_at)
@@ -743,10 +1117,19 @@ test('run_maintenance : réservé à service_role, purge les notifications trait
             ($1, 'order_reminder', 't', 'b', 'pending', now() - interval '40 days')`,
     [u],
   );
+  await db.query(
+    `insert into public.price_observations (product_id, chain, kind, open_prices_id, regular_milli, observed_on)
+     values ($1, 'leclerc', 'observation', 900001, 1990, current_date - 420),
+            ($1, 'leclerc', 'observation', 900002, 1990, current_date - 30)`,
+    [FIXTURE.productId],
+  );
   await asUser(u, () => expectSqlError(db.query('select public.run_maintenance()'), /permission denied/));
   const r = await asService(() => one('select public.run_maintenance() as r'));
   assert.equal(r.r.notification_queue, 1);
+  assert.equal(r.r.price_observations, 1, 'relevé de plus de 400 jours purgé');
   assert.equal(await count(`select count(*) from public.notification_queue where user_id = $1`, [u]), 1);
+  assert.equal(await count(`select count(*) from public.price_observations where open_prices_id = 900002`), 1);
+  await db.query(`delete from public.price_observations where open_prices_id = 900002`);
 });
 
 test('cron : schedule_cabas_jobs sans effet hors Supabase, et interdit aux utilisateurs', async () => {

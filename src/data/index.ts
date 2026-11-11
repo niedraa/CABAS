@@ -1,16 +1,19 @@
 /**
- * Catalogue de démonstration Cabas — point d'entrée.
+ * Catalogue Cabas embarqué — point d'entrée.
  *
- * Utilisé en mode démo / hors-ligne (aucune variable Supabase) et pour
- * générer le seed de la base. Les tableaux sont exposés tels quels, avec des
- * index par identifiant pour des accès O(1).
+ * Recettes et ingrédients maison ; produits et prix RÉELS issus des données
+ * ouvertes (Open Food Facts, Open Prices, OpenStreetMap — licence ODbL, voir
+ * DATA_LICENSE.md et docs/OPEN_DATA.md). Utilisé en mode démo / hors-ligne et
+ * pour générer le seed de la base. Les tableaux sont exposés tels quels, avec
+ * des index par identifiant pour des accès O(1).
  *
  * Chaque fichier de données (`ingredients.ts`, `recipes.ts`, `stores.ts`,
- * `products.ts`, `prices.ts`) est autonome : il n'importe que des TYPES et
- * peut donc être chargé seul par Node (type stripping) ou Deno.
+ * `products.ts`, `prices.ts`, `meta.ts`) est autonome : il n'importe que des
+ * TYPES et peut donc être chargé seul par Node (type stripping) ou Deno.
  */
-import type { Ingredient, Price, Product, Recipe, Store } from '../core/types';
+import type { CatalogMeta, Ingredient, Price, Product, Recipe, Store } from '../core/types';
 import { ingredients } from './ingredients';
+import { catalogMeta } from './meta';
 import { prices } from './prices';
 import { products } from './products';
 import { recipes } from './recipes';
@@ -20,7 +23,8 @@ export { ingredients, NON_PURCHASABLE_INGREDIENT_IDS } from './ingredients';
 export { recipes } from './recipes';
 export { stores } from './stores';
 export { products } from './products';
-export { prices, DEMO_PRICES_UPDATED_AT } from './prices';
+export { prices } from './prices';
+export { catalogMeta } from './meta';
 
 /** Index d'un tableau par `id`. */
 function indexById<T extends { id: string }>(items: readonly T[]): Record<string, T> {
@@ -45,6 +49,53 @@ export interface Catalog {
 
 export const catalog: Catalog = { ingredients, recipes, stores, products, prices };
 
-/** Mention affichée près des prix en mode démo (transparence envers l'utilisateur). */
-export const DEMO_DATA_NOTICE =
-  'Prix de démonstration : ils sont indicatifs, relevés fictivement le 9 novembre 2026 et peuvent différer des prix réels en magasin. Connecte ton compte pour voir les prix à jour de tes magasins.';
+// ─── Mentions affichées (transparence et licence) ────────────────────────────
+
+const MONTHS = [
+  'janvier',
+  'février',
+  'mars',
+  'avril',
+  'mai',
+  'juin',
+  'juillet',
+  'août',
+  'septembre',
+  'octobre',
+  'novembre',
+  'décembre',
+];
+
+/** « 2026-11-11 » → « novembre 2026 ». */
+function monthYear(day: string): string {
+  const [year, month] = day.split('-');
+  return `${MONTHS[Number(month) - 1] ?? ''} ${year}`.trim();
+}
+
+/** Mention sur l'origine des prix, construite depuis la description de l'instantané. */
+export function buildPriceDataNotice(meta: CatalogMeta): string {
+  const parts = [
+    `Prix relevés en magasin par la communauté Open Prices entre ${monthYear(meta.pricesFrom)} et ${monthYear(meta.pricesTo)}.`,
+  ];
+  const total = meta.observedPrices + meta.estimatedPrices;
+  if (meta.estimatedPrices > 0 && total > 0) {
+    const share = Math.round((100 * meta.estimatedPrices) / total);
+    const label = share < 1 ? 'Moins de 1 %' : `${share} %`;
+    parts.push(`${label} d’entre eux, faute de relevé, sont estimés et signalés « Estimé ».`);
+  }
+  parts.push('Ils sont indicatifs et peuvent varier selon ton magasin.');
+  return parts.join(' ');
+}
+
+/** Mention affichée près des prix (transparence envers l'utilisateur). */
+export const PRICE_DATA_NOTICE: string = buildPriceDataNotice(catalogMeta);
+
+/** Attribution courte des données ouvertes (licence ODbL), à afficher dans l'app. */
+export const DATA_ATTRIBUTION =
+  'Produits : Open Food Facts · Prix : Open Prices · Enseignes : © contributeurs OpenStreetMap · Licence ODbL';
+
+/**
+ * @deprecated Ancien catalogue fictif : utiliser `PRICE_DATA_NOTICE`.
+ * Alias conservé pendant la transition des écrans.
+ */
+export const DEMO_DATA_NOTICE = PRICE_DATA_NOTICE;

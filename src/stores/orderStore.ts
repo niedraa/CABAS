@@ -22,7 +22,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 import type { BasketStorePart, OrderChannel, OrderHandoff, SpendingEntry } from '@/core';
-import { buildOrderHandoff, formatOrderAsText, spendingFromHandoff } from '@/core';
+import { buildOrderHandoff, formatOrderAsText, spendingFromHandoff, storeDisplayName } from '@/core';
 import { track } from '@/services/analytics';
 import { getCatalogSnapshot } from '@/services/catalog';
 import { cancelOrderReminder, scheduleOrderReminder } from '@/services/notifications';
@@ -137,7 +137,7 @@ export const useOrderStore = create<OrderState>()(
           const entry = spendingFromHandoff(
             { ...order, createdAt: confirmedAt },
             order.savingsCents,
-            store ? `Courses ${store.name}` : undefined,
+            store ? `Courses ${storeDisplayName(store, { short: true })}` : undefined,
           );
           useBudgetStore.getState().addEntry(entry);
           void cancelOrderReminder();

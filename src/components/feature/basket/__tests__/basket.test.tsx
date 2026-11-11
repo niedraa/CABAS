@@ -1,8 +1,8 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react-native';
 
-import type { BasketPlan, ItemComparison, Product, ShoppingListItem, Store } from '@/core';
-import { allOffersForItem, buildCatalogIndex, compareList, MINUS, NNBSP, optimizeBasket } from '@/core';
+import type { BasketPlan, ItemComparison, Product, ShoppingListItem, Store, StoreOffer } from '@/core';
+import { allOffersForItem, buildCatalogIndex, compareList, MINUS, NNBSP, optimizeBasket, storeDisplayName } from '@/core';
 import { ingredients, prices, products, stores } from '@/data';
 
 import { BasketControls } from '../BasketControls';
@@ -13,6 +13,8 @@ import {
   comparedStoreIds,
   comparisonRows,
   emptyBasketReason,
+  estimatedCount,
+  estimatedNote,
   feesLabel,
   feesValue,
   lineForItem,
@@ -24,7 +26,7 @@ import {
   productTitle,
   receiptSummary,
   savingsLabel,
-  storeShortName,
+  serviceLabel,
   visibleLines,
 } from '../basketView';
 import { ComparisonRow } from '../ComparisonRow';
@@ -32,10 +34,14 @@ import { needLabel, priceSpread, productChoices, selectionFor, storeOfferRows, s
 import { MissingItems, missingReason } from '../MissingItems';
 import { OfferRow, ProductChoiceRow } from '../OfferRow';
 import { StorePartCard } from '../StorePartCard';
+import { comparableItems, findItem, manualItem } from './catalogPicks';
 
-// ─── Données : vrai catalogue de démo, date figée (promos déterministes) ────
+// ─── Données : vrai catalogue embarqué (données ouvertes), date figée ───────
+// Les articles sont CHOISIS dans le catalogue (chiffrés dans mes 3 enseignes) et
+// les attendus en sont dérivés : aucun produit ni prix en dur.
 
 const NOW = '2026-11-10T09:00:00.000Z';
+const TODAY = '2026-11-10';
 const NBSP = ' ';
 const index = buildCatalogIndex(products, prices, stores, ingredients);
 const storesById = Object.fromEntries(stores.map((s) => [s.id, s])) as Record<string, Store>;
@@ -57,25 +63,43 @@ function item(id: string, ingredientId: string | undefined, label: string, quant
   };
 }
 
-const ITEMS: ShoppingListItem[] = [
-  item('i-champi', 'champignons_paris', 'Champignons de Paris', 190),
-  item('i-ail', 'ail', 'Ail', 60),
-  item('i-carotte', 'carotte', 'Carotte', 600),
-  item('i-gingembre', 'gingembre', 'Gingembre frais', 40),
-  item('i-eau', undefined, 'Eau gazeuse', 1, { unit: 'piece', aisle: 'boissons' }),
-];
+const PRICED = comparableItems(index, ingredients, { storeIds: MY_STORES, count: 4, now: NOW });
+const EAU = manualItem('i-eau', 'Eau gazeuse');
+const ITEMS: ShoppingListItem[] = [...PRICED, EAU];
+// Catalogue pas encore importé : repli sur l'article manuel (les tests dépendants échouent seuls).
+const FIRST = PRICED[0] ?? EAU;
 const comparisons = compareList(ITEMS, index, NOW);
 const single = optimizeBasket(comparisons, stores, 'single_store', { allowedStoreIds: MY_STORES, now: NOW });
 const cheapest = optimizeBasket(comparisons, stores, 'cheapest', { allowedStoreIds: MY_STORES, now: NOW });
 
 // ─── Libellés ────────────────────────────────────────────────────────────────
 
+describe('catalogue de test', () => {
+  it('trouve 4 articles chiffrés dans mes 3 enseignes (catalogue importé)', () => {
+    expect(PRICED).toHaveLength(4);
+  });
+});
+
 describe('libellés', () => {
-  it('nomme les enseignes comme on les dit', () => {
-    expect(storeShortName(storesById.leclerc)).toBe('Leclerc');
-    expect(storeShortName(storesById.intermarche)).toBe('Intermarché');
-    expect(storeShortName(null)).toBe('l’enseigne');
+  it('nomme le service et la commande selon l’enseigne', () => {
     expect(orderCtaLabel(storesById.carrefour)).toBe('Commander chez Carrefour');
+    expect(orderCtaLabel(storesById.leclerc)).toBe('Commander chez Leclerc');
+    // Pas de commande en ligne chez Lidl, Aldi, Netto : une liste à emporter.
+    expect(orderCtaLabel(storesById.lidl)).toBe('Ma liste pour Lidl');
+    expect(orderCtaLabel(null)).toBe('Commander chez l’enseigne');
+    expect(serviceLabel(storesById.leclerc, 'drive')).toBe('Drive');
+    expect(serviceLabel(storesById.monoprix, 'drive')).toBe('Click & collect');
+    expect(serviceLabel(storesById.aldi, 'drive')).toBe('En magasin');
+    expect(serviceLabel(storesById.monoprix, 'delivery')).toBe('Livraison');
+    expect(serviceLabel(undefined, 'drive')).toBe('Drive');
+  });
+
+  it('compte les prix estimés', () => {
+    const lines = [{ priceSource: 'estimate' as const }, { priceSource: 'open_prices' as const }, {}, { priceSource: 'estimate' as const }];
+    expect(estimatedCount(lines)).toBe(2);
+    expect(estimatedNote(2)).toBe('dont 2 prix estimés');
+    expect(estimatedNote(1)).toBe('dont 1 prix estimé');
+    expect(estimatedNote(0)).toBe('');
   });
 
   it('chiffre les économies et les frais en typographie française', () => {
@@ -134,6 +158,8 @@ describe('receiptSummary', () => {
     expect(MY_STORES).toContain(s.parts[0].storeId);
     expect(s.items).toBe(4);
     expect(s.missing).toBe(1);
+    expect(s.estimated).toBe(estimatedCount(single.parts[0].lines));
+    expect(s.parts[0].name).toBe(storeDisplayName(storesById[s.parts[0].storeId]));
     expect(s.totalCents).toBe(single.totalCents);
     expect(s.subtotalCents + s.feesCents).toBe(single.totalCents);
     expect(s.chains).toEqual([s.parts[0].store?.chain]);
@@ -151,15 +177,17 @@ describe('comparisonRows', () => {
   const rows = comparisonRows(comparisons, single);
 
   it('ne garde que les articles chiffrés, avec la meilleure offre et l’écart', () => {
-    expect(rows.map((r) => r.itemId)).toEqual(['i-champi', 'i-ail', 'i-carotte', 'i-gingembre']);
+    expect(rows.map((r) => r.itemId)).toEqual(PRICED.map((i) => i.id));
     for (const r of rows) {
       const c = comparisons.find((x) => x.itemId === r.itemId) as ItemComparison;
       expect(r.best.totalCents).toBe(Math.min(...c.offers.map((o) => o.totalCents)));
       expect(r.stores).toBeGreaterThanOrEqual(3);
       expect(r.spreadCents).toBe(Math.max(...c.offers.map((o) => o.totalCents)) - r.best.totalCents);
       expect(r.inBasket).toBe(true);
+      expect(r.bestEstimated).toBe(r.best.priceSource === 'estimate');
     }
-    expect(comparedStoreIds(comparisons)).toEqual(['auchan', 'carrefour', 'intermarche', 'leclerc', 'lidl']);
+    const ids = Array.from(new Set(comparisons.flatMap((c) => c.offers.map((o) => o.storeId)))).sort();
+    expect(comparedStoreIds(comparisons)).toEqual(ids);
   });
 
   it('indique le prix payé dans le panier quand il n’est pas au meilleur prix', () => {
@@ -169,12 +197,15 @@ describe('comparisonRows', () => {
       if (line.storeId === r.bestStoreId && line.totalCents === r.best.totalCents) expect(r.basket).toBeNull();
       else expect(r.basket).toEqual({ storeId: line.storeId, totalCents: line.totalCents, extraCents: Math.max(0, line.totalCents - r.best.totalCents) });
     }
-    expect(lineForItem(null, 'i-ail')).toBeNull();
+    expect(lineForItem(null, FIRST.id)).toBeNull();
     expect(lineForItem(single, 'i-eau')).toBeNull();
   });
 
   it('signale la MDD moins chère, retenue ou disponible', () => {
-    const withAlt = comparisons.find((c) => !!c.cheaperAlternative) as ItemComparison;
+    // Un article du catalogue dont la MDD bat la marque dans un même magasin.
+    const altItem = findItem(index, ingredients, (it) => !!compareList([it], index, NOW)[0].cheaperAlternative);
+    expect(altItem).toBeDefined();
+    const withAlt = compareList([altItem as ShoppingListItem], index, NOW)[0];
     const alt = withAlt.cheaperAlternative as NonNullable<ItemComparison['cheaperAlternative']>;
     expect(mddSignal(withAlt)).toEqual({ kind: 'chosen', savingsCents: alt.savingsCents, storeId: alt.storeId, productId: alt.productId });
     // L'utilisateur a choisi la marque nationale dans ce magasin : la MDD devient une suggestion.
@@ -190,10 +221,10 @@ describe('comparisonRows', () => {
 describe('missingRows', () => {
   it('distingue « introuvable partout » et « pas dans tes magasins »', () => {
     expect(missingRows(single, comparisons)).toEqual([{ itemId: 'i-eau', label: 'Eau gazeuse', reason: 'nowhere', elsewhere: null }]);
-    const plan: BasketPlan = { ...single, missingItemIds: ['i-champi'] };
+    const plan: BasketPlan = { ...single, missingItemIds: [FIRST.id] };
     const [row] = missingRows(plan, comparisons);
     const best = comparisons[0].best as NonNullable<ItemComparison['best']>;
-    expect(row).toEqual({ itemId: 'i-champi', label: 'Champignons de Paris', reason: 'elsewhere', elsewhere: { storeId: best.storeId, totalCents: best.totalCents } });
+    expect(row).toEqual({ itemId: FIRST.id, label: FIRST.label, reason: 'elsewhere', elsewhere: { storeId: best.storeId, totalCents: best.totalCents } });
     expect(missingReason(row, storesById)).toMatch(/^Pas dans tes magasins\. Dispo chez /);
     expect(missingRows(null, comparisons)).toEqual([]);
   });
@@ -206,8 +237,8 @@ describe('emptyBasketReason', () => {
     expect(emptyBasketReason(manual, stores, { channel: 'drive', storeIds: ['leclerc'] })).toBe('not_in_catalog');
     // Même en livraison chez un magasin qui livre : pas « ne livre pas ».
     expect(emptyBasketReason(manual, stores, { channel: 'delivery', storeIds: ['carrefour'] })).toBe('not_in_catalog');
-    // Leclerc et Lidl ne livrent pas.
-    expect(emptyBasketReason(comparisons, stores, { channel: 'delivery', storeIds: ['leclerc', 'lidl'] })).toBe('no_delivery');
+    // Lidl et Aldi ne livrent pas.
+    expect(emptyBasketReason(comparisons, stores, { channel: 'delivery', storeIds: ['lidl', 'aldi'] })).toBe('no_delivery');
     expect(emptyBasketReason(comparisons, stores, { channel: 'delivery', storeIds: ['leclerc', 'carrefour'] })).toBe('not_sold');
     expect(emptyBasketReason(comparisons, stores, { channel: 'drive', storeIds: ['lidl'] })).toBe('not_sold');
     // Aucun magasin connu : tous les magasins comptent (certains livrent).
@@ -226,18 +257,22 @@ describe('cheapestGainCents', () => {
   });
 
   it('trouve un gain réel quand un magasin bat les autres sur certains articles', () => {
-    const lines = [
-      item('a', 'champignons_paris', 'Champignons', 190),
-      item('b', 'gingembre', 'Gingembre', 40),
-      item('c', 'escalope_dinde', 'Escalope', 400),
-      item('d', 'creme_fraiche', 'Crème', 200, { unit: 'ml' }),
-    ];
+    // Articles chiffrés dans mes 3 enseignes (frais de retrait nuls) : le panier
+    // « 2 magasins » couvre les mêmes articles que le meilleur magasin seul.
+    const lines = comparableItems(index, ingredients, { storeIds: MY_STORES, count: 20, now: NOW });
     const cmp = compareList(lines, index, NOW);
-    const all = stores.map((s) => s.id);
-    const one = optimizeBasket(cmp, stores, 'single_store', { allowedStoreIds: all, now: NOW });
-    const two = optimizeBasket(cmp, stores, 'cheapest', { allowedStoreIds: all, now: NOW });
+    const one = optimizeBasket(cmp, stores, 'single_store', { allowedStoreIds: MY_STORES, now: NOW });
+    const two = optimizeBasket(cmp, stores, 'cheapest', { allowedStoreIds: MY_STORES, now: NOW });
+    const solo = one.parts[0].storeId;
+    // Un article moins cher ailleurs que dans le magasin unique ⇒ gain strict.
+    const improvable = cmp.some((c) => {
+      const mine = c.offers.filter((o) => MY_STORES.includes(o.storeId));
+      const here = mine.find((o) => o.storeId === solo);
+      return !!here && mine.some((o) => o.totalCents < here.totalCents);
+    });
+    expect(improvable).toBe(true);
     expect(two.totalCents).toBeLessThan(one.totalCents);
-    expect(cheapestGainCents(cmp, one, stores, { channel: 'drive', storeIds: all })).toBe(one.totalCents - two.totalCents);
+    expect(cheapestGainCents(cmp, one, stores, { channel: 'drive', storeIds: MY_STORES })).toBe(one.totalCents - two.totalCents);
   });
 });
 
@@ -252,25 +287,30 @@ describe('visibleLines', () => {
 // ─── Détail d'un article (logique) ───────────────────────────────────────────
 
 describe('comparatorView', () => {
-  const champi = comparisons[0];
-  const line = lineForItem(single, 'i-champi');
+  const first = comparisons[0];
+  const line = lineForItem(single, FIRST.id);
 
   it('liste une offre par enseigne, la meilleure et celle du panier', () => {
-    const rows = storeOfferRows(champi, storesById, productsById, line);
-    expect(rows).toHaveLength(champi.offers.length);
+    const rows = storeOfferRows(first, storesById, productsById, line);
+    expect(rows).toHaveLength(first.offers.length);
     expect(rows.filter((r) => r.isBest)).toHaveLength(1);
     expect(rows[0].isBest).toBe(true);
     expect(rows[0].extraCents).toBe(0);
     expect(rows.filter((r) => r.inBasket)).toHaveLength(1);
     expect(rows.every((r, i) => i === 0 || r.extraCents >= 0)).toBe(true);
-    expect(priceSpread(champi)).toBe(rows[rows.length - 1].extraCents);
-    expect(priceSpread({ ...champi, offers: champi.offers.slice(0, 1) })).toBe(0);
-    expect(storesWithoutItem(champi, stores)).toEqual([]);
-    expect(storesWithoutItem({ ...champi, offers: champi.offers.slice(0, 3) }, stores)).toHaveLength(2);
+    expect(priceSpread(first)).toBe(rows[rows.length - 1].extraCents);
+    expect(priceSpread({ ...first, offers: first.offers.slice(0, 1) })).toBe(0);
+    // Enseignes sans prix connu : toutes celles qui n'ont pas d'offre.
+    const without = storesWithoutItem(first, stores);
+    expect(without.length + first.offers.length).toBe(stores.length);
+    expect(without.every((s) => !first.offers.some((o) => o.storeId === s.id))).toBe(true);
+    expect(storesWithoutItem({ ...first, offers: first.offers.slice(0, 1) }, stores)).toHaveLength(stores.length - 1);
   });
 
   it('propose les produits du magasin du panier, du moins cher au plus cher', () => {
-    const offers = allOffersForItem(ITEMS[0], index, NOW);
+    const [multi] = comparableItems(index, ingredients, { storeIds: ['leclerc'], count: 1, minStores: 1, choicesAt: 'leclerc', now: NOW });
+    expect(multi).toBeDefined();
+    const offers = allOffersForItem(multi, index, NOW);
     const choices = productChoices(offers, 'leclerc', productsById, null);
     expect(choices.length).toBeGreaterThanOrEqual(2);
     expect(choices[0].isAuto).toBe(true);
@@ -297,11 +337,12 @@ describe('BasketReceipt', () => {
     expect(screen.getByText('Offerts')).toBeTruthy();
     // Lignes de ticket lues en clair (libellé : montant).
     expect(screen.getByLabelText('Frais de retrait : Offerts')).toBeTruthy();
-    expect(screen.getByLabelText(new RegExp(`^${s.parts[0].name}, 4 articles : \\d+ euros`))).toBeTruthy();
+    const hint = ['4 articles', estimatedNote(s.parts[0].estimated)].filter(Boolean).join(', ');
+    expect(screen.getByLabelText(new RegExp(`^${s.parts[0].name}, ${hint} : \\d+ euros`))).toBeTruthy();
     expect(screen.getByLabelText('Économie, vs. le magasin le plus cher : moins 7 euros 14')).toBeTruthy();
     expect(screen.getByText(`${MINUS}7,14${NNBSP}€`)).toBeTruthy();
     expect(screen.getByTestId('r-total')).toHaveTextContent(new RegExp(`^${(plan.totalCents / 100).toFixed(2).replace('.', ',')}`));
-    expect(screen.getByText(`4${NBSP}articles · 1${NBSP}introuvable`)).toBeTruthy();
+    expect(screen.getByTestId('r-total-detail')).toHaveTextContent(`4${NBSP}articles · 1${NBSP}introuvable`, { exact: false });
     expect(screen.getByLabelText(/^Total : /)).toBeTruthy();
   });
 
@@ -348,7 +389,8 @@ describe('BasketControls', () => {
 });
 
 describe('StorePartCard', () => {
-  const part = single.parts[0];
+  // Catalogue pas encore importé : magasin vide (ces tests échouent seuls, pas la suite).
+  const part = single.parts[0] ?? { storeId: 'leclerc', lines: [], subtotalCents: 0, feesCents: 0 };
   const store = storesById[part.storeId];
   const bigPart = { ...part, lines: [...part.lines, ...part.lines.map((l) => ({ ...l, itemId: `${l.itemId}-bis` }))] };
 
@@ -382,7 +424,7 @@ describe('ComparisonRow', () => {
     const onPress = jest.fn();
     await render(<ComparisonRow row={row} storesById={storesById} totalStores={5} onPress={onPress} testID="cr" />);
     expect(screen.getByText(row.label)).toBeTruthy();
-    expect(screen.getByLabelText(new RegExp(`^${row.label}, meilleur prix .+ chez ${storeShortName(storesById[row.bestStoreId])}`))).toBeTruthy();
+    expect(screen.getByLabelText(new RegExp(`^${row.label}, meilleur prix .+ chez ${storeDisplayName(storesById[row.bestStoreId], { short: true })}`))).toBeTruthy();
     await fireEvent.press(screen.getByTestId('cr'));
     expect(onPress).toHaveBeenCalledTimes(1);
   });
@@ -410,7 +452,7 @@ describe('MissingItems', () => {
     expect(screen.getByText('1 article introuvable')).toBeTruthy();
     expect(screen.getByText('Il n’est pas compté dans le total.')).toBeTruthy();
     expect(screen.getByText('Eau gazeuse')).toBeTruthy();
-    expect(screen.getByText('Introuvable dans nos enseignes : à acheter à part.')).toBeTruthy();
+    expect(screen.getByText('Pas de prix connu dans nos enseignes : à acheter à part.')).toBeTruthy();
   });
 
   it('ne rend rien sans article manquant', async () => {
@@ -420,25 +462,86 @@ describe('MissingItems', () => {
 });
 
 describe('OfferRow & ProductChoiceRow', () => {
-  const champi = comparisons[0];
-  const rows = storeOfferRows(champi, storesById, productsById, lineForItem(single, 'i-champi'));
+  const first = comparisons[0];
+  const rows = storeOfferRows(first, storesById, productsById, lineForItem(single, FIRST.id));
+  /** Offre au prix relevé / estimé (provenance contrôlée, indépendante de l'import). */
+  const observed = (o: StoreOffer): StoreOffer => ({
+    ...o,
+    priceSource: 'open_prices',
+    priceUpdatedAt: '2026-11-05',
+    observationCount: 3,
+    estimateMethod: undefined,
+  });
+  const estimated = (o: StoreOffer): StoreOffer => ({
+    ...o,
+    priceSource: 'estimate',
+    priceUpdatedAt: '2026-11-11',
+    observationCount: undefined,
+    estimateMethod: 'chain_index',
+  });
 
   it('affiche l’offre, le prix au kilo et « meilleur prix »', async () => {
-    await render(<OfferRow row={rows[0]} testID="o" />);
+    await render(<OfferRow row={rows[0]} today={TODAY} />);
     expect(screen.getByText('Meilleur prix')).toBeTruthy();
-    expect(screen.getByTestId('o').props.accessibilityLabel).toMatch(/meilleur prix/);
+    const name = storeDisplayName(rows[0].store, { short: true });
+    expect(screen.getByLabelText(new RegExp(`^${name}, .*meilleur prix`))).toBeTruthy();
+  });
+
+  it('dit d’où vient le prix : relevé (date, nombre) ou estimé', async () => {
+    const view = await render(<OfferRow row={{ ...rows[0], offer: observed(rows[0].offer) }} today={TODAY} testID="o" />);
+    expect(screen.getByText('Relevé le 5 nov. · 3 relevés')).toBeTruthy();
+    expect(screen.getByLabelText(/prix relevé en magasin le 5 novembre, 3 relevés/)).toBeTruthy();
+    expect(screen.queryByText('Estimé')).toBeNull();
+    await view.rerender(<OfferRow row={{ ...rows[0], offer: estimated(rows[0].offer) }} today={TODAY} testID="o" />);
+    expect(screen.getByText('Estimé')).toBeTruthy();
+    expect(screen.getByText('D’après les prix relevés ailleurs')).toBeTruthy();
+    expect(screen.getByLabelText(/prix estimé, faute de relevé dans cette enseigne/)).toBeTruthy();
+    expect(screen.queryByText(/^Relevé/)).toBeNull();
+  });
+
+  it('ouvre la fiche Open Food Facts d’un produit à code-barres, jamais pour le vrac', async () => {
+    const product: Product = { ...(rows[0].product as Product), ean: '3017620422003', name: 'Produit test' };
+    const onOpen = jest.fn();
+    const view = await render(<OfferRow row={{ ...rows[0], product }} today={TODAY} onOpenProduct={onOpen} testID="o" />);
+    await fireEvent.press(screen.getByRole('link', { name: 'Fiche Open Food Facts : Produit test' }));
+    expect(onOpen).toHaveBeenCalledWith('https://world.openfoodfacts.org/product/3017620422003');
+    // Vrac (sans code-barres) : pas de fiche.
+    const loose: Product = { ...product, ean: undefined, offCategoryTag: 'en:tomatoes' };
+    await view.rerender(<OfferRow row={{ ...rows[0], product: loose }} today={TODAY} onOpenProduct={onOpen} testID="o" />);
+    expect(screen.queryByTestId('o-sheet')).toBeNull();
   });
 
   it('se coche comme un bouton radio', async () => {
-    const offers = allOffersForItem(ITEMS[0], index, NOW);
+    const [multi] = comparableItems(index, ingredients, { storeIds: ['leclerc'], count: 1, minStores: 1, choicesAt: 'leclerc', now: NOW });
+    const offers = allOffersForItem(multi, index, NOW);
     const choices = productChoices(offers, 'leclerc', productsById, null);
     const onPress = jest.fn();
-    const view = await render(<ProductChoiceRow choice={choices[0]} onPress={onPress} testID="pc" />);
+    const view = await render(<ProductChoiceRow choice={choices[0]} today={TODAY} onPress={onPress} testID="pc" />);
     expect(screen.getByRole('radio')).not.toBeChecked();
     expect(screen.getByText('Le moins cher')).toBeTruthy();
     await fireEvent.press(screen.getByRole('radio'));
     expect(onPress).toHaveBeenCalledTimes(1);
-    await view.rerender(<ProductChoiceRow choice={{ ...choices[0], selected: true }} onPress={onPress} testID="pc" />);
+    await view.rerender(<ProductChoiceRow choice={{ ...choices[0], selected: true }} today={TODAY} onPress={onPress} testID="pc" />);
     expect(screen.getByRole('radio')).toBeChecked();
+    // Prix estimé : badge et lecture.
+    await view.rerender(<ProductChoiceRow choice={{ ...choices[0], offer: estimated(choices[0].offer) }} today={TODAY} onPress={onPress} testID="pc" />);
+    expect(screen.getByText('Estimé')).toBeTruthy();
+    expect(screen.getByRole('radio').props.accessibilityLabel).toMatch(/prix estimé/);
+  });
+});
+
+describe('Provenance des choix : allergènes', () => {
+  it('ne propose jamais un produit qui contient un allergène déclaré', () => {
+    const [multi] = comparableItems(index, ingredients, { storeIds: ['leclerc'], count: 1, minStores: 1, choicesAt: 'leclerc', now: NOW });
+    const offers = allOffersForItem(multi, index, NOW).filter((o) => o.storeId === 'leclerc');
+    // Le 2e produit « contient » de l'arachide (catalogue de test, sans toucher aux données).
+    const [, tainted] = Array.from(new Set(offers.map((o) => o.productId)));
+    const byId = { ...productsById, [tainted]: { ...productsById[tainted], allergens: ['arachides' as const] } };
+    const safe = productChoices(offers, 'leclerc', byId, null, ['arachides']);
+    expect(safe.map((c) => c.productId)).not.toContain(tainted);
+    expect(safe.length).toBeGreaterThanOrEqual(1);
+    // Sans allergie déclarée, il reste proposé ; un produit inconnu n'est pas vérifiable : écarté.
+    expect(productChoices(offers, 'leclerc', byId, null).map((c) => c.productId)).toContain(tainted);
+    expect(productChoices([{ ...offers[0], productId: 'inconnu' }], 'leclerc', byId, null, ['arachides'])).toEqual([]);
   });
 });
