@@ -39,9 +39,10 @@ L'app est donc **toujours utilisable**, même sans réseau (liste de courses hor
 ## Règles de dépendance (strictes)
 
 ```
-app → components, stores, services, core, theme
-components/feature → components/ui, stores, core, theme
-components/ui → theme (uniquement)
+app → components, stores, services, core, theme, hooks, lib
+components/feature → components/ui, stores, core, theme, lib (haptics, a11y, storage)
+                     + `import type` depuis services (types partagés uniquement)
+components/ui → theme, lib (haptics, a11y, format)
 stores → services, core
 services → core, data, lib
 core → (rien — TypeScript pur, aucun import RN/Expo/npm)
