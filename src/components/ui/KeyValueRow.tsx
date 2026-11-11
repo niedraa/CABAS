@@ -21,11 +21,13 @@ export interface KeyValueRowProps {
   style?: StyleProp<ViewStyle>;
 }
 
+const LEADER = '· '.repeat(80);
+
 export function KeyValueRow({ label, value, leader, emphasis, valueColor = 'text', hint, style }: KeyValueRowProps) {
   const t = useTheme();
   return (
     <View
-      style={[styles.row, style]}
+      style={[styles.row, { gap: t.spacing.sm, minHeight: t.spacing.xxl + t.spacing.xs }, style]}
       accessible
       accessibilityLabel={typeof value === 'string' ? `${label} : ${value}` : label}
     >
@@ -40,14 +42,12 @@ export function KeyValueRow({ label, value, leader, emphasis, valueColor = 'text
         ) : null}
       </View>
       {leader ? (
-        <Text
-          numberOfLines={1}
-          ellipsizeMode="clip"
-          style={[styles.leader, { color: t.colors.borderStrong }]}
-          importantForAccessibility="no"
-        >
-          {'· '.repeat(80)}
-        </Text>
+        // Pointillés coupés net par le conteneur (une ligne, sans « … » ajouté par le web).
+        <View style={[styles.leader, { height: t.typography.caption.lineHeight }]} importantForAccessibility="no-hide-descendants">
+          <Text variant="caption" style={{ color: t.colors.borderStrong }}>
+            {LEADER}
+          </Text>
+        </View>
       ) : (
         <View style={styles.flex} />
       )}
@@ -63,8 +63,8 @@ export function KeyValueRow({ label, value, leader, emphasis, valueColor = 'text
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 28 },
+  row: { flexDirection: 'row', alignItems: 'center' },
   labelWrap: { flexShrink: 1 },
-  leader: { flex: 1, overflow: 'hidden', fontSize: 12, letterSpacing: 1 },
+  leader: { flex: 1, overflow: 'hidden' },
   flex: { flex: 1 },
 });
