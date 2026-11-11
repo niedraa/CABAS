@@ -128,4 +128,218 @@ const replace = {
   },
 };
 
-export const FLOWS = [onboarding, week, recipe, replace];
+const prices = {
+  name: 'Prix : panier « un seul magasin », « le moins cher » réservé à Premium, livraison',
+  async run(h) {
+    await h.tap('tab-prix');
+    await h.see('price-screen');
+    await h.see('price-ready', 20_000);
+    await h.see('basket-receipt');
+    await h.shot('prix', 1000);
+
+    // Compte gratuit : « le moins cher » → meilleur magasin + invitation Premium chiffrée.
+    await h.tap('basket-controls-mode-cheapest');
+    await h.seeText('Le moins cher, c’est Premium');
+    await h.shot('prix-premium-invitation');
+
+    // Livraison : frais affichés (ou magasins qui ne livrent pas exclus), puis retour au drive.
+    await h.tap('basket-controls-delivery');
+    await h.wait(800);
+    await h.shot('prix-livraison');
+    await h.tap('basket-controls-drive');
+    await h.wait(500);
+  },
+};
+
+const comparator = {
+  name: 'Comparateur : offres de ≥ 3 enseignes, choix d’un autre produit',
+  async run(h) {
+    await h.see('comparison-list');
+    await h.tap('compare-0');
+    await h.see('comparator-content');
+    const offers = await h.waitForCount('[data-testid^="offer-"]', -1, 1500);
+    h.expect(offers >= 3, `Au moins 3 enseignes attendues, ${offers} affichées`);
+    await h.shot('comparateur', 900);
+    if (await h.count('choice-1')) {
+      await h.tap('choice-1');
+      await h.wait(600);
+      if (await h.count('choice-reset')) await h.tap('choice-reset');
+    }
+    await h.page.keyboard.press('Escape');
+    await h.wait(500);
+    if (await h.count('comparator-content')) await h.page.goBack();
+    await h.see('price-screen');
+  },
+};
+
+const order = {
+  name: 'Commande : liste copiée, drive ouvert, commande validée → budget',
+  async run(h) {
+    await h.page.locator('[data-testid^="store-part-"][data-testid$="-order"] >> visible=true').first().click();
+    await h.see('order-screen');
+    await h.see('order-receipt');
+    await h.shot('commande', 900);
+    if (await h.count('order-actions-copy')) {
+      await h.tap('order-actions-copy');
+      const copied = await h.page.evaluate(() => navigator.clipboard.readText().catch(() => ''));
+      h.expect(copied.length > 20, 'La liste aurait dû être copiée dans le presse-papiers');
+    }
+    // Le drive s'ouvre dans un nouvel onglet : on vérifie l'URL (UTM) puis on le ferme.
+    const [popup] = await Promise.all([h.page.waitForEvent('popup', { timeout: 8000 }).catch(() => null), h.tap('order-open')]);
+    if (popup) {
+      h.expect(/utm_source=cabas/.test(popup.url()), `URL de commande sans UTM : ${popup.url()}`);
+      await popup.close();
+    }
+    await h.see('order-confirm');
+    await h.tap('order-confirm');
+    await h.see('order-confirmed');
+    await h.shot('commande-validee', 1400);
+    await h.tap('order-done');
+    await h.see('price-screen');
+  },
+};
+
+/** Lignes d'articles de la liste (cases à cocher). */
+const ITEM_ROWS = '[data-testid^="item-"][aria-checked]';
+
+const list = {
+  name: 'Liste : rayons, cocher, ajout en langage naturel, tout coché, placard',
+  async run(h) {
+    await h.tap('tab-liste');
+    await h.see('list-screen');
+    await h.see('list-progress');
+    const total = await h.waitForCount(ITEM_ROWS, -1, 1500);
+    h.expect(total > 3, `La liste devrait contenir plusieurs articles (${total})`);
+    await h.shot('liste', 900);
+
+    // Ajout libre : « 2 baguettes » → rayon deviné.
+    await h.get('list-add-input').fill('2 baguettes');
+    await h.tap('list-add-submit');
+    await h.seeText('Ajouté à ta liste');
+    await h.seeText('Baguette');
+
+    // Cocher un article puis tout le reste.
+    const first = h.page.locator(`${ITEM_ROWS}[aria-checked="false"] >> visible=true`).first();
+    await first.click();
+    await h.shot('liste-coche', 400);
+    for (let guard = 0; guard < 80; guard++) {
+      const next = h.page.locator(`${ITEM_ROWS}[aria-checked="false"] >> visible=true`).first();
+      if ((await next.count()) === 0) break;
+      await next.click();
+      await h.wait(60);
+    }
+    await h.see('list-done', 8000);
+    await h.shot('liste-terminee', 1200);
+
+    // Le reste des paquets entamés rejoint le placard.
+    await h.tap('list-done-store');
+    await h.tap('list-done-pantry');
+    await h.see('pantry-screen');
+  },
+};
+
+const pantry = {
+  name: 'Placard : restes rangés, ajout depuis le catalogue',
+  async run(h) {
+    await h.see('pantry-all');
+    await h.shot('placard', 900);
+    await h.tap('pantry-add');
+    await h.see('pantry-add-sheet');
+    await h.get('pantry-search').fill('tomate');
+    const result = h.page.locator('[data-testid^="pantry-result-"]:not([data-testid="pantry-result-free"]) >> visible=true').first();
+    await result.click();
+    await h.shot('placard-ajout');
+    await h.tap('pantry-add-submit');
+    await h.seeText('Ajouté au placard');
+    await h.wait(500);
+    await h.page.goBack();
+    await h.see('list-screen');
+  },
+};
+
+const premium = {
+  name: 'Premium : paywall, essai de 7 jours (magasin simulé), planning complet',
+  async run(h) {
+    await h.tap('tab-semaine');
+    await h.see('week-screen');
+    await h.page.getByText('Essayer 7 jours').first().click();
+    await h.see('premium-screen');
+    await h.see('plan-picker');
+    await h.shot('paywall', 1000);
+    await h.tap('premium-cta');
+    await h.see('premium-done', 15_000);
+    await h.shot('premium-active', 1200);
+    await h.tap('premium-done');
+    await h.see('week-screen');
+    // Premium : la semaine se complète avec tous les créneaux choisis.
+    await h.tap('regenerate');
+    await h.seeText('De nouvelles idées ?');
+    await h.page.getByRole('button', { name: 'Nouvelles idées', exact: true }).last().click();
+    const meals = await h.waitForCount('[data-testid^="meal-"][data-testid$="-open"]', 9, 15_000);
+    h.expect(meals === 9, `9 repas attendus en Premium, ${meals} affichés`);
+    await h.shot('semaine-premium', 1000);
+  },
+};
+
+const profile = {
+  name: 'Profil : abonnement, édition du foyer, apparence sombre / claire',
+  async run(h) {
+    await h.tap('tab-profil');
+    await h.see('profile-screen');
+    await h.seeText('Essai Premium');
+    await h.shot('profil', 900);
+
+    // Édition d'une section du profil.
+    await h.tap('profile-section-foyer');
+    await h.see('edit-section-foyer');
+    await h.tap('household-adults-inc');
+    await h.tap('edit-save');
+    await h.see('profile-screen');
+
+    // Apparence : bascule de thème, puis retour au réglage système.
+    await h.tap('settings-apparence');
+    await h.see('settings-apparence-screen');
+    const other = h.config.colorScheme === 'dark' ? 'light' : 'dark';
+    await h.tap(`theme-picker-${other}`);
+    await h.shot(`apparence-${other}`, 800);
+    await h.tap('theme-picker-system');
+    await h.page.goBack();
+    await h.see('profile-screen');
+  },
+};
+
+const budget = {
+  name: 'Budget (Premium) : dépense ajoutée, économies',
+  async run(h) {
+    await h.tap('shortcut-budget');
+    await h.see('budget-screen');
+    await h.tap('budget-add');
+    await h.see('add-spending');
+    await h.get('add-spending-amount').fill('42,50');
+    await h.tap('add-spending-submit');
+    await h.seeText('42,50');
+    await h.shot('budget', 900);
+    await h.page.goBack();
+    await h.see('profile-screen');
+  },
+};
+
+const deleteAccount = {
+  name: 'Compte : suppression (RGPD) → retour à l’accueil',
+  async run(h) {
+    await h.tap('settings-compte');
+    await h.see('settings-compte-screen');
+    await h.shot('compte', 800);
+    await h.tap('account-delete');
+    // Double confirmation (boîtes de dialogue : rôles accessibles, pas de testID dans une modale web).
+    await h.seeText('Supprimer ton compte ?');
+    await h.page.getByRole('button', { name: 'Continuer', exact: true }).last().click();
+    await h.seeText('C’est définitif');
+    await h.shot('suppression-confirmation', 600);
+    await h.page.getByRole('button', { name: 'Supprimer définitivement', exact: true }).last().click();
+    await h.see('onboarding-start', 20_000);
+    await h.shot('apres-suppression', 1000);
+  },
+};
+
+export const FLOWS = [onboarding, week, recipe, replace, prices, comparator, order, list, pantry, premium, profile, budget, deleteAccount];
