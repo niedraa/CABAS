@@ -5,10 +5,17 @@
  * Les toasts tombent du haut au ressort, s'empilent (3 max), se ferment
  * seuls (3,5 s par défaut), au toucher, ou via leur action. Chaque toast
  * déclenche le retour haptique de son ton et est annoncé au lecteur d'écran.
+ *
+ * - iOS : les toasts s'affichent dans une `FullWindowOverlay`, au-dessus des
+ *   écrans présentés en modal (paywall, commande…) et des Sheet / Dialog ;
+ * - accessibilité : le bouton d'action est un élément distinct du message
+ *   (jamais imbriqué), et un toast avec action reste affiché tant que le
+ *   lecteur d'écran est actif, jusqu'à sa fermeture (laisse le temps d'agir).
  */
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { AccessibilityInfo, Platform, StyleSheet, View } from 'react-native';
 import Animated, { FadeInUp, FadeOutUp, LinearTransition } from 'react-native-reanimated';
+import { FullWindowOverlay } from 'react-native-screens';
 import { CircleAlert, CircleCheck, Info, Sparkles, type LucideIcon } from 'lucide-react-native';
 
 import { announce } from '@/lib/a11y';
@@ -59,10 +66,53 @@ export function useToast(): ToastApi {
 const DEFAULT_DURATION = 3500;
 const MAX_VISIBLE = 3;
 
+/**
+ * Durée effective d'un toast (ms, 0 = jusqu'à fermeture). Lecteur d'écran
+ * actif : un toast avec action ne se ferme pas seul (le temps d'atteindre le
+ * bouton « Annuler » dépasse largement 3,5 s).
+ */
+export function toastDuration(opts: Pick<ToastOptions, 'duration' | 'action'>, screenReaderOn: boolean): number {
+  const duration = opts.duration ?? DEFAULT_DURATION;
+  return screenReaderOn && opts.action ? 0 : duration;
+}
+
+/**
+ * État du lecteur d'écran (VoiceOver / TalkBack), lu sans provoquer de rendu.
+ * Web : react-native-web répond toujours `true` (aucun moyen de le savoir),
+ * ce qui figerait tous les toasts avec action : on le considère inactif.
+ */
+function useScreenReaderRef(): React.RefObject<boolean> {
+  const on = useRef(false);
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    let alive = true;
+    let sub: { remove(): void } | undefined;
+    try {
+      AccessibilityInfo.isScreenReaderEnabled().then(
+        (v) => {
+          if (alive) on.current = v;
+        },
+        () => undefined,
+      );
+      sub = AccessibilityInfo.addEventListener('screenReaderChanged', (v: boolean) => {
+        on.current = v;
+      });
+    } catch {
+      // Indisponible (web, tests) : considéré comme inactif.
+    }
+    return () => {
+      alive = false;
+      sub?.remove();
+    };
+  }, []);
+  return on;
+}
+
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<ToastItem[]>([]);
   const nextId = useRef(1);
   const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+  const screenReader = useScreenReaderRef();
 
   const hide = useCallback((id: number) => {
     const timer = timers.current.get(id);
@@ -80,11 +130,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       else if (tone === 'danger') haptics.error();
       else haptics.tap();
       announce(opts.message ? `${opts.title}. ${opts.message}` : opts.title);
-      const duration = opts.duration ?? DEFAULT_DURATION;
+      const duration = toastDuration(opts, screenReader.current);
       if (duration > 0) timers.current.set(id, setTimeout(() => hide(id), duration));
       return id;
     },
-    [hide],
+    [hide, screenReader],
   );
 
   const hideAll = useCallback(() => {
@@ -111,7 +161,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 function ToastViewport({ items, onHide }: { items: ToastItem[]; onHide: (id: number) => void }) {
   const t = useTheme();
   const insets = useSafeInsets();
-  return (
+  const viewport = (
     <View
       pointerEvents="box-none"
       style={[styles.viewport, { top: insets.top + t.spacing.sm, zIndex: t.zIndex.toast }]}
@@ -121,6 +171,31 @@ function ToastViewport({ items, onHide }: { items: ToastItem[]; onHide: (id: num
       ))}
     </View>
   );
+  return Platform.OS === 'ios' ? <IosOverlay active={items.length > 0}>{viewport}</IosOverlay> : viewport;
+}
+
+/**
+ * iOS : les écrans en modal natif et les Modal (Sheet, Dialog) sont des
+ * contrôleurs présentés PAR-DESSUS la vue racine. La `FullWindowOverlay` se
+ * place au sommet de la fenêtre à son montage : on la monte donc à
+ * l'apparition des toasts (au-dessus de ce qui est présenté à cet instant), et
+ * on la retire une fois le dernier sorti (animation de sortie comprise).
+ * `unstable_accessibilityContainerViewIsModal={false}` : le reste de l'écran
+ * reste accessible au lecteur d'écran.
+ */
+function IosOverlay({ active, children }: { active: boolean; children: React.ReactNode }) {
+  const t = useTheme();
+  const [mounted, setMounted] = useState(active);
+  // Ajustement d'état pendant le rendu : monter dès qu'un toast arrive.
+  if (active && !mounted) setMounted(true);
+  const exitMs = t.motion.duration.fast * 2;
+  useEffect(() => {
+    if (active || !mounted) return;
+    const timer = setTimeout(() => setMounted(false), exitMs);
+    return () => clearTimeout(timer);
+  }, [active, mounted, exitMs]);
+  if (!mounted) return null;
+  return <FullWindowOverlay unstable_accessibilityContainerViewIsModal={false}>{children}</FullWindowOverlay>;
 }
 
 const TONE_ICON: Record<ToastTone, LucideIcon> = {
@@ -146,26 +221,31 @@ function ToastCard({ item, onHide }: { item: ToastItem; onHide: () => void }) {
     accent: c.accent,
   };
   const spring = t.motion.springToast;
+  const action = item.action;
 
   return (
     <Animated.View
       entering={FadeInUp.springify().damping(spring.damping).stiffness(spring.stiffness).mass(spring.mass)}
       exiting={FadeOutUp.duration(t.motion.duration.fast)}
       layout={LinearTransition.springify().damping(spring.damping).stiffness(spring.stiffness)}
-      style={styles.cardWrap}
+      style={[
+        styles.cardWrap,
+        styles.card,
+        { backgroundColor: bg, borderRadius: t.radius.lg, boxShadow: boxShadow('lg', c.shadow) },
+      ]}
     >
+      {/* Message et action côte à côte, jamais imbriqués : le lecteur d'écran atteint le bouton. */}
       <PressableScale
         onPress={onHide}
+        onAccessibilityEscape={onHide}
         haptic="none"
         accessibilityRole="alert"
         accessibilityLabel={item.message ? `${item.title}. ${item.message}` : item.title}
         accessibilityHint="Touche pour fermer"
-        scaleTo={0.97}
+        scaleTo={1}
+        dimOnPress
         testID={`toast-${item.id}`}
-        style={[
-          styles.card,
-          { backgroundColor: bg, borderRadius: t.radius.lg, boxShadow: boxShadow('lg', c.shadow) },
-        ]}
+        style={[styles.body, { paddingRight: action ? 0 : CARD_PADDING_H }]}
       >
         <View style={[styles.iconWrap, { backgroundColor: 'rgba(255,255,255,0.1)' }]}>
           {item.emoji ? (
@@ -184,32 +264,37 @@ function ToastCard({ item, onHide }: { item: ToastItem; onHide: () => void }) {
             </Text>
           ) : null}
         </View>
-        {item.action ? (
-          <PressableScale
-            onPress={() => {
-              item.action?.onPress();
-              onHide();
-            }}
-            accessibilityLabel={item.action.label}
-            hitSlop={8}
-            style={[styles.action, { backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: t.radius.pill }]}
-          >
-            <Text variant="subhead" style={{ color: c.accent, fontFamily: t.typography.headline.fontFamily }}>
-              {item.action.label}
-            </Text>
-          </PressableScale>
-        ) : null}
       </PressableScale>
+      {action ? (
+        <PressableScale
+          onPress={() => {
+            action.onPress();
+            onHide();
+          }}
+          accessibilityLabel={action.label}
+          hitSlop={8}
+          testID={`toast-${item.id}-action`}
+          style={[styles.action, { backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: t.radius.pill }]}
+        >
+          <Text variant="subhead" style={{ color: c.accent, fontFamily: t.typography.headline.fontFamily }}>
+            {action.label}
+          </Text>
+        </PressableScale>
+      ) : null}
     </Animated.View>
   );
 }
 
+const CARD_PADDING_H = 14;
+
 const styles = StyleSheet.create({
   viewport: { position: 'absolute', left: 0, right: 0, alignItems: 'center', gap: 8, paddingHorizontal: 16 },
   cardWrap: { width: '100%', maxWidth: 480 },
-  card: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingHorizontal: 14 },
+  card: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  // Zone « message » : toute la carte hors bouton d'action (toucher = fermer).
+  body: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, paddingLeft: CARD_PADDING_H },
   iconWrap: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   emoji: { fontSize: 18, lineHeight: 22 },
   texts: { flex: 1, gap: 1 },
-  action: { paddingHorizontal: 12, paddingVertical: 8 },
+  action: { paddingHorizontal: 12, paddingVertical: 8, marginRight: CARD_PADDING_H },
 });

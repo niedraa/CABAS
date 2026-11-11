@@ -3,7 +3,7 @@
  * micro-texte qui change au fil des secondes, barre de progression douce.
  */
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { FadeInDown, FadeOutUp } from 'react-native-reanimated';
 
 import { CookingPot } from '@/components/brand';
@@ -21,10 +21,16 @@ export const GENERATING_STEPS = [
 
 export const GENERATING_STEP_MS = 1400;
 
+/** Agrandissement maximal du micro-texte (même plafond que `Text` par défaut). */
+const LINE_MAX_SCALE = 1.6;
+
 export function GeneratingBanner({ testID }: { testID?: string }) {
   const t = useTheme();
   const c = t.colors;
+  const { fontScale } = useWindowDimensions();
   const [step, setStep] = useState(0);
+  // La ligne qui défile suit la taille du texte choisie dans les réglages du téléphone.
+  const lineHeight = Math.ceil(t.typography.footnote.lineHeight * Math.min(LINE_MAX_SCALE, Math.max(1, fontScale || 1)));
 
   useEffect(() => {
     const id = setInterval(() => setStep((s) => Math.min(GENERATING_STEPS.length - 1, s + 1)), GENERATING_STEP_MS);
@@ -42,9 +48,9 @@ export function GeneratingBanner({ testID }: { testID?: string }) {
       <CookingPot size={64} />
       <View style={styles.flex}>
         <Text variant="headline">Ta semaine mijote…</Text>
-        <View style={styles.line}>
+        <View style={[styles.line, { height: lineHeight }]} testID={testID ? `${testID}-line` : undefined}>
           <Animated.View key={step} entering={FadeInDown.duration(t.motion.duration.base)} exiting={FadeOutUp.duration(t.motion.duration.fast)}>
-            <Text variant="footnote" color="textSecondary" numberOfLines={1}>
+            <Text variant="footnote" color="textSecondary" numberOfLines={1} maxFontSizeMultiplier={LINE_MAX_SCALE}>
               {GENERATING_STEPS[step]}
             </Text>
           </Animated.View>
@@ -58,5 +64,5 @@ export function GeneratingBanner({ testID }: { testID?: string }) {
 const styles = StyleSheet.create({
   card: { flexDirection: 'row', alignItems: 'center', gap: 14, borderWidth: StyleSheet.hairlineWidth * 2 },
   flex: { flex: 1, gap: 6 },
-  line: { height: 18, overflow: 'hidden' },
+  line: { overflow: 'hidden' },
 });

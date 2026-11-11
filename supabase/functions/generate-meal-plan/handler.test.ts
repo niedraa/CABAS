@@ -116,12 +116,22 @@ Deno.test('requêtes invalides → 400', async () => {
       { weekStart: WEEK, maxMeals: 2.5 },
       { weekStart: WEEK, lockedMeals: [{ date: '2026-11-30', type: 'diner', recipeId: 'rec_curry' }] },
       { weekStart: WEEK, lockedMeals: [{ date: WEEK, type: 'gouter', recipeId: 'rec_curry' }] },
+      { weekStart: WEEK, fromDate: '2026-11-30' }, // après la semaine
+      { weekStart: WEEK, fromDate: 'jeudi' },
     ]
   ) {
     const { status, data } = await call(h, body);
     assertEquals(status, 400, JSON.stringify(body));
     assert(['invalid_request', 'invalid_json'].includes(data.error.code));
   }
+});
+
+Deno.test('fromDate : aucun repas placé avant le jour indiqué', async () => {
+  const thursday = '2026-11-19';
+  const { status, data } = await call(handlerWith(fakeRepo(), null), { weekStart: WEEK, fromDate: thursday });
+  assertEquals(status, 200);
+  assertEquals(data.plan.meals.length, 6, 'jeudi → dimanche : 4 dîners + 2 déjeuners');
+  assert(data.plan.meals.every((m: { date: string }) => m.date >= thursday));
 });
 
 Deno.test('profil absent → 404', async () => {

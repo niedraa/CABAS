@@ -37,17 +37,17 @@ export function PremiumHero({ eyebrow = 'Cabas Premium', title, subtitle, emoji,
           {emoji ? <Text style={styles.emoji}>{emoji}</Text> : <Crown size={t.iconSize.sm} color={c.onAccent} strokeWidth={2.4} />}
         </View>
       </Animated.View>
-      <Animated.View entering={staggerEntering(1, 70, 80)}>
+      <Animated.View entering={staggerEntering(1, t.motion.stagger, t.motion.duration.instant)}>
         <Text variant="overline" color="accent">
           {eyebrow}
         </Text>
       </Animated.View>
-      <Animated.View entering={staggerEntering(2, 70, 80)}>
+      <Animated.View entering={staggerEntering(2, t.motion.stagger, t.motion.duration.instant)}>
         <Text variant="hero" color="heroText" accessibilityRole="header" maxFontSizeMultiplier={1.3} testID={`${testID}-title`}>
           {title}
         </Text>
       </Animated.View>
-      <Animated.View entering={staggerEntering(3, 70, 80)}>
+      <Animated.View entering={staggerEntering(3, t.motion.stagger, t.motion.duration.instant)}>
         <Text variant="callout" color="heroText" style={styles.lead}>
           {subtitle}
         </Text>

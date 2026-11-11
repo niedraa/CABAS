@@ -1,4 +1,5 @@
 import React from 'react';
+import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { fireEvent, render, screen } from '@testing-library/react-native';
 
@@ -173,6 +174,9 @@ describe('PantryItemSheet', () => {
     await fireEvent.press(screen.getByTestId('pantry-item-remove'));
     expect(h.onUseAll).toHaveBeenCalledTimes(1);
     expect(h.onRemove).toHaveBeenCalledTimes(1);
+    // Saisie invalide : « Enregistrer » inactif (pas d'ancienne valeur enregistrée en douce).
+    await fireEvent.changeText(screen.getByTestId('pantry-item-quantity-input'), '4O');
+    expect(screen.getByTestId('pantry-item-save')).toBeDisabled();
   });
 });
 
@@ -201,5 +205,33 @@ describe('AddPantrySheet', () => {
     // « Changer » revient à la recherche.
     await fireEvent.press(screen.getByTestId('pantry-change'));
     expect(screen.getByTestId('pantry-search')).toBeTruthy();
+  });
+
+  it('n’ajoute rien quand le champ quantité est vidé', async () => {
+    const onAdd = jest.fn();
+    await render(<AddPantrySheet visible ingredients={ingredients} today={TODAY} onClose={jest.fn()} onAdd={onAdd} />);
+    await fireEvent.changeText(screen.getByTestId('pantry-search'), 'reste de soupe');
+    await fireEvent.press(screen.getByTestId('pantry-result-free'));
+    await fireEvent.press(screen.getByTestId('pantry-add-quantity-unit-g'));
+    await fireEvent.changeText(screen.getByTestId('pantry-add-quantity-input'), '');
+    expect(screen.getByTestId('pantry-add-submit')).toBeDisabled();
+    await fireEvent.press(screen.getByTestId('pantry-add-submit'));
+    expect(onAdd).not.toHaveBeenCalled();
+  });
+
+  it('clavier ouvert : un toucher atteint le résultat, la feuille cède la place au clavier', async () => {
+    await render(<AddPantrySheet visible ingredients={ingredients} today={TODAY} onClose={jest.fn()} onAdd={jest.fn()} />);
+    type Node = ReturnType<typeof screen.getByTestId>;
+    const ancestor = (from: Node, match: (n: Node) => boolean): Node | null => {
+      let n: Node | null = from;
+      while (n && !match(n)) n = n.parent;
+      return n;
+    };
+    const search = screen.getByTestId('pantry-search');
+    const scroll = ancestor(search, (n) => n.props.keyboardShouldPersistTaps !== undefined);
+    expect(scroll?.props.keyboardShouldPersistTaps).toBe('handled');
+    // Hauteur fixe (86 %) mais rétractable : elle ne passe pas sous la barre d'état.
+    const sheet = ancestor(search, (n) => n.props.accessibilityViewIsModal === true);
+    expect(StyleSheet.flatten(sheet?.props.style)).toMatchObject({ flexShrink: 1 });
   });
 });

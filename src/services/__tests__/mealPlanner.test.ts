@@ -1,5 +1,5 @@
 import type { MealPlan, UserProfile } from '@/core';
-import { DEFAULT_MEAL_SLOTS, isRecipeSafe, startOfWeek, todayISO } from '@/core';
+import { addDays, DEFAULT_MEAL_SLOTS, isRecipeSafe, startOfWeek, todayISO } from '@/core';
 
 import { getCatalogSnapshot } from '../catalog';
 import { clampMeals, createMealPlanner, parseRemotePlan, type MealPlanRemote } from '../mealPlanner';
@@ -102,6 +102,47 @@ describe('mealPlanner', () => {
     expect(res.plan.meals).toHaveLength(1);
     expect(res.plan.meals[0].recipeId).not.toBe(PEANUT_RECIPE);
     assertAllSafe(res.plan, p);
+  });
+
+  it('à partir d’aujourd’hui : rien sur un jour passé, les repas passés confiés au serveur gardent leur état', async () => {
+    const thursday = addDays(WEEK, 3);
+    const local = await createMealPlanner({ remote: null }).requestMealPlan({
+      profile: profile(),
+      weekStart: WEEK,
+      entitlement: 'premium',
+      seed: 6,
+      fromDate: thursday,
+    });
+    expect(local.plan.meals.every((m) => m.date >= thursday)).toBe(true);
+
+    const existing: MealPlan = {
+      id: 'plan_x',
+      weekStart: WEEK,
+      generatedAt: new Date().toISOString(),
+      source: 'rules',
+      meals: [
+        { id: 'past', date: WEEK, type: 'diner', recipeId: 'rec_ratatouille', servings: 3 },
+        { id: 'keep', date: addDays(WEEK, 4), type: 'diner', recipeId: 'rec_curry_pois_chiches', servings: 3, locked: true },
+        { id: 'old', date: addDays(WEEK, 5), type: 'diner', recipeId: 'rec_penne_thon_tomate', servings: 3 },
+      ],
+    };
+    let body: Parameters<MealPlanRemote>[0] | null = null;
+    const remote: MealPlanRemote = async (b) => {
+      body = b;
+      // Le serveur renvoie tout ce qu'on lui a confié comme verrouillé.
+      return { plan: { ...existing, meals: b.lockedMeals.map((m) => ({ ...m, locked: true })) } };
+    };
+    const res = await createMealPlanner({ remote }).requestMealPlan({
+      profile: profile(),
+      weekStart: WEEK,
+      entitlement: 'premium',
+      existing,
+      fromDate: thursday,
+    });
+    expect(body).toMatchObject({ fromDate: thursday });
+    expect(body!.lockedMeals.map((m) => m.id)).toEqual(['past', 'keep']);
+    expect(res.plan.meals.find((m) => m.id === 'past')?.locked).toBeUndefined();
+    expect(res.plan.meals.find((m) => m.id === 'keep')?.locked).toBe(true);
   });
 
   it('réapplique la limite gratuite même si le serveur en renvoie plus', async () => {

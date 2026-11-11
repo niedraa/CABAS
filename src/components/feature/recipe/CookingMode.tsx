@@ -4,15 +4,20 @@
  * - glisser à gauche / à droite, boutons « Précédente » / « Suivante »,
  *   pastilles de progression touchables ;
  * - minuteur par étape (anneau `ProgressRing` qui se remplit) : il continue
- *   de tourner quand on passe à l'étape suivante ; à l'échéance, vibration
- *   « succès » + bandeau façon notification ;
+ *   de tourner quand on passe à l'étape suivante ET quand on ferme le mode
+ *   cuisine (session gardée hors du composant, voir cookingSession.ts) ; à
+ *   l'échéance, vibration « succès » + bandeau façon notification, et
+ *   notification locale si l'écran fournit des `timerAlerts` (app en
+ *   arrière-plan, écran verrouillé) ;
+ * - rouvert sans `initialStep`, il reprend à l'étape en cours ;
+ * - chaque étape défile verticalement (gros texte agrandi, petits écrans) ;
  * - l'écran reste allumé (expo-keep-awake) tant que le mode est ouvert ;
  * - dernière étape → « C'est prêt ! » et petite célébration.
  */
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Modal, StyleSheet, useWindowDimensions, View } from 'react-native';
-import { GestureDetector, GestureHandlerRootView, usePanGesture } from 'react-native-gesture-handler';
+import { GestureDetector, GestureHandlerRootView, ScrollView, usePanGesture } from 'react-native-gesture-handler';
 import Animated, {
   FadeIn,
   FadeInUp,
@@ -32,14 +37,20 @@ import { announce } from '@/lib/a11y';
 import { haptics } from '@/lib/haptics';
 import { boxShadow, useTheme } from '@/theme';
 
-import { formatCountdown, formatCountdownA11y, useCountdown } from './timer';
+import { clearCookingSession, getCookingSession, setCookingStep, useSessionTimer, type TimerAlerts } from './cookingSession';
+import { formatCountdown, formatCountdownA11y } from './timer';
 
 export interface CookingModeProps {
   visible: boolean;
   title: string;
   emoji?: string;
   steps: readonly RecipeStep[];
+  /** Étape d'ouverture ; absente : on reprend l'étape de la session (ou la 1ʳᵉ). */
   initialStep?: number;
+  /** Clé de session (id de la recette) : étape et minuteurs survivent à la fermeture. */
+  sessionKey?: string;
+  /** Notifications locales à l'échéance des minuteurs (fournies par l'écran, avec `sessionKey`). */
+  timerAlerts?: TimerAlerts;
   onClose: () => void;
   testID?: string;
 }
@@ -65,14 +76,28 @@ export function CookingMode({ visible, ...rest }: CookingModeProps) {
 
 type ContentProps = Omit<CookingModeProps, 'visible'>;
 
-export function CookingModeContent({ title, emoji, steps, initialStep = 0, onClose, testID = 'cooking-mode' }: ContentProps) {
+export function CookingModeContent({
+  title,
+  emoji,
+  steps,
+  initialStep,
+  sessionKey,
+  timerAlerts: alertsProp,
+  onClose,
+  testID = 'cooking-mode',
+}: ContentProps) {
   const t = useTheme();
   const c = t.colors;
   const insets = useSafeInsets();
   const reduced = useReducedMotion();
   const { width: winW } = useWindowDimensions();
   const count = steps.length;
-  const [index, setIndex] = useState(() => clampStep(initialStep, Math.max(0, count - 1)));
+  // Sans clé fournie, session propre à ce montage (oubliée à la fermeture).
+  const ownKey = useId();
+  const key = sessionKey ?? `cooking${ownKey}`;
+  // Une session anonyme meurt avec le composant : pas de notification qui lui survive.
+  const timerAlerts = sessionKey ? alertsProp : undefined;
+  const [index, setIndex] = useState(() => clampStep(initialStep ?? getCookingSession(key)?.step ?? 0, Math.max(0, count - 1)));
   const [pageW, setPageW] = useState(Math.min(winW, t.layout.maxContentWidth));
   const [notice, setNotice] = useState<{ id: number; step: number } | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -96,6 +121,21 @@ export function CookingModeContent({ title, emoji, steps, initialStep = 0, onClo
     },
     [],
   );
+
+  // Étape mémorisée pour la réouverture ; session anonyme oubliée au démontage.
+  useEffect(() => {
+    setCookingStep(key, Math.min(index, Math.max(0, count - 1)));
+  }, [key, index, count]);
+  useEffect(() => {
+    if (sessionKey) return;
+    return () => clearCookingSession(key);
+  }, [sessionKey, key]);
+
+  const finish = () => {
+    // Recette terminée : la prochaine ouverture repart de la 1ʳᵉ étape.
+    clearCookingSession(key, timerAlerts);
+    onClose();
+  };
 
   const translateX = useSharedValue(-index * pageW);
   const dragStart = useSharedValue(0);
@@ -175,7 +215,7 @@ export function CookingModeContent({ title, emoji, steps, initialStep = 0, onClo
             haptic="none"
             scaleTo={0.8}
             onPress={() => goTo(i)}
-            style={styles.dotHit}
+            style={[styles.dotHit, { height: t.layout.minTouchTarget }]}
             testID={`${testID}-dot-${i}`}
           >
             <View
@@ -204,6 +244,9 @@ export function CookingModeContent({ title, emoji, steps, initialStep = 0, onClo
                 width={pageW}
                 active={i === index}
                 onTimerDone={onTimerDone}
+                sessionKey={key}
+                recipeTitle={title}
+                timerAlerts={timerAlerts}
                 testID={`${testID}-step-${i}`}
               />
             ))}
@@ -234,7 +277,7 @@ export function CookingModeContent({ title, emoji, steps, initialStep = 0, onClo
         ]}
       >
         {finished ? (
-          <Button label="Terminer" size="lg" fullWidth onPress={onClose} testID={`${testID}-finish`} />
+          <Button label="Terminer" size="lg" fullWidth onPress={finish} testID={`${testID}-finish`} />
         ) : (
           <>
             <Button
@@ -309,14 +352,22 @@ interface StepPageProps {
   width: number;
   active: boolean;
   onTimerDone: (index: number) => void;
+  sessionKey: string;
+  recipeTitle: string;
+  timerAlerts?: TimerAlerts;
   testID?: string;
 }
 
-function StepPage({ step, index, count, width, active, onTimerDone, testID }: StepPageProps) {
+function StepPage({ step, index, count, width, active, onTimerDone, sessionKey, recipeTitle, timerAlerts, testID }: StepPageProps) {
   const t = useTheme();
+  const onDone = useCallback(() => onTimerDone(index), [onTimerDone, index]);
   return (
-    <View
-      style={[styles.page, { width, paddingHorizontal: t.spacing.screen }]}
+    // Défilement vertical : texte agrandi + minuteur peuvent dépasser la hauteur du pager
+    // (le glisser horizontal échoue dès que le doigt part à la verticale : failOffsetY).
+    <ScrollView
+      style={{ width }}
+      contentContainerStyle={[styles.page, { paddingHorizontal: t.spacing.screen, paddingBottom: t.spacing.xl }]}
+      showsVerticalScrollIndicator={false}
       accessibilityElementsHidden={!active}
       importantForAccessibility={active ? 'auto' : 'no-hide-descendants'}
       testID={testID}
@@ -335,16 +386,34 @@ function StepPage({ step, index, count, width, active, onTimerDone, testID }: St
         {step.text}
       </Text>
       {step.timerMin ? (
-        <StepTimer minutes={step.timerMin} onDone={() => onTimerDone(index)} testID={testID ? `${testID}-timer` : undefined} />
+        <StepTimer
+          minutes={step.timerMin}
+          onDone={onDone}
+          sessionKey={sessionKey}
+          step={index}
+          alerts={timerAlerts}
+          alertContent={{ title: 'Minuteur terminé ⏲️', body: `${recipeTitle} · étape ${index + 1} : ${step.text}` }}
+          testID={testID ? `${testID}-timer` : undefined}
+        />
       ) : null}
-    </View>
+    </ScrollView>
   );
 }
 
-function StepTimer({ minutes, onDone, testID }: { minutes: number; onDone: () => void; testID?: string }) {
+interface StepTimerProps {
+  minutes: number;
+  onDone: () => void;
+  sessionKey: string;
+  step: number;
+  alerts?: TimerAlerts;
+  alertContent: { title: string; body: string };
+  testID?: string;
+}
+
+function StepTimer({ minutes, onDone, sessionKey, step, alerts, alertContent, testID }: StepTimerProps) {
   const t = useTheme();
   const c = t.colors;
-  const timer = useCountdown(minutes * 60, onDone);
+  const timer = useSessionTimer({ sessionKey, step, totalSec: minutes * 60, onDone, alerts, alertContent });
   const { status } = timer.state;
   const running = status === 'running';
   const done = status === 'done';
@@ -395,8 +464,8 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', height: 56 },
   headerTitle: { flex: 1, alignItems: 'center' },
   headerSide: { width: 44 },
-  dots: { flexDirection: 'row', gap: 4, paddingVertical: 4 },
-  dotHit: { flex: 1, height: 24, justifyContent: 'center' },
+  dots: { flexDirection: 'row', gap: 4 },
+  dotHit: { flex: 1, justifyContent: 'center' },
   dot: { height: 6 },
   pager: { flex: 1, overflow: 'hidden' },
   row: { flexDirection: 'row', flex: 1 },

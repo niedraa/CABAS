@@ -7,3 +7,4 @@ export { CookingMode, CookingModeContent, clampStep, type CookingModeProps } fro
 export { AlternativeRow, alternativeReasons, type AlternativeRowProps, type AlternativeReasons } from './AlternativeRow';
 export * from './recipeInfo';
 export * from './timer';
+export * from './cookingSession';

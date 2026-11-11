@@ -16,7 +16,7 @@ import type {
   Store,
   StoreOffer,
 } from '@/core';
-import { formatPrice, formatQuantity, optimizeBasket, STORE_CHAIN_LABELS } from '@/core';
+import { formatPrice, formatQuantity, optimizeBasket, STORE_CHAIN_LABELS, storeFees } from '@/core';
 
 // ─── Libellés ────────────────────────────────────────────────────────────────
 
@@ -258,6 +258,31 @@ export function missingRows(plan: BasketPlan | null, comparisons: readonly ItemC
       elsewhere: best ? { storeId: best.storeId, totalCents: best.totalCents } : null,
     };
   });
+}
+
+// ─── Panier vide : pourquoi ? ────────────────────────────────────────────────
+
+/**
+ * Pourquoi aucun magasin n'est retenu :
+ *  - `not_in_catalog` : aucune enseigne ne vend ces articles (articles saisis à la main…) ;
+ *  - `no_delivery`    : en livraison, aucun des magasins du panier ne livre ;
+ *  - `not_sold`       : tes magasins (ceux qui livrent, en livraison) ne les vendent pas.
+ */
+export type EmptyBasketReason = 'not_in_catalog' | 'no_delivery' | 'not_sold';
+
+export function emptyBasketReason(
+  comparisons: readonly ItemComparison[],
+  stores: readonly Store[],
+  opts: { channel: OrderChannel; storeIds: readonly string[] },
+): EmptyBasketReason {
+  if (!comparisons.some((c) => c.offers.length > 0)) return 'not_in_catalog';
+  if (opts.channel === 'delivery') {
+    // Mêmes magasins que le calcul : ceux du panier, tous si aucun n'est connu.
+    const mine = stores.filter((s) => opts.storeIds.includes(s.id));
+    const candidates = mine.length > 0 ? mine : stores;
+    if (!candidates.some((s) => storeFees(s, 'delivery') !== null)) return 'no_delivery';
+  }
+  return 'not_sold';
 }
 
 // ─── Premium : gain du panier « le moins cher » ──────────────────────────────

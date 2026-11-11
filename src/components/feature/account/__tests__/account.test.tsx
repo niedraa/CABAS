@@ -181,13 +181,16 @@ describe('SubscriptionCard', () => {
 
   it('essai : date de fin, jours restants, ouvre la gestion', async () => {
     const onManage = jest.fn();
-    const status = subscriptionStatus({
-      entitlement: 'premium',
-      isTrial: true,
-      expiresAt: new Date(Date.now() + 5 * 86_400_000 - 60_000).toISOString(),
-      productId: 'cabas_premium_annual',
-      willRenew: true,
-    });
+    const status = subscriptionStatus(
+      {
+        entitlement: 'premium',
+        isTrial: true,
+        expiresAt: '2026-11-15T09:00:00',
+        productId: 'cabas_premium_annual',
+        willRenew: true,
+      },
+      Date.parse('2026-11-10T10:00:00'),
+    );
     await render(<SubscriptionCard status={status} trialDays={null} onUpgrade={jest.fn()} onManage={onManage} />);
     expect(screen.getByText('Essai Premium')).toBeTruthy();
     expect(screen.getByText('Annuel')).toBeTruthy();
@@ -195,6 +198,23 @@ describe('SubscriptionCard', () => {
     expect(screen.getByText('Encore 5 jours pour tout essayer')).toBeTruthy();
     await fireEvent.press(screen.getByTestId('subscription-card'));
     expect(onManage).toHaveBeenCalledTimes(1);
+  });
+
+  it('essai : « demain » en jours civils, jauge rapportée à la vraie durée de l’essai', async () => {
+    const trial = (nowIso: string) =>
+      subscriptionStatus(
+        { entitlement: 'premium', isTrial: true, expiresAt: '2026-11-16T20:00:00', productId: 'cabas_premium_annual', willRenew: true },
+        Date.parse(nowIso),
+      );
+    // Dimanche 19 h : 25 h restantes, mais l'essai finit bien demain.
+    const { rerender } = await render(<SubscriptionCard status={trial('2026-11-15T19:00:00')} trialDays={null} onUpgrade={jest.fn()} onManage={jest.fn()} />);
+    expect(screen.getByTestId('subscription-card-countdown').props.children).toBe('Ton essai se termine demain');
+    expect(screen.getByRole('progressbar').props.accessibilityLabel).toBe('Ton essai se termine demain');
+    // Essai de 14 jours, 10 jours restants : la jauge n'est pas pleine.
+    await rerender(
+      <SubscriptionCard status={trial('2026-11-06T12:00:00')} trialDays={null} trialLengthDays={14} onUpgrade={jest.fn()} onManage={jest.fn()} />,
+    );
+    expect(screen.getByRole('progressbar').props.accessibilityValue.now).toBe(71);
   });
 });
 
@@ -283,5 +303,23 @@ describe('ProfileSectionEditor', () => {
       <ProfileSectionEditor section="regime" draft={{ ...DEFAULT_DRAFT, allergens: ['lait'] }} onChange={onChange} ingredients={[]} stores={[]} freeLimit={null} />,
     );
     expect(screen.getByTestId('diet-allergy-consent')).toBeTruthy();
+  });
+
+  it('régime : prévient l’écran quand le champ « Je n’aime pas » prend le focus', async () => {
+    const onSearchFocus = jest.fn();
+    await render(
+      <ProfileSectionEditor
+        section="regime"
+        draft={{ ...DEFAULT_DRAFT }}
+        onChange={jest.fn()}
+        ingredients={[]}
+        stores={[]}
+        freeLimit={null}
+        onSearchFocus={onSearchFocus}
+      />,
+      { wrapper: GestureHandlerRootView },
+    );
+    await fireEvent(screen.getByTestId('diet-allergy-search'), 'focus');
+    expect(onSearchFocus).toHaveBeenCalledTimes(1);
   });
 });

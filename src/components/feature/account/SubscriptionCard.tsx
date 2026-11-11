@@ -12,18 +12,27 @@ import { Badge, Button, Card, ProgressBar, Text } from '@/components/ui';
 import { PREMIUM_PRICING } from '@/core';
 import { useTheme, withAlpha } from '@/theme';
 
-import type { SubscriptionStatusView } from '../premium/paywall';
+import { trialCountdownLabel, type SubscriptionStatusView } from '../premium/paywall';
 
 export interface SubscriptionCardProps {
   status: SubscriptionStatusView;
   /** Jours d'essai offerts (gratuit), ou null si l'essai a déjà servi. */
   trialDays: number | null;
+  /** Durée totale de l'essai en cours (jauge), voir `trialLengthDays()`. Défaut : durée standard. */
+  trialLengthDays?: number;
   onUpgrade: () => void;
   onManage: () => void;
   testID?: string;
 }
 
-export function SubscriptionCard({ status, trialDays, onUpgrade, onManage, testID = 'subscription-card' }: SubscriptionCardProps) {
+export function SubscriptionCard({
+  status,
+  trialDays,
+  trialLengthDays = PREMIUM_PRICING.trialDays,
+  onUpgrade,
+  onManage,
+  testID = 'subscription-card',
+}: SubscriptionCardProps) {
   const t = useTheme();
   const c = t.colors;
 
@@ -52,6 +61,9 @@ export function SubscriptionCard({ status, trialDays, onUpgrade, onManage, testI
 
   const trial = status.kind === 'trial';
   const days = status.daysLeft ?? 0;
+  // Jauge rapportée à la durée réelle de l'essai (jamais au-delà de 100 %).
+  const trialProgress = days / Math.max(1, trialLengthDays, days);
+  const countdown = trialCountdownLabel(days);
   return (
     <Card
       variant="hero"
@@ -89,14 +101,14 @@ export function SubscriptionCard({ status, trialDays, onUpgrade, onManage, testI
         {trial && status.daysLeft !== null ? (
           <View style={{ gap: t.spacing.xs }}>
             <ProgressBar
-              progress={days / PREMIUM_PRICING.trialDays}
+              progress={trialProgress}
               tone="accent"
               height={8}
               style={{ backgroundColor: withAlpha(c.heroText, 0.14) }}
-              accessibilityLabel={`${days} jour${days > 1 ? 's' : ''} d’essai restant${days > 1 ? 's' : ''}`}
+              accessibilityLabel={countdown}
             />
-            <Text variant="caption" color="accent">
-              {days > 1 ? `Encore ${days} jours pour tout essayer` : days === 1 ? 'Dernier jour d’essai' : 'Ton essai se termine aujourd’hui'}
+            <Text variant="caption" color="accent" testID={`${testID}-countdown`}>
+              {countdown}
             </Text>
           </View>
         ) : null}

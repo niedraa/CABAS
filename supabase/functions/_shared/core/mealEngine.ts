@@ -46,6 +46,12 @@ export interface MealEngineInput {
   seed?: string | number;
   /** Planning existant : ses repas verrouillés sont conservés s'ils restent sûrs. */
   existing?: MealPlan | null;
+  /**
+   * Premier jour planifiable (ISO, en général « aujourd'hui ») : les créneaux
+   * antérieurs ne sont pas remplis et les repas existants de ces jours passés
+   * sont conservés comme s'ils étaient verrouillés. Absent = toute la semaine.
+   */
+  fromDate?: string;
   /** Recettes servies récemment (pénalisées). */
   recentRecipeIds?: string[];
   /** Ingrédients du placard à écouler (bonus anti-gaspi). */
@@ -207,14 +213,27 @@ export function weekSlots(profile: Pick<UserProfile, 'mealSlots'>, weekStart: st
   return out.sort(compareSlots);
 }
 
-/** Repas verrouillés conservés + créneaux à remplir, dans la limite de maxMeals. */
+/** Jour déjà passé par rapport à `fromDate` (toujours faux sans `fromDate`). */
+function isBeforeFrom(date: string, input: MealEngineInput): boolean {
+  return typeof input.fromDate === 'string' && date < input.fromDate;
+}
+
+/**
+ * Repas conservés (verrouillés, ou déjà passés) + créneaux à remplir (à partir
+ * de `fromDate`), dans la limite de maxMeals.
+ */
 function resolveSlots(input: MealEngineInput, ctx: EngineContext): { kept: PlannedMeal[]; open: MealSlot[] } {
   const all = weekSlots(input.profile, input.weekStart);
   const max = Math.max(0, Math.min(input.maxMeals ?? Infinity, MAX_MEALS_PER_WEEK));
   const kept: PlannedMeal[] = [];
   const keptKeys = new Set<string>();
+  // Un repas d'un jour passé est déjà mangé (ou prévu) : on ne le remplace pas.
   const existingMeals = (input.existing?.meals ?? []).filter(
-    (m) => m && m.locked && (m.type === 'dejeuner' || m.type === 'diner') && isInWeek(m.date, input.weekStart),
+    (m) =>
+      m &&
+      (m.locked || isBeforeFrom(m.date, input)) &&
+      (m.type === 'dejeuner' || m.type === 'diner') &&
+      isInWeek(m.date, input.weekStart),
   );
   for (const m of sortMeals(existingMeals)) {
     const key = slotKey(m.date, m.type);
@@ -225,7 +244,9 @@ function resolveSlots(input: MealEngineInput, ctx: EngineContext): { kept: Plann
     keptKeys.add(key);
   }
   const keptLimited = kept.slice(0, max);
-  const open = all.filter((s) => !keptKeys.has(slotKey(s.date, s.type))).slice(0, Math.max(0, max - keptLimited.length));
+  const open = all
+    .filter((s) => !keptKeys.has(slotKey(s.date, s.type)) && !isBeforeFrom(s.date, input))
+    .slice(0, Math.max(0, max - keptLimited.length));
   return { kept: keptLimited, open };
 }
 

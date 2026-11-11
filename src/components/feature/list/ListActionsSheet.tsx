@@ -22,6 +22,8 @@ export interface ListActionsSheetProps {
   onUncheckAll: () => void;
   onClearChecked: () => void;
   onOpenPantry: () => void;
+  /** Feuille entièrement refermée (pour enchaîner le partage natif). */
+  onDismissed?: () => void;
 }
 
 export function ListActionsSheet({
@@ -34,6 +36,7 @@ export function ListActionsSheet({
   onUncheckAll,
   onClearChecked,
   onOpenPantry,
+  onDismissed,
 }: ListActionsSheetProps) {
   const t = useTheme();
   const none = checkedCount === 0;
@@ -41,6 +44,7 @@ export function ListActionsSheet({
     <Sheet
       visible={visible}
       onClose={onClose}
+      onDismissed={onDismissed}
       title="Ma liste"
       subtitle={`${countFr(totalCount, 'article')} · ${none ? 'rien de coché' : countFr(checkedCount, 'coché')}`}
       testID="list-actions"

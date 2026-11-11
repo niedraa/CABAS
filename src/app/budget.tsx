@@ -21,6 +21,7 @@ import {
   SavingsCard,
   SpendingChart,
   SpendingEntryRow,
+  spendingAddedMessage,
   weeklyBars,
   type AddSpendingInput,
   type ChartPeriod,
@@ -85,7 +86,7 @@ function BudgetTracker({ onBack }: { onBack: () => void }) {
     setAdding(false);
     toast.show({
       title: 'Dépense ajoutée',
-      message: `${formatPrice(entry.totalCents)} comptés dans ta semaine.`,
+      message: spendingAddedMessage(entry.totalCents, entry.date, currentWeek),
       tone: 'success',
     });
   };
@@ -135,7 +136,7 @@ function BudgetTracker({ onBack }: { onBack: () => void }) {
                   </View>
                 </View>
                 <SegmentedControl<ChartPeriod>
-                  size="sm"
+                  size="md"
                   options={[
                     { value: 'week', label: 'Semaines' },
                     { value: 'month', label: 'Mois' },
@@ -155,7 +156,8 @@ function BudgetTracker({ onBack }: { onBack: () => void }) {
               <Text variant="title3" accessibilityRole="header" style={styles.flex}>
                 Historique
               </Text>
-              <Button label="Ajouter" size="sm" variant="tonal" leftIcon={Plus} onPress={() => setAdding(true)} testID="budget-add" />
+              {/* Tailles « md » ici et sur le sélecteur de période : cibles ≥ 44 pt. */}
+              <Button label="Ajouter" size="md" variant="tonal" leftIcon={Plus} onPress={() => setAdding(true)} testID="budget-add" />
             </View>
             {entries.length === 0 ? (
               <EmptyState
@@ -170,7 +172,7 @@ function BudgetTracker({ onBack }: { onBack: () => void }) {
                 {entries.map((e, i) => (
                   <Animated.View
                     key={e.id}
-                    entering={staggerEntering(Math.min(i, 8), t.motion.stagger, 200)}
+                    entering={staggerEntering(Math.min(i, 8), t.motion.stagger, t.motion.duration.base)}
                     exiting={FadeOut.duration(t.motion.duration.fast)}
                     layout={LinearTransition.springify().damping(t.motion.spring.damping).stiffness(t.motion.spring.stiffness)}
                     style={i > 0 ? [styles.separator, { borderTopColor: t.colors.border }] : undefined}

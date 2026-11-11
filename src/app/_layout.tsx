@@ -5,16 +5,22 @@
  * Le splash reste affiché tant que les polices ne sont pas chargées, que les
  * stores n'ont pas relu le disque et que `useAppBootstrap()` n'est pas prêt
  * (jamais plus de 2,5 s d'attente réseau : l'app marche hors-ligne).
+ *
+ * Toucher une notification ouvre l'écran de son `data.url` (« /panier »…),
+ * démarrage à froid compris, une fois l'app prête et le profil créé.
  */
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useFonts } from 'expo-font';
 import {
   DarkTheme,
   DefaultTheme,
   ThemeProvider as NavigationThemeProvider,
+  router,
   Stack,
+  useSegments,
   type ErrorBoundaryProps,
+  type Href,
 } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
@@ -27,6 +33,7 @@ import { rootScreenOptionsFor } from '@/components/feature/onboarding';
 import { Button, Stack as VStack, Text, ToastProvider } from '@/components/ui';
 import { useAppBootstrap } from '@/hooks';
 import { captureError } from '@/services/monitoring';
+import { subscribeNotificationOpens } from '@/services/notifications';
 import { useProfileStore, useSettingsStore } from '@/stores';
 import { appFonts, ThemeProvider, useTheme } from '@/theme';
 
@@ -72,6 +79,50 @@ function BootBackdrop() {
   return <View style={[styles.root, { backgroundColor: t.colors.hero }]} testID="boot" />;
 }
 
+/** Ouvre l'écran d'une notification (route inconnue → écran « introuvable »). */
+function openFromNotification(url: string) {
+  try {
+    router.navigate(url as Href);
+  } catch (err) {
+    captureError(err, { where: 'notification-open' });
+  }
+}
+
+/**
+ * Notification touchée → écran de son `data.url`. On attend d'avoir quitté la
+ * route d'entrée (`index`, qui redirige vers l'app ou l'onboarding) pour que
+ * cette redirection ne remplace pas l'écran ouvert. Ignorée tant que le profil
+ * n'est pas créé (l'app n'est pas accessible).
+ */
+function NotificationNavigation({ onboarded }: { onboarded: boolean }) {
+  const atEntry = (useSegments() as string[]).length === 0;
+  const onboardedRef = useRef(onboarded);
+  const atEntryRef = useRef(atEntry);
+  const pending = useRef<string | null>(null);
+  useEffect(() => {
+    onboardedRef.current = onboarded;
+  });
+
+  useEffect(
+    () =>
+      subscribeNotificationOpens((url) => {
+        if (!onboardedRef.current) return;
+        if (atEntryRef.current) pending.current = url;
+        else openFromNotification(url);
+      }),
+    [],
+  );
+
+  useEffect(() => {
+    atEntryRef.current = atEntry;
+    const url = pending.current;
+    if (atEntry || !url) return;
+    pending.current = null;
+    openFromNotification(url);
+  }, [atEntry]);
+  return null;
+}
+
 function RootNavigator() {
   const t = useTheme();
   const onboarded = useProfileStore((s) => s.onboardingCompleted);
@@ -92,6 +143,8 @@ function RootNavigator() {
   return (
     <NavigationThemeProvider value={navTheme}>
       <StatusBar style={t.scheme === 'dark' ? 'light' : 'dark'} />
+      {/* Composant à part : suit la route courante sans re-rendre tout le navigateur. */}
+      <NotificationNavigation onboarded={onboarded} />
       <Stack
         screenOptions={({ route }) => ({
           headerShown: false,

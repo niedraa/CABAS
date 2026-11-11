@@ -2,9 +2,14 @@
  * Aperçu du suivi du budget pour l'offre gratuite : un graphique d'exemple
  * flouté (aucune donnée personnelle), la promesse, et l'invitation à essayer
  * Premium. Si Cabas t'a déjà fait économiser, on le dit (chiffres d'abord).
+ *
+ * Android : le flou exige une cible (`BlurTargetView`) et une méthode native
+ * (sinon simple voile translucide). Avant Android 12 (SDK 31), la méthode
+ * retombe sur ce voile : l'exemple n'affiche donc aucun montant, pour ne pas
+ * être pris pour les chiffres de l'utilisateur.
  */
-import { BlurView } from 'expo-blur';
-import React from 'react';
+import { BlurTargetView, BlurView } from 'expo-blur';
+import React, { useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { Crown, Lock } from 'lucide-react-native';
@@ -39,14 +44,21 @@ export function BudgetTeaser({ savingsCents, trialDays, onUpgrade, testID = 'bud
   const t = useTheme();
   const c = t.colors;
   const copy = FEATURE_COPY.budget_tracking;
+  const blurTarget = useRef<React.ComponentRef<typeof View>>(null);
   return (
     <View style={{ gap: t.spacing.lg }} testID={testID}>
       <Animated.View entering={staggerEntering(0)}>
         <Card variant="elevated" padding="xl" radius="xl">
-          <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-            <SpendingChart bars={SAMPLE_BARS} maxCents={12000} referenceCents={10000} height={150} testID="teaser-chart" />
-          </View>
-          <BlurView intensity={28} tint={t.scheme === 'dark' ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
+          <BlurTargetView ref={blurTarget} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+            <SpendingChart bars={SAMPLE_BARS} maxCents={12000} referenceCents={10000} height={150} hideAmounts testID="teaser-chart" />
+          </BlurTargetView>
+          <BlurView
+            intensity={28}
+            tint={t.scheme === 'dark' ? 'dark' : 'light'}
+            blurTarget={blurTarget}
+            blurMethod="dimezisBlurViewSdk31Plus"
+            style={StyleSheet.absoluteFill}
+          />
           <View style={[StyleSheet.absoluteFill, styles.center]}>
             <View style={[styles.lock, { backgroundColor: c.hero }]}>
               <Lock size={t.iconSize.lg} color={c.accent} strokeWidth={2.4} />

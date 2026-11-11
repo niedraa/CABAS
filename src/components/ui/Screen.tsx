@@ -9,6 +9,7 @@ import {
   StyleSheet,
   View,
   type RefreshControlProps,
+  type ScrollViewInstance,
   type ScrollViewProps,
   type StyleProp,
   type ViewStyle,
@@ -52,6 +53,8 @@ export interface ScreenProps {
   refreshControl?: React.ReactElement<RefreshControlProps>;
   contentContainerStyle?: StyleProp<ViewStyle>;
   scrollProps?: Omit<ScrollViewProps, 'children' | 'contentContainerStyle' | 'refreshControl' | 'onScroll'>;
+  /** Accès au défilement (ex. amener un champ au-dessus du clavier). */
+  scrollRef?: React.Ref<ScrollViewInstance>;
   testID?: string;
 }
 
@@ -74,6 +77,7 @@ export function Screen({
   refreshControl,
   contentContainerStyle,
   scrollProps,
+  scrollRef,
   testID,
 }: ScreenProps) {
   const t = useTheme();
@@ -150,6 +154,7 @@ export function Screen({
       )}
       {scroll ? (
         <Animated.ScrollView
+          ref={scrollRef}
           onScroll={onScroll}
           scrollEventThrottle={16}
           refreshControl={refreshControl}

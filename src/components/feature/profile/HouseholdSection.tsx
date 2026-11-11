@@ -11,7 +11,7 @@ import { Card, Row, Stack, Stepper, Text } from '@/components/ui';
 import type { Household } from '@/core';
 import { useTheme } from '@/theme';
 
-import { HOUSEHOLD_LIMITS, householdEmoji, portionsSentence } from './profileOptions';
+import { HOUSEHOLD_LIMITS, householdA11yLabel, householdEmoji, portionsSentence } from './profileOptions';
 
 export interface HouseholdSectionProps {
   value: Household;
@@ -32,7 +32,11 @@ export function HouseholdSection({ value, onChange, testID }: HouseholdSectionPr
         style={[styles.family, { backgroundColor: t.colors.primarySoft, borderRadius: t.radius.xl }]}
         accessible
         accessibilityRole="image"
-        accessibilityLabel={`Ton foyer : ${value.adults} adulte${value.adults > 1 ? 's' : ''}, ${value.children} enfant${value.children > 1 ? 's' : ''}`}
+        // Les portions (mises à jour en direct) font partie du libellé : la vue
+        // regroupe ses enfants, le texte des portions n'est pas lu seul.
+        accessibilityLabel={householdA11yLabel(value)}
+        accessibilityLiveRegion="polite"
+        testID={testID ? `${testID}-family` : undefined}
       >
         <Animated.View layout={LinearTransition.springify().damping(t.motion.spring.damping)} style={styles.people}>
           {people.map((emoji, i) => (
@@ -115,7 +119,11 @@ function CounterRow({
   const t = useTheme();
   return (
     <Row gap="md" style={[styles.row, { paddingHorizontal: t.spacing.lg }]}>
-      <View style={[styles.rowEmoji, { backgroundColor: t.colors.accentSoft, borderRadius: t.radius.md }]}>
+      <View
+        style={[styles.rowEmoji, { backgroundColor: t.colors.accentSoft, borderRadius: t.radius.md }]}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      >
         <Text style={styles.emoji}>{emoji}</Text>
       </View>
       <View style={styles.flex}>

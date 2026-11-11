@@ -1,6 +1,6 @@
 /**
  * Commande validée : bandeau héros, économies chiffrées d'abord (« −3,54 € »),
- * dépense ajoutée au budget et reste de la semaine.
+ * dépense ajoutée au budget et reste de la semaine (ou dépassement).
  */
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -12,18 +12,20 @@ import { formatPrice } from '@/core';
 import { formatPriceForA11y } from '@/lib/a11y';
 import { useTheme } from '@/theme';
 
+import { orderBudgetSentence, type OrderBudgetView } from './orderView';
+
 export interface OrderConfirmedCardProps {
   storeName: string;
   totalCents: number;
   savingsCents: number;
-  /** Budget hebdo : reste après cette commande (null si pas de budget). */
-  remainingCents?: number | null;
+  /** Budget hebdo après cette commande : reste ou dépassement (null si pas de budget). */
+  budget?: OrderBudgetView | null;
   /** Libellé de date (« Validée aujourd’hui »). */
   when: string;
   testID?: string;
 }
 
-export function OrderConfirmedCard({ storeName, totalCents, savingsCents, remainingCents, when, testID }: OrderConfirmedCardProps) {
+export function OrderConfirmedCard({ storeName, totalCents, savingsCents, budget, when, testID }: OrderConfirmedCardProps) {
   const t = useTheme();
   const c = t.colors;
   const on = { color: c.heroText };
@@ -34,7 +36,7 @@ export function OrderConfirmedCard({ storeName, totalCents, savingsCents, remain
       accessible
       accessibilityLabel={`Commande validée chez ${storeName}. ${
         savingsCents > 0 ? `${formatPriceForA11y(savingsCents)} économisés. ` : ''
-      }${formatPriceForA11y(totalCents)} ajoutés à ton budget.`}
+      }${formatPriceForA11y(totalCents)} ajoutés à ton budget.${budget ? ` ${orderBudgetSentence(budget, formatPriceForA11y)}` : ''}`}
       style={[styles.card, { backgroundColor: c.hero, borderRadius: t.radius.xl, padding: t.spacing.xl, gap: t.spacing.md }]}
     >
       <CircleDecor tone="hero" placement="topRight" scale={0.5} />
@@ -57,7 +59,7 @@ export function OrderConfirmedCard({ storeName, totalCents, savingsCents, remain
       ) : null}
       <Text variant="footnote" style={soft}>
         {formatPrice(totalCents)} chez {storeName}, ajoutés à ton suivi du budget.
-        {remainingCents != null ? ` Il te reste ${formatPrice(remainingCents)} cette semaine.` : ''}
+        {budget ? ` ${orderBudgetSentence(budget)}` : ''}
       </Text>
     </View>
   );

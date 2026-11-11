@@ -5,13 +5,16 @@
  *  - `plans: Record<weekStart, MealPlan>` (semaine en cours + suivante, l'historique
  *    récent est conservé 4 semaines) ;
  *  - `status: 'idle' | 'generating' | 'error'`, `generatingWeekStart`, `error` ;
+ *  - `generatingWeeks: Record<weekStart, true>` : générations en cours, PAR
+ *    semaine (deux semaines peuvent se générer en même temps) ;
  *  - `lastDurationMs`, `lastSource` ('remote' | 'local' | 'fallback') ;
  *  - `recentRecipeIds` (variété d'une semaine à l'autre).
  * Actions (semaine par défaut : `weekStore.activeWeekStart` ; les actions sur un
  * repas retrouvent sa semaine toutes seules) :
  *  - `generate(weekStart?, { keepLocked = true })` → Promise<PlanActionResult> :
  *    respecte l'offre (3 repas en gratuit), les allergies (revérifiées côté
- *    client), conserve les repas verrouillés, puis RÉGÉNÈRE LA LISTE ;
+ *    client), conserve les repas verrouillés et ceux des jours passés, ne
+ *    planifie rien avant aujourd'hui, puis RÉGÉNÈRE LA LISTE ;
  *  - `swapMeal(mealId, recipeId)` → PlanActionResult (refusé si le plat n'est pas sûr) ;
  *  - `getAlternatives(mealId, count = 6)` → Recipe[] (sûres, du bon type) ;
  *  - `toggleLock(mealId)`, `setServings(mealId, n)`, `removeMeal(mealId)` ;
@@ -75,6 +78,8 @@ export interface PlanState {
   plans: Record<string, MealPlan>;
   status: PlanStatus;
   generatingWeekStart: string | null;
+  /** Semaines en cours de génération (l'écran lit SA semaine, pas l'état global). */
+  generatingWeeks: Record<string, true>;
   error: string | null;
   lastDurationMs: number | null;
   lastSource: MealPlanResult['source'] | null;
@@ -166,6 +171,14 @@ export const usePlanStore = create<PlanState>()(
         if (next && next !== found.plan) commit(next);
       };
 
+      /** Fin de la génération de `ws` : les autres semaines en cours restent signalées. */
+      const finishGenerating = (ws: string) => {
+        const generatingWeeks = { ...get().generatingWeeks };
+        delete generatingWeeks[ws];
+        const others = Object.keys(generatingWeeks);
+        return { generatingWeeks, generatingWeekStart: others[0] ?? null, stillGenerating: others.length > 0 };
+      };
+
       const recentContext = () => ({
         recentRecipeIds: get().recentRecipeIds,
         pantryIngredientIds: pantryIngredientIds(usePantryStore.getState().items),
@@ -176,6 +189,7 @@ export const usePlanStore = create<PlanState>()(
         plans: {},
         status: 'idle',
         generatingWeekStart: null,
+        generatingWeeks: {},
         error: null,
         lastDurationMs: null,
         lastSource: null,
@@ -191,25 +205,34 @@ export const usePlanStore = create<PlanState>()(
             if (!profile) {
               return { ok: false, reason: 'no_profile', message: 'Crée d’abord ton profil pour recevoir des menus.' };
             }
-            set({ status: 'generating', generatingWeekStart: ws, error: null });
+            set({ status: 'generating', generatingWeekStart: ws, generatingWeeks: { ...get().generatingWeeks, [ws]: true }, error: null });
             try {
               // Le serveur lit le profil en base : on pousse d'abord les changements en attente.
               await flushSync();
               const n = (get().generationCount[ws] ?? 0) + 1;
               const existing = get().plans[ws] ?? null;
               const entitlement = currentEntitlement();
+              // Rien n'est planifié sur un jour passé ; les repas déjà passés restent en place
+              // (même sans `keepLocked`, qui ne libère que les verrous des jours à venir).
+              const today = useWeekStore.getState().today;
+              const kept =
+                opts.keepLocked === false && existing
+                  ? { ...existing, meals: existing.meals.filter((m) => m.date < today) }
+                  : existing;
               const result = await getMealPlanner().requestMealPlan({
                 profile,
                 weekStart: ws,
                 entitlement,
-                existing: opts.keepLocked === false ? null : existing,
+                existing: kept,
                 ...recentContext(),
                 seed: `${profile.id}:${ws}:${n}`,
+                fromDate: today,
               });
               const recipeIds = result.plan.meals.map((m) => m.recipeId);
+              const { stillGenerating, ...done } = finishGenerating(ws);
               set({
-                status: 'idle',
-                generatingWeekStart: null,
+                ...done,
+                status: stillGenerating ? 'generating' : 'idle',
                 lastDurationMs: result.durationMs,
                 lastSource: result.source,
                 generationCount: { ...get().generationCount, [ws]: n },
@@ -228,7 +251,8 @@ export const usePlanStore = create<PlanState>()(
               return { ok: true, plan: result.plan };
             } catch (err) {
               const message = 'On n’a pas réussi à préparer ta semaine. Réessaie dans un instant.';
-              set({ status: 'error', generatingWeekStart: null, error: message });
+              const { stillGenerating, ...done } = finishGenerating(ws);
+              set({ ...done, status: stillGenerating ? 'generating' : 'error', error: message });
               captureError(err, { where: 'generate', weekStart: ws });
               track('plan_generation_failed', { error: errorMessage(err).slice(0, 120) });
               return { ok: false, reason: 'error', message };
@@ -338,6 +362,7 @@ export const usePlanStore = create<PlanState>()(
             plans: {},
             status: 'idle',
             generatingWeekStart: null,
+            generatingWeeks: {},
             error: null,
             lastDurationMs: null,
             lastSource: null,

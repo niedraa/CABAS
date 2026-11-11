@@ -1,7 +1,8 @@
 /**
  * Tout est coché : moment joyeux (célébration si on vient de finir), puis
- * les gestes utiles d'après-courses : ranger le surplus au placard, vider
- * les articles cochés.
+ * les gestes utiles d'après-courses : ranger le surplus au placard (une seule
+ * fois ; « rien à ranger » si aucun paquet n'est entamé), vider les articles
+ * cochés.
  */
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -12,14 +13,14 @@ import { BasketMark, Celebration, CircleDecor } from '@/components/brand';
 import { Button, Text } from '@/components/ui';
 import { boxShadow, useTheme } from '@/theme';
 
-import { countFr } from './listView';
+import { countFr, type LeftoversState } from './listView';
 
 export interface ListDoneCardProps {
   total: number;
   /** > 0 : on vient de tout cocher, la célébration se joue (valeur = clé de rejeu). */
   celebrateKey: number;
-  /** Surplus déjà rangé au placard. */
-  stored: boolean;
+  /** Surplus : à ranger, rangé au placard, ou rien à ranger. */
+  leftovers: LeftoversState;
   onStoreLeftovers: () => void;
   onOpenPantry: () => void;
   onClearChecked: () => void;
@@ -28,9 +29,10 @@ export interface ListDoneCardProps {
 
 const SIZE = 150;
 
-export function ListDoneCard({ total, celebrateKey, stored, onStoreLeftovers, onOpenPantry, onClearChecked, testID }: ListDoneCardProps) {
+export function ListDoneCard({ total, celebrateKey, leftovers, onStoreLeftovers, onOpenPantry, onClearChecked, testID }: ListDoneCardProps) {
   const t = useTheme();
   const c = t.colors;
+  const stored = leftovers === 'stored';
   const core = Math.round(SIZE * 0.46);
   return (
     <View
@@ -68,16 +70,18 @@ export function ListDoneCard({ total, celebrateKey, stored, onStoreLeftovers, on
         <Text variant="callout" color="textSecondary" align="center" style={styles.body}>
           {stored
             ? 'Le surplus est rangé : Cabas te proposera de quoi le cuisiner.'
-            : `${countFr(total, 'article')}, bravo. Range le surplus au placard : rien ne se perd.`}
+            : leftovers === 'none'
+              ? `${countFr(total, 'article')}, bravo. Pas de paquet entamé : tout part en cuisine.`
+              : `${countFr(total, 'article')}, bravo. Range le surplus au placard : rien ne se perd.`}
         </Text>
       </View>
       <View style={{ gap: t.spacing.sm }}>
-        {stored ? (
+        {leftovers !== 'todo' ? (
           <Animated.View entering={FadeIn.duration(t.motion.duration.base)} style={{ gap: t.spacing.sm }}>
             <View style={[styles.storedRow, { gap: t.spacing.xs }]} accessibilityLiveRegion="polite">
-              <CircleCheck size={t.iconSize.sm} color={c.success} strokeWidth={2.4} />
-              <Text variant="subhead" color="success">
-                Surplus rangé au placard
+              <CircleCheck size={t.iconSize.sm} color={stored ? c.success : c.textSecondary} strokeWidth={2.4} />
+              <Text variant="subhead" color={stored ? 'success' : 'textSecondary'}>
+                {stored ? 'Surplus rangé au placard' : 'Rien à ranger cette semaine'}
               </Text>
             </View>
             <Button

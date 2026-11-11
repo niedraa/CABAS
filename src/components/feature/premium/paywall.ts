@@ -6,6 +6,7 @@
  */
 import type { Feature, SubscriptionState } from '@/core';
 import {
+  daysBetween,
   FREE_TIER,
   formatDayLabel,
   formatPrice,
@@ -47,15 +48,22 @@ const FEATURE_HEADLINES: Record<Feature, string> = {
   pantry: 'Rien ne se perd',
 };
 
-/** Titre et sous-titre du héros (adaptés à la fonctionnalité d'origine). */
-export function paywallHeadline(feature: Feature | null): { title: string; subtitle: string } {
-  const trial = `${PREMIUM_PRICING.trialDays} jours pour essayer, sans engagement.`;
+/**
+ * Titre et sous-titre du héros (adaptés à la fonctionnalité d'origine).
+ * `trialDays` : jours d'essai réellement offerts (voir `offeredTrialDays`) ;
+ * sans essai (déjà utilisé, absent du store), aucune promesse d'essai.
+ */
+export function paywallHeadline(feature: Feature | null, trialDays: number | null): { title: string; subtitle: string } {
+  const promise =
+    trialDays && trialDays > 0
+      ? `${trialDays} jour${trialDays > 1 ? 's' : ''} pour essayer, sans engagement.`
+      : 'Résiliable à tout moment.';
   if (feature && FEATURE_HEADLINES[feature]) {
-    return { title: FEATURE_HEADLINES[feature], subtitle: `Avec Premium, tout Cabas est à toi. ${trial}` };
+    return { title: FEATURE_HEADLINES[feature], subtitle: `Avec Premium, tout Cabas est à toi. ${promise}` };
   }
   return {
     title: 'Tes courses, sans limite',
-    subtitle: `Toute ta semaine planifiée, le panier le moins cher et ta commande prête en un clic. ${trial}`,
+    subtitle: `Toute ta semaine planifiée, le panier le moins cher et ta commande prête en un clic. ${promise}`,
   };
 }
 
@@ -68,7 +76,7 @@ export interface PlanOptionView {
   price: string;
   /** « soit 3,33 €/mois » (annuel) ou phrase courte (mensuel). */
   detail: string;
-  /** « −33 % » (annuel uniquement). */
+  /** « −33 % » (annuel uniquement, si la comparaison avec le mensuel est possible). */
   badge: string | null;
   /** « 7 jours d'essai gratuit », ou null si l'essai a déjà servi. */
   trial: string | null;
@@ -79,8 +87,29 @@ export interface PlanOptionView {
 
 const PERIOD_SUFFIX: Record<PackageId, string> = { monthly: '/mois', annual: '/an' };
 
+/** Vrai si le store propose au moins une offre achetable. */
+export function hasStoreOffers(offerings: NormalizedOfferings | null): boolean {
+  return !!offerings && (!!offerings.annual || !!offerings.monthly);
+}
+
+/**
+ * Économie de l'annuel face à 12 mensualités, en % arrondi : calculée sur les
+ * prix du store quand les deux offres sont proposées ; grille tarifaire tant
+ * qu'aucune offre n'est chargée (ce sont alors ses prix qui s'affichent) ;
+ * null si la comparaison est impossible (une seule offre, prix inconnu).
+ */
+export function annualSavingsPercent(offerings: NormalizedOfferings | null): number | null {
+  if (!hasStoreOffers(offerings)) return yearlySavingsPercent();
+  const annual = offerings?.annual?.priceCents;
+  const monthly = offerings?.monthly?.priceCents;
+  if (annual == null || monthly == null || monthly <= 0) return null;
+  const twelveMonths = monthly * 12;
+  const percent = Math.round(((twelveMonths - annual) / twelveMonths) * 100);
+  return percent > 0 ? percent : null;
+}
+
 /** Vue d'une offre à partir du package normalisé (repli : grille PREMIUM_PRICING). */
-export function planOptionView(id: PackageId, pkg: NormalizedPackage | null): PlanOptionView {
+export function planOptionView(id: PackageId, pkg: NormalizedPackage | null, savingsPercent: number | null = null): PlanOptionView {
   const fallbackCents = id === 'annual' ? PREMIUM_PRICING.yearlyCents : PREMIUM_PRICING.monthlyCents;
   const priceString = pkg?.priceString ?? formatPrice(fallbackCents);
   const perMonth =
@@ -90,16 +119,27 @@ export function planOptionView(id: PackageId, pkg: NormalizedPackage | null): Pl
     title: id === 'annual' ? 'Annuel' : 'Mensuel',
     price: `${priceString}${PERIOD_SUFFIX[id]}`,
     detail: perMonth ? `soit ${perMonth}/mois` : 'Sans engagement',
-    badge: id === 'annual' ? `−${yearlySavingsPercent()} %` : null,
+    badge: id === 'annual' && savingsPercent ? `−${savingsPercent} %` : null,
     trial: pkg ? (pkg.trial?.label ?? null) : null,
     trialDays: pkg?.trial?.days ?? null,
     fromStore: !!pkg,
   };
 }
 
-/** Les deux offres, annuelle d'abord (la plus avantageuse). */
+/**
+ * Offres affichées, annuelle d'abord (la plus avantageuse). Une fois les offres
+ * du store chargées, uniquement celles qu'il propose ; sans aucune offre
+ * (chargement, échec), les deux de la grille tarifaire, affichées désactivées.
+ */
 export function planOptions(offerings: NormalizedOfferings | null): PlanOptionView[] {
-  return [planOptionView('annual', offerings?.annual ?? null), planOptionView('monthly', offerings?.monthly ?? null)];
+  const savings = annualSavingsPercent(offerings);
+  if (!offerings || !hasStoreOffers(offerings)) {
+    return [planOptionView('annual', null, savings), planOptionView('monthly', null)];
+  }
+  const out: PlanOptionView[] = [];
+  if (offerings.annual) out.push(planOptionView('annual', offerings.annual, savings));
+  if (offerings.monthly) out.push(planOptionView('monthly', offerings.monthly));
+  return out;
 }
 
 /**
@@ -109,6 +149,15 @@ export function planOptions(offerings: NormalizedOfferings | null): PlanOptionVi
 export function offeredTrialDays(offerings: NormalizedOfferings | null): number | null {
   if (!offerings) return PREMIUM_PRICING.trialDays;
   return offerings.annual?.trial?.days ?? offerings.monthly?.trial?.days ?? null;
+}
+
+/**
+ * Durée totale de l'essai en cours, en jours : celle que le store annonce pour
+ * le produit souscrit si elle est connue, sinon la durée standard.
+ */
+export function trialLengthDays(offerings: NormalizedOfferings | null, productId: string | null | undefined): number {
+  const own = [offerings?.annual, offerings?.monthly].find((p) => !!p && !!productId && p.productId === productId);
+  return own?.trial?.days ?? PREMIUM_PRICING.trialDays;
 }
 
 /** Offre présélectionnée : l'annuelle si elle existe, sinon la mensuelle. */
@@ -146,7 +195,10 @@ export interface SubscriptionStatusView {
   /** « Mensuel » / « Annuel » / null. */
   planName: string | null;
   willRenew: boolean;
-  /** Jours restants (arrondis au supérieur) avant la fin, ou null. */
+  /**
+   * Jours civils (locaux) restants avant le jour de fin : 0 = se termine
+   * aujourd'hui, 1 = demain… ou null.
+   */
   daysLeft: number | null;
 }
 
@@ -188,7 +240,10 @@ export function subscriptionStatus(state: SubscriptionState, nowMs: number = Dat
     };
   }
   const end = formatEndDate(state.expiresAt);
-  const daysLeft = Number.isFinite(exp) ? Math.max(0, Math.ceil((exp - nowMs) / 86_400_000)) : null;
+  // Jours civils et non tranches de 24 h : un essai qui finit demain à 20 h
+  // « se termine demain », même s'il reste moins de 24 h.
+  const endDay = localDayOf(state.expiresAt);
+  const daysLeft = endDay ? Math.max(0, daysBetween(todayISO(new Date(nowMs)), endDay)) : null;
   if (state.isTrial) {
     return {
       kind: 'trial',
@@ -209,6 +264,13 @@ export function subscriptionStatus(state: SubscriptionState, nowMs: number = Dat
     willRenew: state.willRenew,
     daysLeft,
   };
+}
+
+/** Compte à rebours de l'essai, en jours civils (`daysLeft` : 0 = se termine aujourd'hui). */
+export function trialCountdownLabel(daysLeft: number): string {
+  if (daysLeft > 1) return `Encore ${daysLeft} jours pour tout essayer`;
+  if (daysLeft === 1) return 'Ton essai se termine demain';
+  return 'Ton essai se termine aujourd’hui';
 }
 
 /** Phrase sur la suite de l'essai / de l'abonnement (écran Abonnement). */

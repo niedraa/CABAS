@@ -32,6 +32,7 @@ import { Clock, Ellipsis, Lock, LockOpen, Shuffle, Sparkles, Users } from 'lucid
 import { Badge, IconButton, PressableScale, RecipeThumb, Text } from '@/components/ui';
 import type { PlannedMeal, Recipe } from '@/core';
 import { MEAL_TYPE_LABELS, recipeTotalTime } from '@/core';
+import { countLabel } from '@/lib/a11y';
 import { haptics } from '@/lib/haptics';
 import { boxShadow, useTheme } from '@/theme';
 
@@ -187,7 +188,7 @@ export function MealCard({
                   onLongPress={onOpenMenu}
                   delayLongPress={380}
                   scaleTo={0.98}
-                  accessibilityLabel={`${typeLabel} : ${recipe.title}, ${total} minutes, ${meal.servings} portions${locked ? ', verrouillé' : ''}`}
+                  accessibilityLabel={`${typeLabel} : ${recipe.title}, ${countLabel(total, 'minute')}, ${countLabel(meal.servings, 'portion')}${locked ? ', verrouillé' : ''}`}
                   accessibilityHint="Ouvre la recette. Glisse vers la gauche pour remplacer le plat."
                   accessibilityActions={[
                     { name: 'activate', label: 'Ouvrir la recette' },
@@ -212,7 +213,7 @@ export function MealCard({
                     </Text>
                     <View style={styles.badges}>
                       <Badge size="sm" icon={Clock} label={`${total} min`} accessibilityLabel={`${total} minutes`} />
-                      <Badge size="sm" icon={Users} label={`${meal.servings} pers.`} accessibilityLabel={`${meal.servings} portions`} />
+                      <Badge size="sm" icon={Users} label={`${meal.servings} pers.`} accessibilityLabel={countLabel(meal.servings, 'portion')} />
                     </View>
                   </View>
                 </PressableScale>

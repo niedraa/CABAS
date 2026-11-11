@@ -15,6 +15,7 @@ import {
   draftHasProgress,
   ONBOARDING_STEPS,
   readResumeStep,
+  resumePaths,
   saveResumeStep,
   stepIndex,
   type OnboardingStepId,
@@ -144,7 +145,10 @@ export default function Bienvenue() {
               fullWidth
               onPress={() => {
                 startOnboarding();
-                router.push(resumeStep.path);
+                // Reprise : on empile chaque étape jusqu'à celle sauvegardée (pas seulement
+                // celle-ci) pour que « Étape précédente », le geste et le retour Android
+                // remontent étape par étape au lieu de revenir à la bienvenue.
+                for (const path of resumePaths(resumeStep.id)) router.push(path);
               }}
               testID="onboarding-resume"
             />

@@ -11,7 +11,7 @@ import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 import { Sparkles } from 'lucide-react-native';
 
 import { EmptyBasket } from '@/components/brand';
-import { AlternativeRow, alternativeReasons } from '@/components/feature/recipe';
+import { AlternativeRow, alternativeReasons, filterAlternatives } from '@/components/feature/recipe';
 import {
   Badge,
   EmptyState,
@@ -23,6 +23,7 @@ import {
   useToast,
 } from '@/components/ui';
 import { foldText, formatDayLabel, MEAL_TYPE_LABELS, recipeTotalTime } from '@/core';
+import { countLabel } from '@/lib/a11y';
 import { haptics } from '@/lib/haptics';
 import { useCatalog } from '@/services/catalog';
 import { useMeal, usePlanStore, useProfileStore } from '@/stores';
@@ -30,7 +31,6 @@ import { useTheme } from '@/theme';
 
 const IS_WEB = Platform.OS === 'web';
 const SUGGESTED = 6;
-const SEARCH_POOL = 40;
 
 export default function ReplaceMealScreen() {
   const t = useTheme();
@@ -45,14 +45,13 @@ export default function ReplaceMealScreen() {
 
   const meal = found?.meal ?? null;
   const current = meal ? catalog.recipesById[meal.recipeId] : undefined;
-  // Alternatives calculées une fois à l'ouverture (stables pendant la saisie).
-  const [pool] = useState(() => (mealId ? usePlanStore.getState().getAlternatives(mealId, SEARCH_POOL) : []));
+  // TOUTES les alternatives sûres du bon type, triées par score, calculées une fois à
+  // l'ouverture (stables pendant la saisie) : la recherche doit trouver n'importe quel
+  // plat possible, pas seulement les mieux classés.
+  const [pool] = useState(() => (mealId ? usePlanStore.getState().getAlternatives(mealId, Number.MAX_SAFE_INTEGER) : []));
 
   const q = foldText(query.trim());
-  const list = useMemo(() => {
-    if (!q) return pool.slice(0, SUGGESTED);
-    return pool.filter((r) => foldText(r.title).includes(q) || r.tags.some((tag) => foldText(tag).includes(q)));
-  }, [pool, q]);
+  const list = useMemo(() => filterAlternatives(pool, q, SUGGESTED), [pool, q]);
 
   const leaving = useRef(false);
   const leave = () => (router.canGoBack() ? router.back() : router.replace('/' as Href));
@@ -83,7 +82,7 @@ export default function ReplaceMealScreen() {
   };
 
   const title = 'Remplacer le plat';
-  const subtitle = meal ? `${formatDayLabel(meal.date, 'weekday')} · ${MEAL_TYPE_LABELS[meal.type]} · ${meal.servings} portions` : undefined;
+  const subtitle = meal ? `${formatDayLabel(meal.date, 'weekday')} · ${MEAL_TYPE_LABELS[meal.type]} · ${countLabel(meal.servings, 'portion')}` : undefined;
   const content =
     !meal || !current ? (
       <EmptyState

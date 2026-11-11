@@ -1,4 +1,4 @@
-import { isRecipeSafe } from '@/core';
+import { isRecipeSafe, weekSlots } from '@/core';
 import { getCatalogSnapshot } from '@/services/catalog';
 import {
   getList,
@@ -25,6 +25,12 @@ jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn() }));
 jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn() }));
 jest.mock('react-native-purchases', () => ({ __esModule: true, default: {}, PURCHASES_ERROR_CODE: {} }));
 
+/** Créneaux du profil encore à venir cette semaine (rien n'est planifié sur un jour passé). */
+function upcomingSlots(): number {
+  const { today, currentWeekStart } = useWeekStore.getState();
+  return weekSlots(useProfileStore.getState().profile!, currentWeekStart).filter((s) => s.date >= today).length;
+}
+
 describe('seedDemoState', () => {
   it('parseSeedVariant', () => {
     expect(parseSeedVariant('premium')).toBe('premium');
@@ -49,7 +55,8 @@ describe('seedDemoState', () => {
     expect(useSubscriptionStore.getState().state.isTrial).toBe(true);
 
     const plan = usePlanStore.getState().plans[ws];
-    expect(plan.meals).toHaveLength(9);
+    expect(plan.meals).toHaveLength(upcomingSlots()); // 9 un lundi
+    expect(plan.meals.every((m) => m.date >= useWeekStore.getState().today)).toBe(true);
     const cat = getCatalogSnapshot();
     for (const m of plan.meals) expect(isRecipeSafe(cat.recipesById[m.recipeId], profile, cat.ingredientsById)).toBe(true);
 
@@ -57,14 +64,14 @@ describe('seedDemoState', () => {
     expect(usePantryStore.getState().items.length).toBeGreaterThanOrEqual(3);
     expect(useBudgetStore.getState().entries).toHaveLength(3);
     expect(useBasketStore.getState().plan?.mode).toBe('cheapest');
-    expect(summary).toMatchObject({ variant: 'premium', premium: true, meals: 9 });
+    expect(summary).toMatchObject({ variant: 'premium', premium: true, meals: upcomingSlots() });
     expect(summary.listItems).toBeGreaterThan(0);
     expect(summary.durationMs).toBeLessThan(10_000);
   });
 
   it('onboarded : offre gratuite (3 repas, panier un seul magasin)', async () => {
     const summary = await seedDemoState('onboarded');
-    expect(summary).toMatchObject({ premium: false, meals: 3 });
+    expect(summary).toMatchObject({ premium: false, meals: Math.min(3, upcomingSlots()) });
     expect(useBasketStore.getState().plan?.mode).toBe('single_store');
   });
 

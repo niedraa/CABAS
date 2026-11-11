@@ -44,9 +44,31 @@ export function storageKey(name: string): string {
   return `${STORAGE_PREFIX}${name}`;
 }
 
-/** Adaptateur zustand `persist` sur AsyncStorage (JSON). */
+/**
+ * Adaptateur zustand `persist` sur AsyncStorage (JSON).
+ *
+ * La lecture ne rejette jamais : si la valeur est illisible (JSON corrompu,
+ * écriture interrompue) ou si AsyncStorage échoue deux fois de suite, le store
+ * démarre sur son état initial. Sinon `persist` ne marquerait jamais le store
+ * comme relu et l'app resterait bloquée sur l'écran de lancement.
+ */
 export function persistStorage<S>(): PersistStorage<S> {
-  return createJSONStorage<S>(() => AsyncStorage) as PersistStorage<S>;
+  const base = createJSONStorage<S>(() => AsyncStorage) as PersistStorage<S>;
+  return {
+    ...base,
+    getItem: async (name) => {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          return await base.getItem(name);
+        } catch (err) {
+          // JSON illisible : inutile de relire.
+          if (err instanceof SyntaxError) break;
+        }
+      }
+      if (__DEV__) console.warn(`Stockage : « ${name} » illisible, état initial utilisé.`);
+      return null;
+    },
+  };
 }
 
 /** Lit une valeur JSON ; `fallback` si absente, illisible ou stockage indisponible. */

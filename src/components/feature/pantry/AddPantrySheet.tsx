@@ -166,6 +166,7 @@ function AddForm({ ingredients, today, onAdd }: { ingredients: readonly Ingredie
         size="lg"
         fullWidth
         leftIcon={Plus}
+        // Quantité NaN (champ vide ou invalide) : bouton inactif.
         disabled={!(quantity > 0)}
         onPress={() => onAdd({ label: choice.label, quantity, unit: choice.unit, ingredientId: choice.ingredientId, expiresAt })}
         testID="pantry-add-submit"

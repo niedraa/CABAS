@@ -12,6 +12,7 @@ import {
   cheapestGainCents,
   comparedStoreIds,
   comparisonRows,
+  emptyBasketReason,
   feesLabel,
   feesValue,
   lineForItem,
@@ -198,6 +199,22 @@ describe('missingRows', () => {
   });
 });
 
+describe('emptyBasketReason', () => {
+  it('distingue articles hors catalogue, pas de livraison et magasins qui ne les vendent pas', () => {
+    // Articles saisis à la main (sans ingrédient) : aucune offre nulle part.
+    const manual = compareList([item('m1', undefined, 'Lait', 1), item('m2', undefined, 'Lessive', 1)], index, NOW);
+    expect(emptyBasketReason(manual, stores, { channel: 'drive', storeIds: ['leclerc'] })).toBe('not_in_catalog');
+    // Même en livraison chez un magasin qui livre : pas « ne livre pas ».
+    expect(emptyBasketReason(manual, stores, { channel: 'delivery', storeIds: ['carrefour'] })).toBe('not_in_catalog');
+    // Leclerc et Lidl ne livrent pas.
+    expect(emptyBasketReason(comparisons, stores, { channel: 'delivery', storeIds: ['leclerc', 'lidl'] })).toBe('no_delivery');
+    expect(emptyBasketReason(comparisons, stores, { channel: 'delivery', storeIds: ['leclerc', 'carrefour'] })).toBe('not_sold');
+    expect(emptyBasketReason(comparisons, stores, { channel: 'drive', storeIds: ['lidl'] })).toBe('not_sold');
+    // Aucun magasin connu : tous les magasins comptent (certains livrent).
+    expect(emptyBasketReason(comparisons, stores, { channel: 'delivery', storeIds: [] })).toBe('not_sold');
+  });
+});
+
 describe('cheapestGainCents', () => {
   it('chiffre le gain du panier multi-magasins par rapport au panier affiché', () => {
     const gain = cheapestGainCents(comparisons, single, stores, { channel: 'drive', storeIds: MY_STORES });
@@ -368,6 +385,16 @@ describe('ComparisonRow', () => {
     expect(screen.getByLabelText(new RegExp(`^${row.label}, meilleur prix .+ chez ${storeShortName(storesById[row.bestStoreId])}`))).toBeTruthy();
     await fireEvent.press(screen.getByTestId('cr'));
     expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
+  it('accorde « enseigne » au singulier quand une seule la vend', async () => {
+    const row = { ...comparisonRows(comparisons, single)[0], stores: 1 };
+    const view = await render(<ComparisonRow row={row} storesById={storesById} totalStores={5} onPress={jest.fn()} testID="cr" />);
+    expect(screen.getByText(/ · 1 enseigne$/)).toBeTruthy();
+    expect(screen.getByLabelText(/, 1 enseigne comparée/)).toBeTruthy();
+    await view.rerender(<ComparisonRow row={{ ...row, stores: 3 }} storesById={storesById} totalStores={5} onPress={jest.fn()} testID="cr" />);
+    expect(screen.getByText(/ · 3 enseignes$/)).toBeTruthy();
+    expect(screen.getByLabelText(/, 3 enseignes comparées/)).toBeTruthy();
   });
 
   it('suggère la MDD moins chère quand une marque a été choisie', async () => {

@@ -134,7 +134,7 @@ export function budgetMessage(s: BudgetStatusLike): BudgetMessage {
     return {
       tone: 'accent',
       title: `${formatPrice(s.spentCents - s.budgetCents)} au-dessus`,
-      body: 'Ça arrive ! Cabas visera des menus un peu plus légers la semaine prochaine.',
+      body: 'Ça arrive ! Tu peux ajuster ton budget dans ton profil.',
     };
   }
   if (s.ratio >= 0.85) {
@@ -168,6 +168,18 @@ export function parseAmountInput(input: string): AmountParse {
   if (cents <= 0) return { ok: false, message: 'Le montant doit être supérieur à 0 €.' };
   if (cents > MAX_MANUAL_SPENDING_CENTS) return { ok: false, message: `Au-delà de ${formatPrice(MAX_MANUAL_SPENDING_CENTS, { compact: true })}, vérifie le montant.` };
   return { ok: true, cents };
+}
+
+/**
+ * Message du toast après l'ajout : la dépense compte dans la semaine en cours,
+ * ou dans une semaine passée si le jour choisi tombe avant lundi.
+ */
+export function spendingAddedMessage(totalCents: number, date: string, currentWeekStart: string): string {
+  const week = startOfWeek(date);
+  if (week === startOfWeek(currentWeekStart)) return `${formatPrice(totalCents)} comptés dans ta semaine.`;
+  const range = formatWeekRange(week);
+  // « nov. » porte déjà le point final ; « mai », « juin »… non.
+  return `${formatPrice(totalCents)} ajoutés à la semaine du ${range}${range.endsWith('.') ? '' : '.'}`;
 }
 
 /** Jours proposés pour une dépense (aujourd'hui en premier). */

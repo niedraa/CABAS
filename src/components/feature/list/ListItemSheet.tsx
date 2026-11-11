@@ -52,6 +52,7 @@ function Editor({ item, onSave, onRemove }: { item: ShoppingListItem; onSave: (p
   const [unit, setUnit] = useState<BaseUnit>(item.unit);
   const [aisle, setAisle] = useState<Aisle>(item.aisle);
   const manual = item.source === 'manual';
+  // Quantité NaN (champ vide ou invalide) : rien n'est enregistré.
   const valid = label.trim().length > 0 && quantity > 0;
 
   const save = () => {
@@ -83,7 +84,7 @@ function Editor({ item, onSave, onRemove }: { item: ShoppingListItem; onSave: (p
           units={manual ? MANUAL_UNITS : undefined}
           onUnitChange={(u) => {
             setUnit(u);
-            if (u === 'piece') setQuantity(Math.max(1, Math.round(quantity)));
+            if (u === 'piece') setQuantity(Number.isFinite(quantity) ? Math.max(1, Math.round(quantity)) : 1);
           }}
           testID="list-item-quantity"
         />
@@ -91,7 +92,7 @@ function Editor({ item, onSave, onRemove }: { item: ShoppingListItem; onSave: (p
           <View style={[styles.hint, { gap: t.spacing.xs }]}>
             <Info size={t.iconSize.xs} color={c.textTertiary} />
             <Text variant="footnote" color="textSecondary" style={styles.flex}>
-              Article de ton menu : Cabas le recalcule si tes repas changent.
+              Article de ton menu : Cabas recalcule la quantité si tes repas ou ton placard changent.
             </Text>
           </View>
         ) : null}

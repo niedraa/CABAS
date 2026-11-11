@@ -1,4 +1,5 @@
 import React from 'react';
+import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { fireEvent, render, screen } from '@testing-library/react-native';
 
@@ -18,6 +19,8 @@ import {
   countFr,
   itemA11yLabel,
   itemView,
+  leftoversState,
+  leftoversToast,
   listPhase,
   orderSection,
   pantryHintFor,
@@ -27,6 +30,7 @@ import {
   quickAddPreview,
   recipeSources,
   remainingHeadline,
+  reviewCheckedLabel,
   sectionProgress,
   shareTitle,
 } from '../listView';
@@ -174,6 +178,27 @@ describe('ordre et avancement', () => {
     expect(countFr(4, 'reste')).toBe('4 restes');
     expect(shareTitle('9 – 15 nov.')).toBe('Ma liste Cabas · 9 – 15 nov.');
   });
+
+  it('accorde les libellés au singulier', () => {
+    expect(reviewCheckedLabel(1)).toBe('Revoir l’article coché');
+    expect(reviewCheckedLabel(3)).toBe('Revoir les 3 articles cochés');
+    expect(leftoversToast(1)).toEqual({ title: '1 reste au placard', message: 'Cabas te proposera de quoi le cuisiner.' });
+    expect(leftoversToast(3)).toEqual({ title: '3 restes au placard', message: 'Cabas te proposera de quoi les cuisiner.' });
+    expect(leftoversToast(0).title).toBe('Rien à ranger');
+  });
+
+  it('suit le rangement du surplus, même après une décoche ou un redémarrage', () => {
+    const x = item({ id: 'x', checked: true });
+    const y = item({ id: 'y', checked: true });
+    expect(leftoversState([x, y], undefined)).toBe('todo');
+    // Rangé (au moins un reste) : décocher puis recocher ne repropose pas de ranger.
+    expect(leftoversState([x, y], { itemIds: ['x', 'y'], stored: 1 })).toBe('stored');
+    expect(leftoversState([x, { ...y, checked: false }], { itemIds: ['x', 'y'], stored: 1 })).toBe('stored');
+    // Rien n'avait de surplus : état distinct (pas « surplus rangé »).
+    expect(leftoversState([x, y], { itemIds: ['x', 'y'], stored: 0 })).toBe('none');
+    // Un nouvel article coché, pas encore rangé : on peut ranger son surplus.
+    expect(leftoversState([x, y, item({ id: 'z', checked: true })], { itemIds: ['x', 'y'], stored: 1 })).toBe('todo');
+  });
 });
 
 // ─── Glisser pour retirer ────────────────────────────────────────────────────
@@ -241,6 +266,19 @@ describe('ListItemRow', () => {
     await rerender(<ListItemRow item={done} view={itemView(done, recipesById)} testID="row" {...h} />);
     expect(screen.getByRole('checkbox', { name: /^Ail/ })).toBeChecked();
   });
+
+  it('reste lisible une fois coché (aucun voile d’opacité, contraste AA)', async () => {
+    const done = item({ checked: true });
+    await render(<ListItemRow item={done} view={itemView(done, recipesById)} testID="row" {...handlers()} />, { wrapper });
+    for (const text of ['Ail', '5 g', 'Prends 1 × 250 g · Poulet teriyaki']) {
+      let node: ReturnType<typeof screen.getByText> | null = screen.getByText(text);
+      while (node) {
+        const opacity = StyleSheet.flatten(node.props.style)?.opacity;
+        expect(opacity ?? 1).toBe(1);
+        node = node.parent;
+      }
+    }
+  });
 });
 
 describe('AisleSection', () => {
@@ -290,17 +328,26 @@ describe('ListProgressCard & ListDoneCard', () => {
 
   it('propose de ranger le surplus, puis d’aller au placard', async () => {
     const h = { onStoreLeftovers: jest.fn(), onOpenPantry: jest.fn(), onClearChecked: jest.fn() };
-    const { rerender } = await render(<ListDoneCard total={12} celebrateKey={0} stored={false} testID="d" {...h} />);
+    const { rerender } = await render(<ListDoneCard total={12} celebrateKey={0} leftovers="todo" testID="d" {...h} />);
     expect(screen.getByText('Tout est dans le cabas !')).toBeTruthy();
     await fireEvent.press(screen.getByRole('button', { name: 'Ranger le reste au placard' }));
     await fireEvent.press(screen.getByRole('button', { name: 'Vider les articles cochés' }));
     expect(h.onStoreLeftovers).toHaveBeenCalledTimes(1);
     expect(h.onClearChecked).toHaveBeenCalledTimes(1);
-    await rerender(<ListDoneCard total={12} celebrateKey={1} stored testID="d" {...h} />);
+    await rerender(<ListDoneCard total={12} celebrateKey={1} leftovers="stored" testID="d" {...h} />);
     expect(screen.getByText('Surplus rangé au placard')).toBeTruthy();
     expect(screen.getByRole('image', { name: 'Bravo, tout est coché' })).toBeTruthy();
     await fireEvent.press(screen.getByRole('button', { name: 'Voir mon placard' }));
     expect(h.onOpenPantry).toHaveBeenCalledTimes(1);
+  });
+
+  it('rien à ranger : ne prétend pas avoir rangé de surplus', async () => {
+    const h = { onStoreLeftovers: jest.fn(), onOpenPantry: jest.fn(), onClearChecked: jest.fn() };
+    await render(<ListDoneCard total={1} celebrateKey={0} leftovers="none" testID="d" {...h} />);
+    expect(screen.getByText('Rien à ranger cette semaine')).toBeTruthy();
+    expect(screen.queryByText('Surplus rangé au placard')).toBeNull();
+    expect(screen.queryByText(/Le surplus est rangé/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Ranger le reste au placard' })).toBeNull();
   });
 });
 
@@ -317,11 +364,31 @@ describe('ListItemSheet', () => {
     expect(onSave).toHaveBeenCalledWith({ label: 'Farine T65', quantity: 1.5, aisle: 'epicerie_salee' });
   });
 
+  it('n’enregistre pas une quantité invalide ou vide', async () => {
+    const onSave = jest.fn();
+    const manual = createManualItem('farine', { id: 'm1', quantity: 500, unit: 'g' });
+    await render(<ListItemSheet visible item={manual} onClose={jest.fn()} onSave={onSave} onRemove={jest.fn()} />);
+    // « 1,5 » est valide en cours de frappe, « 1,5 kg » ne l'est plus.
+    await fireEvent.changeText(screen.getByTestId('list-item-quantity-input'), '1,5');
+    await fireEvent.changeText(screen.getByTestId('list-item-quantity-input'), '1,5 kg');
+    expect(screen.getByText('Indique un nombre, par exemple 250.')).toBeTruthy();
+    expect(screen.getByTestId('list-item-save')).toBeDisabled();
+    await fireEvent.press(screen.getByTestId('list-item-save'));
+    await fireEvent.changeText(screen.getByTestId('list-item-quantity-input'), '');
+    expect(screen.getByTestId('list-item-save')).toBeDisabled();
+    await fireEvent.press(screen.getByTestId('list-item-save'));
+    expect(onSave).not.toHaveBeenCalled();
+    // Passage aux pièces depuis un champ vide : on repart d'une pièce.
+    await fireEvent.press(screen.getByTestId('list-item-quantity-unit-piece'));
+    await fireEvent.press(screen.getByTestId('list-item-save'));
+    expect(onSave).toHaveBeenCalledWith({ quantity: 1, unit: 'piece' });
+  });
+
   it('retire l’article et rappelle d’où il vient', async () => {
     const onRemove = jest.fn();
     await render(<ListItemSheet visible item={item()} recipesById={recipesById} onClose={jest.fn()} onSave={jest.fn()} onRemove={onRemove} />);
     expect(screen.getByText('Pour Poulet teriyaki')).toBeTruthy();
-    expect(screen.getByText('Article de ton menu : Cabas le recalcule si tes repas changent.')).toBeTruthy();
+    expect(screen.getByText('Article de ton menu : Cabas recalcule la quantité si tes repas ou ton placard changent.')).toBeTruthy();
     await fireEvent.press(screen.getByTestId('list-item-remove'));
     expect(onRemove).toHaveBeenCalledTimes(1);
   });
@@ -352,6 +419,15 @@ describe('ListActionsSheet', () => {
     expect(props.onUncheckAll).toHaveBeenCalledTimes(1);
     expect(props.onClearChecked).toHaveBeenCalledTimes(1);
   });
+
+  it('prévient une fois la feuille refermée (le partage natif s’ouvre ensuite)', async () => {
+    const onDismissed = jest.fn();
+    const { rerender } = await render(<ListActionsSheet {...props} checkedCount={0} onDismissed={onDismissed} />);
+    expect(onDismissed).not.toHaveBeenCalled();
+    await rerender(<ListActionsSheet {...props} visible={false} checkedCount={0} onDismissed={onDismissed} />);
+    expect(screen.queryByTestId('list-actions-share')).toBeNull();
+    expect(onDismissed).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('QuantityField', () => {
@@ -369,5 +445,16 @@ describe('QuantityField', () => {
     expect(screen.getByText('Indique un nombre, par exemple 250.')).toBeTruthy();
     await fireEvent.changeText(screen.getByTestId('q-input'), '300');
     expect(onChange).toHaveBeenLastCalledWith(300);
+  });
+
+  it('signale une saisie vide ou invalide au parent (NaN)', async () => {
+    const onChange = jest.fn();
+    await render(<QuantityField value={250} unit="g" onChange={onChange} testID="q" />);
+    await fireEvent.changeText(screen.getByTestId('q-input'), '1,5 kg');
+    expect(onChange).toHaveBeenLastCalledWith(Number.NaN);
+    await fireEvent.changeText(screen.getByTestId('q-input'), '');
+    expect(onChange).toHaveBeenLastCalledWith(Number.NaN);
+    // Aucun message d'erreur pour un champ vide (le bouton du parent est inactif).
+    expect(screen.queryByText('Indique un nombre, par exemple 250.')).toBeNull();
   });
 });

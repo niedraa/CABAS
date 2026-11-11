@@ -4,7 +4,7 @@
  * commande préparée et le panier, économies, historique. Aucun import React.
  */
 import type { BasketLine, BasketPlan, BasketStorePart, OrderChannel, OrderHandoff, Product } from '@/core';
-import { relativeDayLabel } from '@/core';
+import { formatPrice, formatWeekRange, localISODate, relativeDayLabel, startOfWeek } from '@/core';
 
 import { packsLabel } from '../basket/basketView';
 
@@ -72,11 +72,56 @@ export const ORDER_STATUS_LABELS: Record<OrderHandoff['status'], string> = {
   confirmed: 'Validée',
 };
 
-/** « Validée aujourd’hui », « Préparée lundi 9 novembre ». */
+/**
+ * « Validée aujourd’hui », « Préparée lundi 9 novembre ». Les horodatages
+ * sont en UTC : on compare leur jour LOCAL à `todayIso` (jour local).
+ */
 export function orderWhenLabel(order: Pick<OrderHandoff, 'status' | 'createdAt'> & { confirmedAt?: string }, todayIso: string): string {
   const at = (order.status === 'confirmed' && order.confirmedAt) || order.createdAt;
-  const when = relativeDayLabel(at.slice(0, 10), todayIso.slice(0, 10)).replace("'", '’');
+  const when = relativeDayLabel(localISODate(at), todayIso.slice(0, 10)).replace("'", '’');
   return `${ORDER_STATUS_LABELS[order.status]} ${when.charAt(0).toLowerCase()}${when.slice(1)}`;
+}
+
+// ─── Budget après validation ─────────────────────────────────────────────────
+
+/**
+ * Semaine où la dépense d'une commande validée est comptée : celle du jour
+ * LOCAL de validation (date de l'entrée de budget), qui peut différer de la
+ * semaine du panier (commande passée le samedi pour la semaine suivante).
+ */
+export function orderBudgetWeek(order: { confirmedAt?: string } | null, fallbackWeekStart: string): string {
+  return order?.confirmedAt ? startOfWeek(localISODate(order.confirmedAt)) : fallbackWeekStart;
+}
+
+export interface OrderBudgetView {
+  remainingCents: number;
+  /** Dépassement du budget (0 si dans le budget). */
+  overCents: number;
+  /** « cette semaine », « sur la semaine du 2 – 8 nov. ». */
+  period: string;
+}
+
+/** Situation du budget à rappeler après validation ; null sans budget hebdo. */
+export function orderBudgetView(
+  status: { spentCents: number; remainingCents: number; over: boolean },
+  budgetCents: number,
+  weekStart: string,
+  currentWeekStart: string,
+): OrderBudgetView | null {
+  if (!(budgetCents > 0)) return null;
+  return {
+    remainingCents: status.remainingCents,
+    overCents: status.over ? Math.max(0, status.spentCents - budgetCents) : 0,
+    period: weekStart === currentWeekStart ? 'cette semaine' : `sur la semaine du ${formatWeekRange(weekStart)}`,
+  };
+}
+
+/** « Il te reste 17,60 € cette semaine. » ou « Tu dépasses ton budget de 15,00 € cette semaine. » */
+export function orderBudgetSentence(budget: OrderBudgetView | null | undefined, format: (cents: number) => string = formatPrice): string {
+  if (!budget) return '';
+  return budget.overCents > 0
+    ? `Tu dépasses ton budget de ${format(budget.overCents)} ${budget.period}.`
+    : `Il te reste ${format(budget.remainingCents)} ${budget.period}.`;
 }
 
 /** Part des économies du panier attribuée à un magasin (même règle que orderStore). */

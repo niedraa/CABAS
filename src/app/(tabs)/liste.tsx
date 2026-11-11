@@ -10,7 +10,7 @@
  */
 import { router, type Href } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Share, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Share, StyleSheet, View } from 'react-native';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
 import { CalendarDays, ChevronDown, ChevronUp, CloudOff, Ellipsis, Share2 } from 'lucide-react-native';
 
@@ -18,8 +18,9 @@ import { EmptyList, ProduceSet } from '@/components/brand';
 import {
   AisleSection,
   applyFrozenOrder,
-  countFr,
   itemView,
+  leftoversState,
+  leftoversToast,
   listPhase,
   ListActionsSheet,
   ListDoneCard,
@@ -28,6 +29,7 @@ import {
   ListProgressCard,
   progressSubtitle,
   QuickAddBar,
+  reviewCheckedLabel,
   shareTitle,
   type ListPhase,
   type QuickAdd,
@@ -40,7 +42,6 @@ import { haptics } from '@/lib/haptics';
 import { useCatalog } from '@/services/catalog';
 import { copyListToClipboard } from '@/services/order';
 import {
-  addFromCheckedList,
   useListProgress,
   useListSections,
   useListStore,
@@ -68,6 +69,8 @@ export default function ListScreen() {
   const progress = useListProgress(ws);
   const catalog = useCatalog();
   const pantry = usePantryStore((s) => s.items);
+  // Surplus déjà rangé au placard (persisté : survit au redémarrage et aux décoches).
+  const leftoversRecord = useListStore((s) => s.leftovers[ws]);
 
   // Planning sans liste (jamais générée) : on la construit.
   useEffect(() => {
@@ -90,13 +93,11 @@ export default function ListScreen() {
   const settled = Object.keys(frozen).length === 0;
   const [seen, setSeen] = useState<{ ws: string; phase: ListPhase } | null>(null);
   const [celebrateKey, setCelebrateKey] = useState(0);
-  const [storedFor, setStoredFor] = useState<string | null>(null);
   const [showChecked, setShowChecked] = useState(false);
   if (hydrated && (seen?.ws !== ws || seen.phase !== phase)) {
     const sameWeek = seen?.ws === ws;
     if (sameWeek && seen.phase === 'todo' && complete) setCelebrateKey((k) => k + 1);
     if (!sameWeek) setCelebrateKey(0);
-    if (phase === 'todo' && storedFor === ws) setStoredFor(null);
     if (phase !== 'complete' && showChecked) setShowChecked(false);
     setSeen({ ws, phase });
   }
@@ -106,8 +107,12 @@ export default function ListScreen() {
   // ── Feuilles ──────────────────────────────────────────────────────────────
   const [editingId, setEditingId] = useState<string | null>(null);
   const [actionsOpen, setActionsOpen] = useState(false);
+  // Action à lancer une fois la feuille « … » refermée : sur iOS, la feuille de
+  // partage ne peut pas s'ouvrir par-dessus une Modal en train de se fermer.
+  const afterActions = useRef<(() => void) | null>(null);
   const items = useMemo(() => list?.items ?? [], [list]);
   const editing = editingId ? (items.find((i) => i.id === editingId) ?? null) : null;
+  const leftovers = leftoversState(items, leftoversRecord);
 
   // ── Navigation ────────────────────────────────────────────────────────────
   const openPantry = () => {
@@ -203,18 +208,13 @@ export default function ListScreen() {
   };
 
   const storeLeftovers = () => {
-    const n = addFromCheckedList(ws);
-    setStoredFor(ws);
-    if (n > 0) {
-      toast.show({
-        title: `${countFr(n, 'reste')} au placard`,
-        message: 'Cabas te proposera de quoi les cuisiner.',
-        tone: 'success',
-        action: { label: 'Voir', onPress: openPantry },
-      });
-    } else {
-      toast.show({ title: 'Rien à ranger', message: 'Tout part en cuisine cette semaine.', tone: 'neutral' });
-    }
+    // Seuls les articles pas encore rangés partent au placard (listStore › storeLeftovers).
+    const n = store().storeLeftovers(ws);
+    toast.show(
+      n > 0
+        ? { ...leftoversToast(n), tone: 'success', action: { label: 'Voir', onPress: openPantry } }
+        : { ...leftoversToast(0), tone: 'neutral' },
+    );
   };
 
   const listText = () =>
@@ -231,7 +231,6 @@ export default function ListScreen() {
   };
 
   const share = async () => {
-    setActionsOpen(false);
     const message = listText();
     try {
       await Share.share({ message, title: 'Ma liste Cabas' });
@@ -242,6 +241,17 @@ export default function ListScreen() {
     }
   };
 
+  /** « Partager » depuis la feuille « … » : le partage s'ouvre une fois la feuille refermée. */
+  const shareFromActions = () => {
+    afterActions.current = () => void share();
+    setActionsOpen(false);
+  };
+  const onActionsDismissed = () => {
+    const next = afterActions.current;
+    afterActions.current = null;
+    next?.();
+  };
+
   // ── Rendu ─────────────────────────────────────────────────────────────────
   if (!hydrated) return <ListSkeleton />;
 
@@ -250,11 +260,19 @@ export default function ListScreen() {
   const starts = displaySections.map((_, i) => displaySections.slice(0, i).reduce((n, s) => n + s.items.length, 0));
 
   return (
-    <View style={styles.root} testID="list-screen">
+    // Clavier ouvert : iOS ramène le champ focalisé au-dessus du clavier
+    // (`automaticallyAdjustKeyboardInsets`) ; Android (edge-to-edge) réduit l'écran.
+    <KeyboardAvoidingView
+      style={styles.root}
+      behavior={Platform.OS === 'android' ? 'padding' : undefined}
+      enabled={Platform.OS === 'android'}
+      testID="list-screen"
+    >
       <Screen
         title="Ma liste"
         eyebrow={week.isNextWeek ? `Semaine prochaine · ${week.rangeLabel}` : `Semaine du ${week.rangeLabel}`}
         bottomInset="tabBar"
+        scrollProps={KEYBOARD_SCROLL}
         headerRight={
           hasItems ? (
             <>
@@ -296,7 +314,7 @@ export default function ListScreen() {
                 <ListDoneCard
                   total={progress.total}
                   celebrateKey={celebrateKey}
-                  stored={storedFor === ws}
+                  leftovers={leftovers}
                   onStoreLeftovers={storeLeftovers}
                   onOpenPantry={openPantry}
                   onClearChecked={clearChecked}
@@ -318,7 +336,7 @@ export default function ListScreen() {
 
             {showDone ? (
               <Button
-                label={showChecked ? 'Masquer les articles cochés' : `Revoir les ${countFr(progress.done, 'article')} cochés`}
+                label={showChecked ? 'Masquer les articles cochés' : reviewCheckedLabel(progress.done)}
                 variant="ghost"
                 size="sm"
                 rightIcon={showChecked ? ChevronUp : ChevronDown}
@@ -378,15 +396,18 @@ export default function ListScreen() {
         onClose={() => setActionsOpen(false)}
         checkedCount={progress.done}
         totalCount={progress.total}
-        onShare={() => void share()}
+        onShare={shareFromActions}
+        onDismissed={onActionsDismissed}
         onCopy={() => void copy()}
         onUncheckAll={uncheckAll}
         onClearChecked={clearChecked}
         onOpenPantry={openPantry}
       />
-    </View>
+    </KeyboardAvoidingView>
   );
 }
+
+const KEYBOARD_SCROLL = { automaticallyAdjustKeyboardInsets: true } as const;
 
 function ListSkeleton() {
   const t = useTheme();

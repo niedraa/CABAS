@@ -14,6 +14,8 @@ import { countLabelFr } from './weekStats';
 export interface ListReadyCardProps {
   /** Articles restant à acheter. */
   items: number;
+  /** Articles de la liste, cochés compris (0 ou absent : liste pas encore faite). */
+  total?: number;
   onPress: () => void;
   testID?: string;
 }
@@ -21,11 +23,17 @@ export interface ListReadyCardProps {
 const STEPS = ['Profil', 'Repas', 'Liste', 'Prix', 'Commande'] as const;
 const CURRENT = 2;
 
-export function ListReadyCard({ items, onPress, testID }: ListReadyCardProps) {
+/** Titre et sous-titre selon l'état de la liste : à faire, prête, ou courses terminées. */
+export function listReadyCopy(items: number, total = 0): { title: string; subtitle: string } {
+  if (items > 0) return { title: 'Ma liste est prête', subtitle: countLabelFr(items, 'article') };
+  if (total > 0) return { title: 'Courses terminées', subtitle: 'Tout est coché' };
+  return { title: 'Préparer ma liste', subtitle: 'Générée depuis tes repas' };
+}
+
+export function ListReadyCard({ items, total, onPress, testID }: ListReadyCardProps) {
   const t = useTheme();
   const c = t.colors;
-  const title = items > 0 ? 'Ma liste est prête' : 'Préparer ma liste';
-  const subtitle = items > 0 ? countLabelFr(items, 'article') : 'Générée depuis tes repas';
+  const { title, subtitle } = listReadyCopy(items, total);
   return (
     <PressableScale
       onPress={onPress}

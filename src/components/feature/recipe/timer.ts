@@ -90,16 +90,64 @@ export interface CountdownApi {
   reset(): void;
 }
 
+/** Mise à jour d'un état de minuteur rangé ailleurs (useState, session du mode cuisine…). */
+export type TimerUpdater = (fn: (s: TimerState) => TimerState) => void;
+
 /**
- * Minuteur React : tick toutes les `tickMs` ms pendant qu'il tourne ;
- * `onDone` est appelé UNE fois à l'échéance.
+ * Moteur commun des minuteurs React. Pendant qu'il tourne, seule l'horloge
+ * locale avance (toutes les `tickMs` ms) : le temps restant se DÉDUIT de
+ * l'échéance, l'état rangé n'est réécrit qu'aux transitions (lancement,
+ * pause, remise à zéro, échéance). `onDone` est appelé UNE fois par passage
+ * à « done » observé pendant que le composant est monté (pas au montage d'un
+ * minuteur déjà fini).
  */
-export function useCountdown(totalSec: number, onDone?: () => void, tickMs = 250): CountdownApi {
-  const [state, setState] = useState(() => createTimer(totalSec));
+export function useTimerEngine(state: TimerState, update: TimerUpdater, onDone?: () => void, tickMs = 250): CountdownApi {
   const doneRef = useRef(onDone);
   useEffect(() => {
     doneRef.current = onDone;
   }, [onDone]);
+
+  const [now, setNow] = useState(() => Date.now());
+  const running = state.status === 'running';
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => setNow(Date.now()), tickMs);
+    return () => clearInterval(id);
+  }, [running, tickMs]);
+
+  // Échéance dépassée : on fige le minuteur sur « done » (hors du rappel d'horloge).
+  const expired = running && state.endsAt !== null && state.endsAt <= now;
+  useEffect(() => {
+    if (expired) update((s) => tickTimer(s, Date.now()));
+  }, [expired, update]);
+
+  // Échéance atteinte : un seul signal par passage à « done ».
+  const prevStatus = useRef(state.status);
+  useEffect(() => {
+    if (state.status === 'done' && prevStatus.current !== 'done') doneRef.current?.();
+    prevStatus.current = state.status;
+  }, [state.status]);
+
+  const remainingMs = remainingAt(state, now);
+  return {
+    state,
+    remainingMs,
+    progress: state.totalMs > 0 ? Math.min(1, Math.max(0, 1 - remainingMs / state.totalMs)) : 1,
+    start: () => {
+      setNow(Date.now());
+      update((s) => startTimer(s, Date.now()));
+    },
+    pause: () => update((s) => pauseTimer(s, Date.now())),
+    reset: () => update((s) => resetTimer(s)),
+  };
+}
+
+/**
+ * Minuteur React à état local (perdu au démontage) ; pour le mode cuisine,
+ * voir `useSessionTimer` (cookingSession.ts), qui survit à la fermeture.
+ */
+export function useCountdown(totalSec: number, onDone?: () => void, tickMs = 250): CountdownApi {
+  const [state, setState] = useState(() => createTimer(totalSec));
 
   // Changement de durée (autre étape) : on repart de zéro.
   const [prevTotal, setPrevTotal] = useState(totalSec);
@@ -108,25 +156,5 @@ export function useCountdown(totalSec: number, onDone?: () => void, tickMs = 250
     setState(createTimer(totalSec));
   }
 
-  const running = state.status === 'running';
-  useEffect(() => {
-    if (!running) return;
-    const id = setInterval(() => setState((s) => tickTimer(s, Date.now())), tickMs);
-    return () => clearInterval(id);
-  }, [running, tickMs]);
-
-  // Échéance atteinte : un seul signal par passage à « done ».
-  const isDone = state.status === 'done';
-  useEffect(() => {
-    if (isDone) doneRef.current?.();
-  }, [isDone]);
-
-  return {
-    state,
-    remainingMs: state.remainingMs,
-    progress: state.totalMs > 0 ? Math.min(1, Math.max(0, 1 - state.remainingMs / state.totalMs)) : 1,
-    start: () => setState((s) => startTimer(s, Date.now())),
-    pause: () => setState((s) => pauseTimer(s, Date.now())),
-    reset: () => setState((s) => resetTimer(s)),
-  };
+  return useTimerEngine(state, setState, onDone, tickMs);
 }

@@ -24,6 +24,7 @@ import {
   ComparisonRow,
   comparisonRows,
   comparedStoreIds,
+  emptyBasketReason,
   MissingItems,
   missingRows,
   plural,
@@ -46,7 +47,15 @@ import { formatWeekRange, PREMIUM_PRICING } from '@/core';
 import { useHydrated, useSubscription } from '@/hooks';
 import { haptics } from '@/lib/haptics';
 import { useCatalog } from '@/services/catalog';
-import { lastOrderForWeek, useBasketIsStale, useBasketStore, useOrderStore, useWeekList, useWeekStore } from '@/stores';
+import {
+  basketRightsChanged,
+  lastOrderForWeek,
+  useBasketIsStale,
+  useBasketStore,
+  useOrderStore,
+  useWeekList,
+  useWeekStore,
+} from '@/stores';
 import { useTheme } from '@/theme';
 
 export default function PriceScreen() {
@@ -66,15 +75,17 @@ export default function PriceScreen() {
   const downgraded = useBasketStore((s) => s.downgraded);
   const basketWeek = useBasketStore((s) => s.weekStart);
   const storeIds = useBasketStore((s) => s.storeIds);
+  const computedEntitlement = useBasketStore((s) => s.entitlement);
   const orders = useOrderStore((s) => s.orders);
   const stale = useBasketIsStale();
   const weekOrder = lastOrderForWeek(orders, ws);
 
   const hasUnchecked = useMemo(() => (list?.items ?? []).some((i) => !i.checked), [list]);
-  // Droits changés depuis le calcul (Premium souscrit, ou expiré) : on recalcule.
-  const rightsChanged = !!plan && ((downgraded && sub.isPremium) || (plan.mode === 'cheapest' && !sub.isPremium));
+  // Droits changés depuis le calcul (Premium souscrit, ou expiré) : un seul recalcul,
+  // même si le serveur, pas encore au courant, rétrograde encore le panier.
+  const rightsChanged = basketRightsChanged({ plan, entitlement: computedEntitlement }, sub.entitlement);
 
-  // Calcul à l'arrivée (et au retour sur l'onglet) si la liste a changé depuis.
+  // Calcul à l'arrivée (et au retour sur l'onglet) si la liste ou les magasins ont changé depuis.
   useEffect(() => {
     if (!hydrated || !isFocused || !hasUnchecked) return;
     if ((stale || rightsChanged) && status !== 'computing' && status !== 'error') {
@@ -96,6 +107,10 @@ export default function PriceScreen() {
     () => (downgraded && !sub.isPremium ? cheapestGainCents(comparisons, plan, catalog.stores, { channel, storeIds }) : null),
     [downgraded, sub.isPremium, comparisons, plan, catalog, channel, storeIds],
   );
+  const emptyReason = useMemo(
+    () => (plan && plan.parts.length === 0 ? emptyBasketReason(comparisons, catalog.stores, { channel, storeIds }) : null),
+    [plan, comparisons, catalog, channel, storeIds],
+  );
 
   // ── Actions ───────────────────────────────────────────────────────────────
   const changeMode = async (next: BasketMode) => {
@@ -114,7 +129,7 @@ export default function PriceScreen() {
   // ── Rendu ─────────────────────────────────────────────────────────────────
   const subtitle =
     state === 'ready' && comparedChains.length > 0
-      ? `${plural(rows.length, 'article comparé', 'articles comparés')} dans ${comparedChains.length} enseignes`
+      ? `${plural(rows.length, 'article comparé', 'articles comparés')} dans ${plural(comparedChains.length, 'enseigne')}`
       : undefined;
 
   return (
@@ -164,7 +179,17 @@ export default function PriceScreen() {
             />
           </Animated.View>
 
-          {downgraded ? (
+          {downgraded && sub.isPremium ? (
+            // Premium tout juste souscrit : le serveur ne le sait pas encore.
+            <Animated.View entering={FadeInDown.springify().damping(t.motion.spring.damping)} layout={LinearTransition}>
+              <InfoBanner
+                tone="info"
+                title="Ton Premium s’active"
+                message="Le panier le moins cher arrive dans un instant."
+                action={{ label: 'Actualiser', onPress: retry }}
+              />
+            </Animated.View>
+          ) : downgraded ? (
             <Animated.View entering={FadeInDown.springify().damping(t.motion.spring.damping)} layout={LinearTransition}>
               <InfoBanner
                 tone="premium"
@@ -184,14 +209,18 @@ export default function PriceScreen() {
             <InfoBanner tone="danger" title="Prix pas à jour" message="Le dernier calcul a échoué." action={{ label: 'Réessayer', onPress: retry }} />
           ) : null}
 
-          {plan.parts.length === 0 ? (
+          {emptyReason === 'not_in_catalog' ? (
+            <InfoBanner tone="info" title="Rien à comparer" message="Ces articles ne sont pas encore dans notre catalogue." />
+          ) : emptyReason ? (
             <InfoBanner
               tone="warning"
-              title={channel === 'delivery' ? 'Pas de livraison ici' : 'Aucun magasin disponible'}
+              title={emptyReason === 'no_delivery' ? 'Pas de livraison ici' : 'Aucun magasin disponible'}
               message={
-                channel === 'delivery'
+                emptyReason === 'no_delivery'
                   ? 'Aucun de tes magasins ne livre. Passe en drive ou ajoute un magasin dans ton profil.'
-                  : 'Aucun de tes magasins ne vend ces articles. Ajoute un magasin dans ton profil.'
+                  : channel === 'delivery'
+                    ? 'Tes magasins qui livrent ne vendent pas ces articles. Passe en drive ou ajoute un magasin dans ton profil.'
+                    : 'Aucun de tes magasins ne vend ces articles. Ajoute un magasin dans ton profil.'
               }
               action={channel === 'delivery' ? { label: 'Passer en drive', onPress: () => changeChannel('drive') } : undefined}
             />

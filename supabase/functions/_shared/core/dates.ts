@@ -72,6 +72,17 @@ export function toISODate(d: Date): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
+/**
+ * Jour LOCAL d'un horodatage ISO : « 2026-11-11T23:30:00Z » donne
+ * « 2026-11-12 » à Paris (et non le jour UTC). Une date jour `YYYY-MM-DD`
+ * est renvoyée telle quelle ; un horodatage illisible, coupé au jour.
+ */
+export function localISODate(timestamp: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(timestamp)) return timestamp;
+  const d = new Date(timestamp);
+  return Number.isNaN(d.getTime()) ? timestamp.slice(0, 10) : toISODate(d);
+}
+
 /** Jour ISO → Date JS à minuit heure locale. */
 export function parseISODate(s: string): Date {
   const { y, m, d } = parts(s);

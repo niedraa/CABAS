@@ -1,11 +1,15 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react-native';
+import * as RN from 'react-native';
+import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import type { PlannedMeal, Recipe } from '@/core';
 import { recipes } from '@/data';
 
 import { DayStrip, type DayStripDay } from '../DayStrip';
+import { GENERATING_STEPS, GeneratingBanner } from '../GeneratingBanner';
+import { listReadyCopy } from '../ListReadyCard';
 import { MealCard } from '../MealCard';
 import {
   dampenSwipe,
@@ -104,6 +108,22 @@ describe('weekStats', () => {
     expect(openSlotsOf(null, '2026-11-09', [])).toEqual([]);
   });
 
+  it('ignore les créneaux des jours passés (ni « Ajouter » ni « Débloquer » pour hier)', () => {
+    const profile = { mealSlots: [0, 1, 2, 3].map((weekday) => ({ weekday: weekday as 0 | 1 | 2 | 3, type: 'diner' as const })) };
+    // Mercredi 11 : lundi et mardi sont passés, mercredi (aujourd'hui) reste ouvert.
+    expect(openSlotsOf(profile, '2026-11-09', [], '2026-11-11')).toEqual([
+      { date: '2026-11-11', type: 'diner' },
+      { date: '2026-11-12', type: 'diner' },
+    ]);
+  });
+
+  it('carte « liste » : prête, terminée (tout coché) ou à préparer', () => {
+    expect(listReadyCopy(3, 12)).toEqual({ title: 'Ma liste est prête', subtitle: '3 articles' });
+    expect(listReadyCopy(0, 12)).toEqual({ title: 'Courses terminées', subtitle: 'Tout est coché' });
+    expect(listReadyCopy(0, 0)).toEqual({ title: 'Préparer ma liste', subtitle: 'Générée depuis tes repas' });
+    expect(listReadyCopy(0)).toEqual({ title: 'Préparer ma liste', subtitle: 'Générée depuis tes repas' });
+  });
+
   it('salue par le prénom', () => {
     expect(firstNameOf('  Camille Martin ')).toBe('Camille');
     expect(greetingFor('Camille')).toBe('Salut Camille');
@@ -132,6 +152,12 @@ describe('MealCard', () => {
     expect(screen.getByText(r1.title)).toBeTruthy();
     expect(screen.getByText(`${r1.prepTimeMin + r1.cookTimeMin} min`)).toBeTruthy();
     expect(screen.getByText('3 pers.')).toBeTruthy();
+  });
+
+  it('accorde « portion » au singulier pour un foyer d’une personne', async () => {
+    await renderCard({ servings: 1 });
+    expect(screen.getByTestId('card-open').props.accessibilityLabel).toMatch(/, 1 portion$/);
+    expect(screen.getByLabelText('1 portion')).toBeTruthy();
   });
 
   it('ouvre la recette au toucher', async () => {
@@ -164,6 +190,18 @@ describe('MealCard', () => {
     expect(h.onOpenMenu).toHaveBeenCalledTimes(1);
     await fireEvent(screen.getByTestId('card-open'), 'accessibilityAction', { nativeEvent: { actionName: 'swap' } });
     expect(h.onSwipeSwap).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─── Bandeau de génération ───────────────────────────────────────────────────
+
+describe('GeneratingBanner', () => {
+  it('la ligne qui défile suit la taille du texte du téléphone (plafonnée à 1,6×)', async () => {
+    // Environnement de test React Native : fontScale = 2.
+    expect(RN.Dimensions.get('window').fontScale).toBe(2);
+    await render(<GeneratingBanner testID="gen" />);
+    expect(StyleSheet.flatten(screen.getByTestId('gen-line').props.style).height).toBe(29); // 18 × 1,6
+    expect(screen.getByText(GENERATING_STEPS[0]).props.maxFontSizeMultiplier).toBe(1.6);
   });
 });
 

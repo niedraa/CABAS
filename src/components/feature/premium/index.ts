@@ -4,7 +4,7 @@
  *
  * ```tsx
  * const feature = parseFeatureParam(params.feature);       // ?feature=optimized_basket
- * <PremiumHero {...paywallHeadline(feature)} />
+ * <PremiumHero {...paywallHeadline(feature, offeredTrialDays(offerings))} />
  * <FeatureList features={orderedFeatures(feature)} highlight={feature} />
  * <PlanPicker options={planOptions(offerings)} value={pkg} onChange={setPkg} />
  * const status = subscriptionStatus(state);                // { kind, label, detail, endDate… }

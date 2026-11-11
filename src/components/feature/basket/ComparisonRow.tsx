@@ -14,7 +14,7 @@ import { formatPrice, formatPricePerUnit } from '@/core';
 import { formatPriceForA11y } from '@/lib/a11y';
 import { useTheme } from '@/theme';
 
-import { savingsLabel, storeShortName, type ComparisonRowData } from './basketView';
+import { plural, savingsLabel, storeShortName, type ComparisonRowData } from './basketView';
 
 export interface ComparisonRowProps {
   row: ComparisonRowData;
@@ -38,7 +38,7 @@ export function ComparisonRow({ row, storesById, totalStores = 0, onPress, testI
   const a11y = [
     row.label,
     `meilleur prix ${formatPriceForA11y(row.best.totalCents)} chez ${bestName}`,
-    `${row.stores} enseignes comparées`,
+    plural(row.stores, 'enseigne comparée', 'enseignes comparées'),
     row.best.isPromo ? 'en promo' : '',
     row.basket ? `dans ton panier : ${formatPriceForA11y(row.basket.totalCents)} chez ${storeShortName(basketStore)}` : '',
     mdd?.kind === 'chosen' ? `marque distributeur, ${formatPriceForA11y(mdd.savingsCents)} de moins que la marque` : '',
@@ -69,7 +69,7 @@ export function ComparisonRow({ row, storesById, totalStores = 0, onPress, testI
         </View>
         <Text variant="footnote" color="textSecondary" numberOfLines={1} tabular>
           {bestName} · {perUnit}
-          {row.stores < totalStores ? ` · ${row.stores} enseignes` : ''}
+          {row.stores < totalStores ? ` · ${plural(row.stores, 'enseigne')}` : ''}
         </Text>
         {row.basket ? (
           <View style={[styles.hint, { gap: t.spacing.xs }]}>

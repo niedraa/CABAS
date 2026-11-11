@@ -7,7 +7,7 @@ import { join } from 'node:path';
 /** Erreurs console sans rapport avec l'app (réseau coupé volontairement, etc.). */
 const IGNORED_ERRORS = [/Failed to load resource/i, /favicon/i];
 
-export function createHarness({ page, baseUrl, dir, config }) {
+export function createHarness({ page, baseUrl, dir, config, now = new Date() }) {
   const errors = [];
   let shotIndex = 0;
 
@@ -26,6 +26,8 @@ export function createHarness({ page, baseUrl, dir, config }) {
     page,
     baseUrl,
     config,
+    /** Date simulée au démarrage (horloge du navigateur). */
+    now,
     errors,
     currentStep: '',
     stepsPassed: 0,

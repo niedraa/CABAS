@@ -3,16 +3,21 @@
  *
  * Ticket du magasin (lignes, quantités, prix, frais, total, économie), puis
  * `prepareOrder(part, storeId, channel)` au premier geste et « Ouvrir
- * <enseigne> » (`openOrder`) : en Premium, commande en un clic (panier prêt,
- * liste copiée en filet) ; en gratuit, liste à copier + ouverture du site et
- * invitation Premium sobre. Au retour : « J’ai validé ma commande »
+ * <enseigne> » (`openOrder`) : en Premium, commande en un clic (liste copiée
+ * et site ouvert d'un seul geste) ; en gratuit, liste à copier + ouverture du
+ * site et invitation Premium sobre. Au retour : « J’ai validé ma commande »
  * (`confirmOrder` → dépense au budget) → célébration et économies chiffrées.
  * Rappel de la dernière commande de la semaine.
+ *
+ * La commande est rangée sous la semaine du PANIER (`basket.weekStart`, comme
+ * `prepareOrder`), pas sous la semaine active, qui peut changer pendant qu'on
+ * est chez l'enseigne (passage à minuit le dimanche).
  */
 import { router, useLocalSearchParams, type Href } from 'expo-router';
 import React, { useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, FadeOut, LinearTransition } from 'react-native-reanimated';
+import { SafeAreaProvider, type Metrics } from 'react-native-safe-area-context';
 import { ArrowLeft, CircleCheck, ExternalLink, RotateCcw } from 'lucide-react-native';
 
 import { Celebration, EmptyBasket } from '@/components/brand';
@@ -22,6 +27,8 @@ import {
   OrderActions,
   OrderConfirmedCard,
   OrderHistoryRow,
+  orderBudgetView,
+  orderBudgetWeek,
   orderLineViews,
   orderMatchesPart,
   OrderReceipt,
@@ -30,12 +37,25 @@ import {
   orderWhenLabel,
   partSavingsCents,
 } from '@/components/feature/order';
-import { Badge, Button, EmptyState, Screen, SectionHeader, staggerEntering, StoreBadge, Text, useToast } from '@/components/ui';
+import {
+  Badge,
+  Button,
+  EmptyState,
+  Screen,
+  SectionHeader,
+  staggerEntering,
+  StoreBadge,
+  Text,
+  ToastProvider,
+  useSafeInsets,
+  useToast,
+} from '@/components/ui';
 import type { OrderChannel } from '@/core';
 import { formatPrice, formatWeekRange } from '@/core';
 import { useSubscription } from '@/hooks';
 import { useCatalog } from '@/services/catalog';
 import {
+  activeWeek,
   lastOrderForWeek,
   useBasketStore,
   useBudgetStatus,
@@ -46,7 +66,31 @@ import {
 } from '@/stores';
 import { useTheme } from '@/theme';
 
-export default function OrderScreen() {
+/**
+ * Route modale. Sur iOS, la feuille vit dans son propre contrôleur natif,
+ * au-dessus de la vue racine : elle mesure sa PROPRE zone sûre (elle commence
+ * déjà sous la barre d'état : pas de marge du haut, comme React Navigation
+ * pour ses modales) et affiche ses toasts elle-même (ceux de la racine
+ * resteraient cachés dessous).
+ */
+export default function OrderRoute() {
+  const parent = useSafeInsets();
+  const { width, height } = useWindowDimensions();
+  // Valeurs de départ, remplacées par la mesure native de la modale.
+  const initialMetrics: Metrics = {
+    insets: Platform.OS === 'ios' ? { ...parent, top: 0 } : parent,
+    frame: { x: 0, y: 0, width, height },
+  };
+  return (
+    <SafeAreaProvider initialMetrics={initialMetrics}>
+      <ToastProvider>
+        <OrderScreen />
+      </ToastProvider>
+    </SafeAreaProvider>
+  );
+}
+
+function OrderScreen() {
   const t = useTheme();
   const toast = useToast();
   const sub = useSubscription();
@@ -57,12 +101,17 @@ export default function OrderScreen() {
 
   const ws = useWeekStore((s) => s.activeWeekStart);
   const today = useWeekStore((s) => s.today);
+  const currentWeek = useWeekStore((s) => s.currentWeekStart);
   const plan = useBasketStore((s) => s.plan);
   const channel = useBasketStore((s) => s.channel);
+  // Semaine où `prepareOrder` range la commande : celle du panier.
+  const orderWeek = useBasketStore((s) => s.weekStart) ?? ws;
   const part = useMemo(() => plan?.parts.find((p) => p.storeId === storeId) ?? null, [plan, storeId]);
-  const order = useLastOrderForWeek(undefined, storeId);
-  const lastOfWeek = useLastOrderForWeek();
-  const budget = useBudgetStatus(order?.weekStart ?? ws);
+  const order = useLastOrderForWeek(orderWeek, storeId);
+  const lastOfWeek = useLastOrderForWeek(orderWeek);
+  // La dépense est datée du jour de validation : on lit le budget de CETTE semaine-là.
+  const budgetWeek = orderBudgetWeek(order, order?.weekStart ?? orderWeek);
+  const budget = useBudgetStatus(budgetWeek);
 
   const oneClick = sub.canUse('one_click_order');
   const [reordering, setReordering] = useState(false);
@@ -90,7 +139,8 @@ export default function OrderScreen() {
   /** Commande correspondant au panier (préparée au premier geste, réutilisée ensuite). */
   const ensureOrder = (): StoredOrder | null => {
     const s = useOrderStore.getState();
-    const current = lastOrderForWeek(s.orders, ws, storeId);
+    const week = useBasketStore.getState().weekStart ?? activeWeek();
+    const current = lastOrderForWeek(s.orders, week, storeId);
     if (current && current.status !== 'confirmed') {
       // Déjà ouverte chez l'enseigne : on la garde ; préparée : seulement si elle colle au panier.
       if (current.status === 'opened' || !part || orderMatchesPart(current, part, channel)) return current;
@@ -167,7 +217,7 @@ export default function OrderScreen() {
         fullWidth
         loading={busy === 'open'}
         onPress={() => void open()}
-        accessibilityHint={oneClick ? 'Ouvre le site de l’enseigne avec ton panier' : 'Ouvre le site de l’enseigne'}
+        accessibilityHint={oneClick ? 'Copie ta liste et ouvre le site de l’enseigne' : 'Ouvre le site de l’enseigne'}
         testID="order-open"
       />
     ) : stage === 'opened' ? (
@@ -182,7 +232,7 @@ export default function OrderScreen() {
       <Screen
         key={stage === 'confirmed' ? 'confirmed' : 'live'}
         title={`Chez ${short}`}
-        eyebrow={`${CHANNEL_LABELS[shownChannel]} · semaine du ${formatWeekRange(order?.weekStart ?? ws)}`}
+        eyebrow={`${CHANNEL_LABELS[shownChannel]} · semaine du ${formatWeekRange(order?.weekStart ?? orderWeek)}`}
         onBack={close}
         backIcon="close"
         footer={footer}
@@ -214,7 +264,7 @@ export default function OrderScreen() {
                 storeName={short}
                 totalCents={order.totalCents}
                 savingsCents={order.savingsCents}
-                remainingCents={budget.budgetCents > 0 ? budget.remainingCents : null}
+                budget={orderBudgetView(budget, budget.budgetCents, budgetWeek, currentWeek)}
                 when={orderWhenLabel(order, today)}
                 testID="order-confirmed"
               />

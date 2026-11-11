@@ -6,9 +6,21 @@
  * reste désactivé tant que rien n'a changé, puis `updateProfile(patch)` valide
  * (consentement RGPD exigé pour allergies / régimes). Le planning se revérifie
  * seul : le toast dit combien de plats ont été remplacés.
+ *
+ * Toute sortie avec des changements non enregistrés (flèche, balayage iOS,
+ * touche retour Android) demande confirmation (`usePreventRemove`). Le clavier
+ * ne masque ni le champ « Je n'aime pas » (en bas de page) ni ses résultats.
  */
-import { router, useLocalSearchParams, type Href } from 'expo-router';
-import React, { useState } from 'react';
+import { router, useLocalSearchParams, usePreventRemove, type Href } from 'expo-router';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  type EmitterSubscription,
+  type ScrollViewInstance,
+} from 'react-native';
 import Animated, { FadeInDown, FadeOut } from 'react-native-reanimated';
 import { Check } from 'lucide-react-native';
 
@@ -41,6 +53,23 @@ export default function EditProfileSection() {
   const [draft, setDraft] = useState<Required<ProfileDraft> | null>(() => (profile ? draftFromProfile(profile) : null));
   const [issues, setIssues] = useState<ProfileIssue[]>([]);
   const [confirmLeave, setConfirmLeave] = useState(false);
+  // Vrai dès que la sortie est voulue (enregistré, ou « Quitter sans enregistrer »).
+  const [leaving, setLeaving] = useState(false);
+  // Sortie bloquée qui attend la confirmation (rejouée telle quelle si confirmée).
+  const pendingLeave = useRef<(() => void) | null>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
+  const keyboardShown = useRef<EmitterSubscription | null>(null);
+
+  const dirty = !!section && !!profile && !!draft && isSectionDirty(section, draftFromProfile(profile), draft);
+
+  // Couvre la flèche de la barre, le balayage retour d'iOS et la touche retour d'Android.
+  const allowLeave = usePreventRemove(dirty && !leaving, ({ repeat }) => {
+    haptics.warning();
+    pendingLeave.current = repeat;
+    setConfirmLeave(true);
+  });
+
+  useEffect(() => () => keyboardShown.current?.remove(), []);
 
   const leave = () => (router.canGoBack() ? router.back() : router.replace('/profil' as Href));
 
@@ -58,20 +87,28 @@ export default function EditProfileSection() {
   }
 
   const meta = sectionMeta(section);
-  const dirty = isSectionDirty(section, draftFromProfile(profile), draft);
 
   const update = (patch: ProfileDraft) => {
     setDraft((d) => (d ? { ...d, ...patch } : d));
     setIssues([]);
   };
 
-  const back = () => {
-    if (dirty) {
-      haptics.warning();
-      setConfirmLeave(true);
+  const scrollToEnd = () => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), t.motion.duration.instant);
+
+  // « Je n'aime pas » est tout en bas : une fois le clavier affiché (la page a
+  // rétréci au-dessus de lui), on ramène le champ et ses résultats en vue.
+  const onSearchFocus = () => {
+    keyboardShown.current?.remove();
+    keyboardShown.current = null;
+    if (Keyboard.isVisible()) {
+      scrollToEnd();
       return;
     }
-    leave();
+    keyboardShown.current = Keyboard.addListener('keyboardDidShow', () => {
+      keyboardShown.current?.remove();
+      keyboardShown.current = null;
+      scrollToEnd();
+    });
   };
 
   const save = () => {
@@ -83,6 +120,9 @@ export default function EditProfileSection() {
       return;
     }
     const replaced = countReplacedMeals(before, usePlanStore.getState().plans);
+    // Enregistré : plus rien à protéger, la sortie ne doit pas être bloquée.
+    setLeaving(true);
+    allowLeave();
     toast.show({
       title: 'Profil mis à jour',
       message:
@@ -95,11 +135,13 @@ export default function EditProfileSection() {
   };
 
   return (
-    <>
+    // « padding » aussi sur Android : en edge-to-edge, le clavier ne redimensionne plus la fenêtre.
+    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'web' ? undefined : 'padding'}>
       <Screen
         title={meta.screenTitle}
         subtitle={meta.subtitle}
-        onBack={back}
+        onBack={leave}
+        scrollRef={scrollRef}
         testID={`edit-section-${section}`}
         footer={
           <Stack gap="sm">
@@ -124,7 +166,7 @@ export default function EditProfileSection() {
           </Stack>
         }
       >
-        <Animated.View entering={staggerEntering(0, t.motion.stagger, 60)}>
+        <Animated.View entering={staggerEntering(0, t.motion.stagger, t.motion.duration.instant)}>
           <ProfileSectionEditor
             section={section}
             draft={draft}
@@ -133,15 +175,28 @@ export default function EditProfileSection() {
             stores={catalog.stores}
             freeLimit={sub.isPremium ? null : FREE_TIER.maxMealsPerWeek}
             onPremiumPress={() => router.push(premiumHref('unlimited_planning') as Href)}
+            onSearchResults={scrollToEnd}
+            onSearchFocus={onSearchFocus}
           />
         </Animated.View>
       </Screen>
       <ConfirmDialog
         visible={confirmLeave}
-        onClose={() => setConfirmLeave(false)}
-        onConfirm={() => {
+        onClose={() => {
+          pendingLeave.current = null;
           setConfirmLeave(false);
-          leave();
+        }}
+        onConfirm={() => {
+          const resume = pendingLeave.current;
+          pendingLeave.current = null;
+          setConfirmLeave(false);
+          setLeaving(true);
+          // Rejoue la sortie bloquée (retour, geste, remplacement…) sans la redemander.
+          if (resume) resume();
+          else {
+            allowLeave();
+            leave();
+          }
         }}
         title="Quitter sans enregistrer ?"
         message="Tes modifications de cette section seront perdues."
@@ -150,6 +205,10 @@ export default function EditProfileSection() {
         destructive
         testID="edit-leave-confirm"
       />
-    </>
+    </KeyboardAvoidingView>
   );
 }
+
+const styles = StyleSheet.create({
+  flex: { flex: 1 },
+});

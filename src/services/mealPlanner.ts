@@ -39,12 +39,14 @@ export interface MealPlanRequest {
   /** Lundi de la semaine (ISO). */
   weekStart: string;
   entitlement: Entitlement;
-  /** Planning actuel : ses repas verrouillés sont conservés. */
+  /** Planning actuel : ses repas verrouillés (et ceux des jours passés) sont conservés. */
   existing?: MealPlan | null;
   recentRecipeIds?: string[];
   pantryIngredientIds?: string[];
   /** Graine (même graine ⇒ même planning local). */
   seed?: string | number;
+  /** Aujourd'hui (ISO, local) : aucun repas n'est ajouté sur un jour passé. */
+  fromDate?: string;
 }
 
 export interface MealPlanResult {
@@ -65,6 +67,8 @@ export interface RemoteMealPlanBody {
   recentRecipeIds: string[];
   pantryIngredientIds: string[];
   seed?: string | number;
+  /** Premier jour planifiable (aujourd'hui, heure locale de l'appareil). */
+  fromDate?: string;
 }
 
 /** Appel distant : renvoie le JSON de la fonction (`{ plan, meta }`) ou lève une erreur. */
@@ -212,6 +216,7 @@ export function createMealPlanner(deps: MealPlannerDeps): MealPlanner {
         pantryIngredientIds: req.pantryIngredientIds,
         seed: req.seed,
         now: new Date(now()).toISOString(),
+        ...(req.fromDate ? { fromDate: req.fromDate } : {}),
       }),
     );
   }
@@ -225,7 +230,10 @@ export function createMealPlanner(deps: MealPlannerDeps): MealPlanner {
 
     if (deps.remote) {
       try {
-        const lockedMeals = (req.existing?.meals ?? []).filter((m) => m.locked && isInWeek(m.date, req.weekStart));
+        // Les repas des jours passés partent avec les verrouillés : le serveur les garde tels quels.
+        const isPast = (m: PlannedMeal) => !!req.fromDate && m.date < req.fromDate;
+        const lockedMeals = (req.existing?.meals ?? []).filter((m) => (m.locked || isPast(m)) && isInWeek(m.date, req.weekStart));
+        const pastUnlocked = new Set(lockedMeals.filter((m) => !m.locked).map((m) => m.id));
         const raw = await withTimeout(
           deps.remote(
             {
@@ -235,6 +243,7 @@ export function createMealPlanner(deps: MealPlannerDeps): MealPlanner {
               recentRecipeIds: (req.recentRecipeIds ?? []).slice(0, 60),
               pantryIngredientIds: (req.pantryIngredientIds ?? []).slice(0, 200),
               ...(req.seed !== undefined ? { seed: String(req.seed).slice(0, 64) } : {}),
+              ...(req.fromDate ? { fromDate: req.fromDate } : {}),
             },
             MEAL_PLAN_TIMEOUT_MS,
           ),
@@ -243,6 +252,18 @@ export function createMealPlanner(deps: MealPlannerDeps): MealPlanner {
         plan = parseRemotePlan(raw, req.weekStart);
         if (!plan) throw new Error('réponse illisible');
         if (plan.meals.length === 0) throw new Error('planning vide');
+        // Le serveur marque verrouillé tout ce qu'on lui a confié : on rend aux repas passés leur état.
+        if (pastUnlocked.size > 0) {
+          plan = {
+            ...plan,
+            meals: plan.meals.map((m) => {
+              if (!pastUnlocked.has(m.id)) return m;
+              const unlocked = { ...m };
+              delete unlocked.locked;
+              return unlocked;
+            }),
+          };
+        }
         source = 'remote';
       } catch (err) {
         plan = null;

@@ -3,7 +3,8 @@
  * et du raccourci « Budget » du profil.
  *
  * ```tsx
- * <BudgetWeekCard status={useBudgetStatus()} weekStart={ws} />
+ * const ws = useWeekStore((s) => s.currentWeekStart);       // semaine EN COURS
+ * <BudgetWeekCard status={useBudgetStatus(ws)} weekStart={ws} />
  * <SpendingChart bars={weeklyBars(entries, ws)} maxCents={chartMaxCents(bars, budget)} referenceCents={budget} />
  * <SavingsCard savingsCents={useTotalSavings()} orders={n} />
  * <AddSpendingSheet visible onSubmit={(i) => useBudgetStore.getState().addManualEntry(i)} … />

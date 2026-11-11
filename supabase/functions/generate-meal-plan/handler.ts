@@ -1,7 +1,8 @@
 /**
  * generate-meal-plan — planning de la semaine (IA + validation serveur).
  *
- * POST { weekStart, maxMeals?, lockedMeals?, recentRecipeIds?, pantryIngredientIds?, seed? }
+ * POST { weekStart, maxMeals?, lockedMeals?, recentRecipeIds?, pantryIngredientIds?, seed?, fromDate? }
+ * (`fromDate` : aujourd'hui côté appareil — aucun repas n'est placé avant)
  * (JWT utilisateur obligatoire)
  *
  * Étapes :
@@ -98,6 +99,8 @@ export interface GenerateRequest {
   recentRecipeIds?: string[];
   pantryIngredientIds?: string[];
   seed?: string | number;
+  /** Premier jour planifiable (dans la semaine) : les créneaux antérieurs restent vides. */
+  fromDate?: string;
 }
 
 const MEAL_TYPES: readonly MealType[] = ['dejeuner', 'diner'];
@@ -133,6 +136,14 @@ export function parseGenerateRequest(body: unknown, today: string): GenerateRequ
   if (typeof b.seed === 'string' && b.seed.length <= 64) seed = b.seed;
   else if (typeof b.seed === 'number' && Number.isFinite(b.seed)) seed = b.seed;
 
+  // Avant la semaine (semaine à venir) : sans effet ; après : demande incohérente.
+  let fromDate: string | undefined;
+  if (b.fromDate !== undefined && b.fromDate !== null) {
+    const d = requireIsoDate(b.fromDate, 'fromDate');
+    if (d > weekStart && !isInWeek(d, weekStart)) throw badRequest("fromDate n'est pas dans la semaine.");
+    if (isInWeek(d, weekStart)) fromDate = d;
+  }
+
   return {
     weekStart,
     maxMeals: optionalInt(b.maxMeals, 'maxMeals', 1, 14),
@@ -140,6 +151,7 @@ export function parseGenerateRequest(body: unknown, today: string): GenerateRequ
     recentRecipeIds: optionalStringArray(b.recentRecipeIds, 'recentRecipeIds', 60),
     pantryIngredientIds: optionalStringArray(b.pantryIngredientIds, 'pantryIngredientIds', 200),
     seed,
+    ...(fromDate ? { fromDate } : {}),
   };
 }
 
@@ -245,6 +257,7 @@ export function createGenerateMealPlanHandler(deps: GenerateMealPlanDeps): (req:
       pantryIngredientIds: request.pantryIngredientIds,
       seed: request.seed,
       now: nowDate.toISOString(),
+      ...(request.fromDate ? { fromDate: request.fromDate } : {}),
     };
 
     // 4. Tentative IA.

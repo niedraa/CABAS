@@ -184,6 +184,40 @@ describe('generateMealPlan — repas verrouillés', () => {
   });
 });
 
+describe('generateMealPlan — à partir d’aujourd’hui (fromDate)', () => {
+  const thursday = '2026-09-17';
+
+  it('aucun créneau passé n’est rempli, y compris en offre gratuite', () => {
+    const free = generateMealPlan(input({ maxMeals: 3, fromDate: thursday }));
+    expect(free.meals.map((m) => `${m.date}|${m.type}`)).toEqual(['2026-09-17|diner', '2026-09-18|diner', '2026-09-19|dejeuner']);
+    const all = generateMealPlan(input({ fromDate: thursday }));
+    expect(all.meals.every((m) => m.date >= thursday)).toBe(true);
+    expect(all.meals).toHaveLength(DEFAULT_MEAL_SLOTS.filter((s) => s.weekday >= 3).length);
+    expect(openSlots(input({ fromDate: thursday })).every((s) => s.date >= thursday)).toBe(true);
+    // Semaine à venir : fromDate antérieur, sans effet.
+    expect(generateMealPlan(input({ fromDate: '2026-09-10' })).meals).toEqual(generateMealPlan(input()).meals);
+  });
+
+  it('les repas des jours passés sont conservés comme s’ils étaient verrouillés, et comptent dans la limite', () => {
+    const base = generateMealPlan(input());
+    const past = base.meals.filter((m) => m.date < thursday);
+    const plan = generateMealPlan(input({ existing: base, seed: 'autre', fromDate: thursday }));
+    for (const m of past) expect(plan.meals.find((x) => x.id === m.id)).toEqual(m);
+    expect(plan.meals).toHaveLength(base.meals.length);
+    // Gratuit : 3 repas déjà passés → rien de plus à planifier.
+    const free = generateMealPlan(input({ existing: base, maxMeals: 3, fromDate: thursday }));
+    expect(free.meals).toEqual(past.slice(0, 3));
+  });
+
+  it('parseLlmResponse refuse un créneau passé', () => {
+    const inp = input({ fromDate: thursday });
+    const candidates = selectLlmCandidates(inp, 60);
+    const dinner = candidates.find((r) => r.mealTypes.includes('diner'))!;
+    const sel = parseLlmResponse(JSON.stringify({ meals: [{ date: '2026-09-15', type: 'diner', recipeId: dinner.id }] }), inp, candidates);
+    expect(sel?.meals).toEqual([]);
+  });
+});
+
 describe('generateMealPlan — contraintes et relâchement', () => {
   it('n’inclut jamais un allergène déclaré', () => {
     const plan = generateMealPlan(input({}, { allergens: ['gluten', 'lait'] }));

@@ -3,6 +3,38 @@
  * Chaque parcours reçoit le harnais (`h`, voir harness.mjs).
  */
 
+/**
+ * Créneaux par défaut (dîners + déjeuners du week-end), par jour de la semaine
+ * (0 = lundi). Cabas ne planifie rien sur un jour passé.
+ */
+const DEFAULT_SLOT_WEEKDAYS = [0, 1, 2, 3, 4, 5, 5, 6, 6];
+const FREE_MEALS = 3;
+
+/** Jour de la semaine (0 = lundi) de la date simulée, à l'heure de Paris. */
+function parisWeekday(date) {
+  const day = new Intl.DateTimeFormat('en-GB', { weekday: 'short', timeZone: 'Europe/Paris' }).format(date);
+  return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].indexOf(day);
+}
+
+/** Créneaux par défaut encore à venir dans la semaine de la date simulée. */
+function upcomingSlots(h) {
+  const weekday = parisWeekday(h.now);
+  return DEFAULT_SLOT_WEEKDAYS.filter((d) => d >= weekday).length;
+}
+
+/**
+ * S'il reste moins de 3 créneaux cette semaine (dimanche), l'onboarding
+ * planifie directement la semaine suivante.
+ */
+function plansNextWeek(h) {
+  return upcomingSlots(h) < FREE_MEALS;
+}
+
+/** Repas attendus en Premium sur la semaine planifiée (créneaux encore à venir). */
+function premiumMeals(h) {
+  return plansNextWeek(h) ? DEFAULT_SLOT_WEEKDAYS.length : upcomingSlots(h);
+}
+
 /** Clique sur le CTA collé en bas de l'étape d'onboarding courante. */
 async function next(h) {
   const cta = h.get('onboarding-cta');
@@ -81,12 +113,19 @@ const week = {
     await h.see('week-screen');
     await h.see('week-stats');
     // Les cartes entrent en cascade : on attend qu'elles soient toutes là.
-    const meals = await h.waitForCount('[data-testid^="meal-"][data-testid$="-open"]', 3);
-    h.expect(meals === 3, `3 repas attendus en offre gratuite, ${meals} affichés`);
+    const meals = await h.waitForCount('[data-testid^="meal-"][data-testid$="-open"]', FREE_MEALS);
+    h.expect(meals === FREE_MEALS, `${FREE_MEALS} repas attendus en offre gratuite, ${meals} affichés`);
     await h.shot('semaine', 1000);
-    await h.tap('week-switch-next');
-    await h.shot('semaine-prochaine');
-    await h.tap('week-switch-current');
+    // Aller-retour entre les deux semaines, puis retour sur la semaine planifiée.
+    if (plansNextWeek(h)) {
+      await h.tap('week-switch-current');
+      await h.shot('semaine-en-cours');
+      await h.tap('week-switch-next');
+    } else {
+      await h.tap('week-switch-next');
+      await h.shot('semaine-prochaine');
+      await h.tap('week-switch-current');
+    }
     await h.wait(500);
   },
 };
@@ -275,8 +314,9 @@ const premium = {
     await h.tap('regenerate');
     await h.seeText('De nouvelles idées ?');
     await h.page.getByRole('button', { name: 'Nouvelles idées', exact: true }).last().click();
-    const meals = await h.waitForCount('[data-testid^="meal-"][data-testid$="-open"]', 9, 15_000);
-    h.expect(meals === 9, `9 repas attendus en Premium, ${meals} affichés`);
+    const expected = premiumMeals(h);
+    const meals = await h.waitForCount('[data-testid^="meal-"][data-testid$="-open"]', expected, 15_000);
+    h.expect(meals === expected, `${expected} repas attendus en Premium, ${meals} affichés`);
     await h.shot('semaine-premium', 1000);
   },
 };

@@ -16,6 +16,7 @@ import { parseAmount, UNIT_SHORT } from './listView';
 export interface QuantityFieldProps {
   value: number;
   unit: BaseUnit;
+  /** Reçoit `NaN` quand la saisie est vide ou invalide : le parent bloque alors l'enregistrement. */
   onChange: (value: number) => void;
   /** Unités proposées : sélecteur affiché s'il y en a plusieurs. */
   units?: readonly BaseUnit[];
@@ -47,7 +48,7 @@ export function QuantityField({ value, unit, onChange, units, onUnitChange, labe
         </Text>
         {unit === 'piece' ? (
           <Stepper
-            value={Math.max(min, Math.round(value))}
+            value={Number.isFinite(value) ? Math.max(min, Math.round(value)) : min}
             onChange={onChange}
             min={min}
             max={99}
@@ -61,8 +62,8 @@ export function QuantityField({ value, unit, onChange, units, onUnitChange, labe
           value={draft}
           onChangeText={(s) => {
             setDraft(s);
-            const n = parseAmount(s);
-            if (n !== null) onChange(n);
+            // Vide ou invalide : NaN, sinon le parent garderait l'ancienne valeur valide.
+            onChange(parseAmount(s) ?? Number.NaN);
           }}
           keyboardType="decimal-pad"
           inputMode="decimal"

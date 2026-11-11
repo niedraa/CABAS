@@ -151,7 +151,9 @@ describe('budget', () => {
 
   it('totalSavings et création d’entrées', () => {
     expect(totalSavings(entries)).toBe(900);
-    const h: OrderHandoff = { id: 'o1', storeId: 's_leclerc', channel: 'drive', url: '', lines: [], totalCents: 4200, createdAt: NOW, status: 'confirmed' };
+    // Horodatage construit en heure locale : le jour attendu ne dépend pas du fuseau de la machine.
+    const createdAt = new Date(2026, 8, 14, 12, 0).toISOString();
+    const h: OrderHandoff = { id: 'o1', storeId: 's_leclerc', channel: 'drive', url: '', lines: [], totalCents: 4200, createdAt, status: 'confirmed' };
     expect(spendingFromHandoff(h, 350, 'Courses')).toEqual({
       id: 'spend_o1',
       date: '2026-09-14',
@@ -163,6 +165,9 @@ describe('budget', () => {
     });
     expect(spendingFromHandoff(h, -5).savingsCents).toBe(0);
     expect(spendingFromHandoff(h).label).toBeUndefined();
+    // Jour LOCAL de l'horodatage (0 h 30 le 15, encore le 14 en UTC à Paris), date jour telle quelle.
+    expect(spendingFromHandoff({ ...h, createdAt: new Date(2026, 8, 15, 0, 30).toISOString() }).date).toBe('2026-09-15');
+    expect(spendingFromHandoff({ ...h, createdAt: '2026-09-16' }).date).toBe('2026-09-16');
     const m = createManualSpending('2026-09-15T12:00:00Z', 's_lidl', 1234.6, { label: 'Marché' });
     expect(m).toMatchObject({ date: '2026-09-15', totalCents: 1235, source: 'manual', label: 'Marché', savingsCents: 0 });
     expect(m.id).toMatch(/^spend_/);

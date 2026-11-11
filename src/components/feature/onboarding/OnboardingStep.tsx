@@ -63,7 +63,10 @@ export function OnboardingStep({
 
   return (
     <View style={[styles.root, { backgroundColor: t.colors.background }]} testID={testID}>
-      <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      {/* « padding » aussi sur Android : en edge-to-edge (obligatoire), la fenêtre n'est plus
+          redimensionnée par le clavier. Le KAV ne compte que le recouvrement réel, donc rien
+          n'est ajouté si le système a déjà fait la place. Le web n'a pas de clavier virtuel. */}
+      <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'web' ? undefined : 'padding'}>
         <ScrollView
           ref={scrollRef}
           style={styles.root}

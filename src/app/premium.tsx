@@ -5,19 +5,27 @@
  * 7 jours), achat, restauration, états chargement / erreur / annulation,
  * mentions, puis état « Tu es Premium » (célébration).
  *
+ * Sur iOS, `presentation: 'modal'` ouvre une vraie feuille native (pageSheet) :
+ * elle passe au-dessus du viewport de toasts racine et commence déjà sous la
+ * barre d'état. L'écran monte donc ses propres toasts et annule la marge haute
+ * (comme le native-stack pour l'en-tête de ses modales).
+ *
  * Paramètre facultatif : `?feature=optimized_basket` (voir `premiumHref()`).
  */
 import { router, useFocusEffect, useLocalSearchParams, type Href } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, FadeOut } from 'react-native-reanimated';
+import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { ArrowRight, ShieldCheck, X } from 'lucide-react-native';
 
 import { Celebration, CircleDecor } from '@/components/brand';
 import {
   defaultPackage,
   FeatureList,
+  hasStoreOffers,
+  offeredTrialDays,
   orderedFeatures,
   parseFeatureParam,
   paywallHeadline,
@@ -29,7 +37,17 @@ import {
   renewalSentence,
   subscriptionStatus,
 } from '@/components/feature/premium';
-import { Button, IconButton, InfoBanner, PressableScale, staggerEntering, Text, useSafeInsets, useToast } from '@/components/ui';
+import {
+  Button,
+  IconButton,
+  InfoBanner,
+  PressableScale,
+  staggerEntering,
+  Text,
+  ToastProvider,
+  useSafeInsets,
+  useToast,
+} from '@/components/ui';
 import { PREMIUM_FEATURES, PREMIUM_PRICING } from '@/core';
 import { useSubscription } from '@/hooks';
 import { isDemoMode } from '@/lib/env';
@@ -39,7 +57,21 @@ import type { PackageId } from '@/services/purchases';
 import { effectiveEntitlement, useSubscriptionStore } from '@/stores';
 import { useTheme, withAlpha } from '@/theme';
 
-export default function PremiumScreen() {
+export default function PremiumRoute() {
+  const insets = useSafeInsets();
+  // iOS : la feuille modale commence sous la barre d'état (marge haute nulle).
+  const sheetInsets = useMemo(() => (Platform.OS === 'ios' ? { ...insets, top: 0 } : insets), [insets]);
+  return (
+    <SafeAreaInsetsContext.Provider value={sheetInsets}>
+      {/* Toasts dessinés DANS la modale : le viewport racine reste dessous sur iOS. */}
+      <ToastProvider>
+        <PremiumScreen />
+      </ToastProvider>
+    </SafeAreaInsetsContext.Provider>
+  );
+}
+
+function PremiumScreen() {
   const t = useTheme();
   const c = t.colors;
   const insets = useSafeInsets();
@@ -80,10 +112,13 @@ export default function PremiumScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Seules les offres que le store propose vraiment : si le choix (ou le défaut
+  // « annuel ») n'existe pas, la sélection retombe sur une offre affichée.
   const options = useMemo(() => planOptions(offerings), [offerings]);
   const selected = options.find((o) => o.id === pkg) ?? options[0];
-  const loadingOffers = !offerings && (!loaded || storeStatus === 'loading');
-  const offersUnavailable = !offerings && !loadingOffers;
+  const storeHasOffers = hasStoreOffers(offerings);
+  const loadingOffers = !storeHasOffers && (!loaded || storeStatus === 'loading');
+  const offersUnavailable = !storeHasOffers && !loadingOffers;
   const purchasing = storeStatus === 'purchasing';
   const restoring = storeStatus === 'restoring';
   const busy = purchasing || restoring;
@@ -104,7 +139,7 @@ export default function PremiumScreen() {
 
   const buy = async () => {
     setPurchaseError(null);
-    const res = await useSubscriptionStore.getState().purchase(pkg);
+    const res = await useSubscriptionStore.getState().purchase(selected.id);
     if (res.status === 'success') {
       if (effectiveEntitlement(res.state) !== 'premium') {
         haptics.warning();
@@ -146,7 +181,8 @@ export default function PremiumScreen() {
     if (res.status === 'error') toast.show({ title: 'Restauration impossible', message: res.message, tone: 'danger' });
   };
 
-  const headline = paywallHeadline(feature);
+  // L'essai n'est promis que s'il est vraiment offert (même source que le CTA).
+  const headline = paywallHeadline(feature, selected.fromStore ? selected.trialDays : offeredTrialDays(offerings));
   const status = subscriptionStatus(subState);
   const renewal = renewalSentence(status);
 
@@ -161,6 +197,7 @@ export default function PremiumScreen() {
           paddingBottom: t.spacing.xxl,
         }}
         showsVerticalScrollIndicator={false}
+        testID="premium-scroll"
       >
         {/* Les cercles défilent avec le héros (ils ne passent pas sous les cartes). */}
         <View style={styles.decor} pointerEvents="none">
@@ -177,7 +214,7 @@ export default function PremiumScreen() {
               />
               {renewal ? (
                 <Animated.View
-                  entering={staggerEntering(4, 70, 80)}
+                  entering={staggerEntering(4, t.motion.stagger, t.motion.duration.instant)}
                   style={[styles.statusCard, { marginTop: t.spacing.xl, padding: t.spacing.lg, gap: t.spacing.md, borderRadius: t.radius.lg, backgroundColor: withAlpha(c.heroText, 0.1) }]}
                   testID="premium-status"
                 >
@@ -202,7 +239,7 @@ export default function PremiumScreen() {
                 <Text variant="title3" color="heroText" accessibilityRole="header">
                   Choisis ton offre
                 </Text>
-                <PlanPicker options={options} value={pkg} onChange={setPkg} loading={loadingOffers} disabled={busy || offersUnavailable} />
+                <PlanPicker options={options} value={selected.id} onChange={setPkg} loading={loadingOffers} disabled={busy || offersUnavailable} />
                 {offersUnavailable ? (
                   <InfoBanner
                     tone="warning"
@@ -227,7 +264,7 @@ export default function PremiumScreen() {
 
       {/* Pied collé : CTA, mentions, restauration. */}
       <Animated.View
-        entering={FadeIn.delay(240).duration(t.motion.duration.base)}
+        entering={FadeIn.delay(t.motion.duration.base).duration(t.motion.duration.base)}
         style={[
           styles.footer,
           {
@@ -284,7 +321,7 @@ export default function PremiumScreen() {
             size={240}
             playKey={celebrate}
             haptic={false}
-            onDone={() => setTimeout(() => setCelebrating(false), 350)}
+            onDone={() => setTimeout(() => setCelebrating(false), t.motion.duration.slow)}
             accessibilityLabel="Bienvenue dans Premium"
           />
         </Animated.View>

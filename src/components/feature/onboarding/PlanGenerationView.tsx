@@ -25,6 +25,8 @@ export interface PlanGenerationViewProps {
   durationMs?: number | null;
   /** Repas limités par l'offre gratuite (texte d'aide). */
   limitedTo?: number | null;
+  /** Premier jour planifié quand ce n'est pas la semaine en cours (« lundi 16 novembre »). */
+  startsOn?: string | null;
   errorMessage?: string | null;
   onRetry?: () => void;
   onSkip?: () => void;
@@ -38,6 +40,7 @@ export function PlanGenerationView({
   mealsCount = 0,
   durationMs,
   limitedTo,
+  startsOn,
   errorMessage,
   onRetry,
   onSkip,
@@ -91,8 +94,9 @@ export function PlanGenerationView({
                 <Text variant="title1" align="center" accessibilityRole="header">
                   Ta semaine est prête !
                 </Text>
-                <Text variant="callout" color="textSecondary" align="center">
+                <Text variant="callout" color="textSecondary" align="center" testID="generation-summary">
                   {mealsCount} repas planifié{mealsCount > 1 ? 's' : ''}, pensé{mealsCount > 1 ? 's' : ''} pour ton foyer.
+                  {startsOn ? ` On démarre ${startsOn}.` : ''}
                   {limitedTo ? ' Premium planifie toute ta semaine, quand tu veux.' : ''}
                 </Text>
                 {durationMs != null ? (

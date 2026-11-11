@@ -6,8 +6,10 @@ import type { NormalizedOfferings, NormalizedPackage } from '@/services/purchase
 
 import { FeatureList } from '../FeatureList';
 import {
+  annualSavingsPercent,
   defaultPackage,
   formatEndDate,
+  hasStoreOffers,
   localDayOf,
   offeredTrialDays,
   orderedFeatures,
@@ -21,6 +23,8 @@ import {
   purchaseLegalText,
   renewalSentence,
   subscriptionStatus,
+  trialCountdownLabel,
+  trialLengthDays,
 } from '../paywall';
 import { PlanPicker } from '../PlanPicker';
 
@@ -83,14 +87,24 @@ describe('paywall — fonctionnalité d’origine', () => {
   });
 
   it('adapte l’accroche (titre court) et construit le lien', () => {
-    expect(paywallHeadline(null).title).toBe('Tes courses, sans limite');
-    const h = paywallHeadline('optimized_basket');
+    expect(paywallHeadline(null, 7).title).toBe('Tes courses, sans limite');
+    const h = paywallHeadline('optimized_basket', 7);
     expect(h.title).toBe('Paie tes courses moins cher');
     expect(h.title.split(' ').length).toBeLessThanOrEqual(5);
     expect(h.subtitle).toMatch(/7 jours pour essayer/);
-    for (const f of PREMIUM_FEATURES) expect(paywallHeadline(f).title.split(' ').length).toBeLessThanOrEqual(5);
+    for (const f of PREMIUM_FEATURES) expect(paywallHeadline(f, 7).title.split(' ').length).toBeLessThanOrEqual(5);
     expect(premiumHref()).toBe('/premium');
     expect(premiumHref('budget_tracking')).toBe('/premium?feature=budget_tracking');
+  });
+
+  it('ne promet l’essai que s’il est vraiment offert', () => {
+    expect(paywallHeadline(null, 14).subtitle).toMatch(/14 jours pour essayer, sans engagement\.$/);
+    for (const days of [null, 0]) {
+      const h = paywallHeadline('optimized_basket', days);
+      expect(h.subtitle).not.toMatch(/essa/i);
+      expect(h.subtitle).toMatch(/Résiliable à tout moment\.$/);
+      expect(paywallHeadline(null, days).subtitle).not.toMatch(/essa/i);
+    }
   });
 });
 
@@ -130,6 +144,42 @@ describe('paywall — offres', () => {
     expect(purchaseLegalText(noTrial)).toMatch(/débité à la confirmation/);
   });
 
+  it('n’affiche que les offres proposées par le store', () => {
+    const onlyMonthly = planOptions(offerings({ annual: null }));
+    expect(onlyMonthly.map((o) => o.id)).toEqual(['monthly']);
+    expect(onlyMonthly[0].badge).toBeNull();
+    const onlyAnnual = planOptions(offerings({ monthly: null }));
+    expect(onlyAnnual.map((o) => o.id)).toEqual(['annual']);
+    // Une seule offre : rien à comparer, pas de badge d'économie.
+    expect(onlyAnnual[0].badge).toBeNull();
+    // Aucune offre « current » : grille de repli (affichée désactivée), offres indisponibles.
+    const none = offerings({ annual: null, monthly: null });
+    expect(hasStoreOffers(none)).toBe(false);
+    expect(hasStoreOffers(null)).toBe(false);
+    expect(hasStoreOffers(offerings({ annual: null }))).toBe(true);
+    expect(planOptions(none).map((o) => [o.id, o.fromStore])).toEqual([
+      ['annual', false],
+      ['monthly', false],
+    ]);
+  });
+
+  it('calcule l’économie de l’annuel sur les prix du store', () => {
+    expect(annualSavingsPercent(offerings())).toBe(33);
+    // Annuel baissé à 29,99 € : −50 %, et non le « −33 % » de la grille.
+    const cheaper = offerings({ annual: pkg({ priceString: `29,99${NNBSP}€`, priceCents: 2999 }) });
+    expect(annualSavingsPercent(cheaper)).toBe(50);
+    expect(planOptions(cheaper)[0].badge).toBe('−50 %');
+    // Autre vitrine (4,99 $ / 34,99 $) : 42 %.
+    expect(
+      annualSavingsPercent(offerings({ annual: pkg({ priceCents: 3499 }), monthly: pkg({ id: 'monthly', priceCents: 499 }) })),
+    ).toBe(42);
+    // Prix inconnu ou annuel pas moins cher : pas de badge.
+    expect(annualSavingsPercent(offerings({ annual: pkg({ priceCents: null }) }))).toBeNull();
+    expect(annualSavingsPercent(offerings({ annual: pkg({ priceCents: 6000 }) }))).toBeNull();
+    // Sans offres chargées : la grille, cohérente avec les prix de repli affichés.
+    expect(annualSavingsPercent(null)).toBe(33);
+  });
+
   it('présélectionne l’annuel, sinon le mensuel ; essai offert', () => {
     expect(defaultPackage(null)).toBe('annual');
     expect(defaultPackage(offerings({ annual: null }))).toBe('monthly');
@@ -147,6 +197,26 @@ describe('statut d’abonnement', () => {
   it('gratuit, et Premium expiré = gratuit', () => {
     expect(subscriptionStatus(state({ entitlement: 'free', expiresAt: null }), now).kind).toBe('free');
     expect(subscriptionStatus(state({ expiresAt: '2026-11-01T00:00:00Z' }), now)).toMatchObject({ kind: 'free', label: 'Gratuit' });
+  });
+
+  it('jours restants comptés en jours civils, pas en tranches de 24 h', () => {
+    const trial = (expiresAt: string) => state({ isTrial: true, expiresAt });
+    // Fin lundi 16 à 20 h.
+    expect(subscriptionStatus(trial('2026-11-16T20:00:00'), Date.parse('2026-11-15T21:00:00')).daysLeft).toBe(1);
+    // 25 h avant la fin, mais c'est bien demain.
+    expect(subscriptionStatus(trial('2026-11-16T20:00:00'), Date.parse('2026-11-15T19:00:00')).daysLeft).toBe(1);
+    expect(subscriptionStatus(trial('2026-11-16T20:00:00'), Date.parse('2026-11-16T08:00:00')).daysLeft).toBe(0);
+    expect(trialCountdownLabel(0)).toBe('Ton essai se termine aujourd’hui');
+    expect(trialCountdownLabel(1)).toBe('Ton essai se termine demain');
+    expect(trialCountdownLabel(5)).toBe('Encore 5 jours pour tout essayer');
+  });
+
+  it('durée de l’essai : celle du store pour le produit souscrit, sinon la durée standard', () => {
+    const long = offerings({ annual: pkg({ trial: { days: 14, label: '14 jours d’essai gratuit' } }) });
+    expect(trialLengthDays(long, 'cabas_premium_annual')).toBe(14);
+    expect(trialLengthDays(long, 'cabas_premium_monthly')).toBe(7);
+    expect(trialLengthDays(long, null)).toBe(7);
+    expect(trialLengthDays(null, 'cabas_premium_annual')).toBe(7);
   });
 
   it('essai : date de fin, jours restants, phrase de suite', () => {

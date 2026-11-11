@@ -31,6 +31,7 @@ import { useCatalog } from '@/services/catalog';
 
 import { useProfileStore } from './profileStore';
 import { basePersistOptions, registerPersistedStore } from './registry';
+import { useWeekStore } from './weekStore';
 
 export interface PantryInput {
   label: string;
@@ -169,7 +170,9 @@ export function useLeftoverSuggestions(limit = 10) {
   }, [items, profile, catalog, limit]);
 }
 
+/** Articles qui périment d'ici `days` jours, comptés depuis le jour LOCAL (weekStore), pas la date UTC. */
 export function useExpiringSoon(days = 3): PantryItem[] {
   const items = usePantryStore((s) => s.items);
-  return useMemo(() => expiringSoon(items, new Date().toISOString(), days), [items, days]);
+  const today = useWeekStore((s) => s.today);
+  return useMemo(() => expiringSoon(items, today, days), [items, today, days]);
 }

@@ -7,8 +7,13 @@
  *   semaine » (weekday 0 = lundi … 6 = dimanche), remplace le précédent.
  * - `scheduleOrderReminder(date)` : rappel ponctuel « pense à commander ».
  * - `notifyPriceDrop(drop)` : notification locale immédiate (baisse de prix).
+ * - `scheduleCookingTimerAlert(key, date, content)` / `cancelCookingTimerAlert(key)` :
+ *   échéance d'un minuteur du mode cuisine (sonne app fermée / écran verrouillé ;
+ *   l'autorisation est demandée au premier minuteur lancé, geste explicite).
  * - `applyNotificationPreferences(prefs)` : (dé)programme selon les réglages.
  * - `registerPushToken(userId)` : jeton Expo enregistré dans `push_tokens` (production).
+ * - `subscribeNotificationOpens(fn)` : toucher une notification → `fn(data.url)`
+ *   (chemin interne, ex. « /panier »), démarrage à froid compris.
  */
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
@@ -19,9 +24,11 @@ import { formatPrice } from '@/core';
 import { getSupabase } from './supabase';
 
 type NotificationsModule = typeof import('expo-notifications');
+type NotificationResponse = import('expo-notifications').NotificationResponse;
 
 export const PLANNING_REMINDER_ID = 'cabas-planning-reminder';
 export const ORDER_REMINDER_ID = 'cabas-order-reminder';
+export const COOKING_TIMER_PREFIX = 'cabas-cooking-timer-';
 export const ANDROID_CHANNEL_ID = 'cabas-rappels';
 
 export type PermissionStatus = 'granted' | 'denied' | 'undetermined' | 'unavailable';
@@ -210,6 +217,56 @@ export async function notifyPriceDrop(drop: PriceDropNotice): Promise<string | n
   }
 }
 
+// Jeton par minuteur : une annulation pendant la demande d'autorisation l'emporte.
+const cookingTimerTokens = new Map<string, number>();
+
+function bumpCookingTimer(key: string): number {
+  const token = (cookingTimerTokens.get(key) ?? 0) + 1;
+  cookingTimerTokens.set(key, token);
+  return token;
+}
+
+/**
+ * Notification locale à l'échéance d'un minuteur du mode cuisine (remplace la
+ * précédente du même minuteur). À appeler quand l'utilisateur lance le
+ * minuteur : l'autorisation est demandée à ce moment-là si besoin.
+ */
+export async function scheduleCookingTimerAlert(
+  key: string,
+  date: Date,
+  content: { title: string; body: string; url?: string },
+): Promise<string | null> {
+  const N = notifications();
+  if (!N || !(date instanceof Date) || !Number.isFinite(date.getTime()) || date.getTime() <= Date.now()) return null;
+  const token = bumpCookingTimer(key);
+  const id = `${COOKING_TIMER_PREFIX}${key}`;
+  await cancel(id);
+  let status = await getPermissionStatus();
+  if (status === 'undetermined') status = await requestPermission();
+  // Refusé, ou minuteur mis en pause / remis à zéro entre-temps.
+  if (status !== 'granted' || cookingTimerTokens.get(key) !== token) return null;
+  try {
+    return await N.scheduleNotificationAsync({
+      identifier: id,
+      content: {
+        title: content.title,
+        body: content.body.slice(0, 180),
+        sound: 'default',
+        data: { url: content.url ?? '/', kind: 'cooking-timer' },
+      },
+      trigger: { type: N.SchedulableTriggerInputTypes.DATE, date, channelId: ANDROID_CHANNEL_ID },
+    });
+  } catch {
+    return null;
+  }
+}
+
+/** Annule l'alerte d'un minuteur (pause, remise à zéro, échéance vue dans l'app). */
+export async function cancelCookingTimerAlert(key: string): Promise<void> {
+  bumpCookingTimer(key);
+  await cancel(`${COOKING_TIMER_PREFIX}${key}`);
+}
+
 /** Applique les réglages : rappel de planification programmé ou annulé. */
 export async function applyNotificationPreferences(prefs: NotificationPreferences): Promise<void> {
   if (!notificationsSupported()) return;
@@ -250,8 +307,48 @@ export async function registerPushToken(userId: string): Promise<string | null> 
   }
 }
 
+/**
+ * Chemin interne porté par une notification (`data.url`, ex. « /panier »), ou
+ * null : seules les routes de l'app (« /… ») sont suivies, jamais une URL externe.
+ */
+export function notificationUrl(data: unknown): string | null {
+  if (!data || typeof data !== 'object') return null;
+  const url = (data as { url?: unknown }).url;
+  if (typeof url !== 'string') return null;
+  return url.startsWith('/') && !url.startsWith('//') ? url : null;
+}
+
+/**
+ * Toucher une notification (action par défaut) : `listener(url)` reçoit son
+ * `data.url`. La notification qui a lancé l'app (démarrage à froid) est traitée
+ * une fois puis oubliée. Renvoie le désabonnement (sans effet sur le web).
+ */
+export function subscribeNotificationOpens(listener: (url: string) => void): () => void {
+  const N = notifications();
+  if (!N) return () => undefined;
+  const handle = (response: NotificationResponse | null | undefined) => {
+    if (!response || response.actionIdentifier !== N.DEFAULT_ACTION_IDENTIFIER) return;
+    try {
+      N.clearLastNotificationResponse();
+    } catch {
+      // déjà oubliée
+    }
+    const url = notificationUrl(response.notification.request.content.data);
+    if (url) listener(url);
+  };
+  let sub: { remove(): void } | null = null;
+  try {
+    handle(N.getLastNotificationResponse());
+    sub = N.addNotificationResponseReceivedListener(handle);
+  } catch {
+    // Module natif absent (tests, Expo Go ancien) : rien à écouter.
+  }
+  return () => sub?.remove();
+}
+
 /** Réinitialise l'état interne (tests). */
 export function __resetNotificationsForTests(): void {
   mod = undefined;
   setupDone = false;
+  cookingTimerTokens.clear();
 }

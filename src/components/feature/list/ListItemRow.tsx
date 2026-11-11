@@ -2,7 +2,7 @@
  * Ligne d'un article de la liste de courses.
  *
  * - toucher la ligne → coche / décoche (case au ressort, libellé barré qui
- *   s'estompe, vibration « succès ») ;
+ *   passe en couleur secondaire — contraste AA conservé —, vibration « succès ») ;
  * - appui long ou crayon → feuille d'édition ;
  * - glisser vers la gauche → retirer (annulable) ;
  * - accessibilité : une seule case à cocher lue en entier, actions
@@ -44,8 +44,9 @@ export function ListItemRow({ item, view, onToggle, onEdit, onRemove, divider, t
   const c = t.colors;
   const checked = item.checked;
   const p = useDerivedValue<number>(() => withSpring(checked ? 1 : 0, t.motion.spring), [checked]);
-  const textStyle = useAnimatedStyle(() => ({ opacity: 1 - 0.35 * p.get() }));
-  const labelStyle = useAnimatedStyle(() => ({ color: interpolateColor(p.get(), [0, 1], [c.text, c.textTertiary]) }));
+  // Coché : barré + couleur secondaire, sans voile d'opacité (la ligne reste
+  // touchable pour décocher : son texte doit rester lisible, contraste AA).
+  const labelStyle = useAnimatedStyle(() => ({ color: interpolateColor(p.get(), [0, 1], [c.text, c.textSecondary]) }));
   const meta = [view.buy, view.sources].filter(Boolean).join(' · ');
   const a11y = itemA11yLabel(item, view);
 
@@ -89,7 +90,7 @@ export function ListItemRow({ item, view, onToggle, onEdit, onRemove, divider, t
         >
           {/* Case purement visuelle : la ligne entière est la cible. */}
           <CheckMark checked={checked} progress={p} />
-          <Animated.View style={[styles.texts, textStyle]}>
+          <View style={styles.texts}>
             <View style={[styles.titleRow, { gap: t.spacing.sm }]}>
               <Animated.Text
                 numberOfLines={2}
@@ -99,7 +100,7 @@ export function ListItemRow({ item, view, onToggle, onEdit, onRemove, divider, t
                 {item.label}
               </Animated.Text>
               {view.quantity ? (
-                <Text variant="subhead" tabular color={checked ? 'textTertiary' : 'textSecondary'} style={styles.qty}>
+                <Text variant="subhead" tabular color="textSecondary" style={styles.qty}>
                   {view.quantity}
                 </Text>
               ) : null}
@@ -122,7 +123,7 @@ export function ListItemRow({ item, view, onToggle, onEdit, onRemove, divider, t
                 {item.note}
               </Text>
             ) : null}
-          </Animated.View>
+          </View>
         </PressableScale>
         <IconButton
           icon={Pencil}

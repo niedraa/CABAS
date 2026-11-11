@@ -8,6 +8,7 @@ import {
   DIET_LABELS,
   DIETS,
   dietAllows,
+  foldText,
   formatIngredientLine,
   lookupIngredient,
   recipeAllergens,
@@ -88,4 +89,15 @@ export function formatMinutes(min: number): string {
   const m = Math.round(min % 60);
   if (h === 0) return `${m} min`;
   return m === 0 ? `${h} h` : `${h} h ${m < 10 ? `0${m}` : m}`;
+}
+
+/**
+ * Alternatives affichées dans « Remplacer le plat » : sans recherche, les
+ * `suggested` mieux classées ; avec une recherche, TOUTES celles du `pool`
+ * (déjà triées par score) dont le titre ou un tag contient la requête.
+ */
+export function filterAlternatives<T extends Pick<Recipe, 'title' | 'tags'>>(pool: readonly T[], query: string, suggested = 6): T[] {
+  const q = foldText(query.trim());
+  if (!q) return pool.slice(0, suggested);
+  return pool.filter((r) => foldText(r.title).includes(q) || r.tags.some((tag) => foldText(tag).includes(q)));
 }

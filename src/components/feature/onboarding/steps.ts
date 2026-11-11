@@ -2,7 +2,15 @@
  * Étapes de l'onboarding (ordre, chemins) et règles de passage — pures et
  * testables. Les écrans vivent dans `src/app/(onboarding)/`.
  */
-import { householdPortions, type UserProfile } from '@/core';
+import {
+  addDays,
+  householdPortions,
+  openSlots,
+  startOfWeek,
+  weekSlots,
+  type MealEngineInput,
+  type UserProfile,
+} from '@/core';
 import { DEFAULT_DRAFT, validateProfile, type ProfileDraft, type ProfileIssue } from '@/stores';
 
 import { isHealthStepValid } from '../profile/profileOptions';
@@ -43,6 +51,17 @@ export function nextStepPath(id: OnboardingStepId): OnboardingPath | null {
 export function previousStepPath(id: OnboardingStepId): OnboardingPath | null {
   const i = stepIndex(id);
   return i > 0 ? ONBOARDING_STEPS[i - 1].path : null;
+}
+
+/**
+ * Chemins à empiler (dans l'ordre) depuis la bienvenue pour reprendre à une
+ * étape : chaque étape jusqu'à celle-ci. Ainsi « Étape précédente », le geste
+ * de retour et le retour Android remontent étape par étape, et pas d'un coup
+ * jusqu'à la bienvenue.
+ */
+export function resumePaths(id: OnboardingStepId): OnboardingPath[] {
+  const i = stepIndex(id);
+  return i > 0 ? ONBOARDING_STEPS.slice(1, i + 1).map((s) => s.path) : [];
 }
 
 /** « Étape 2 sur 7 » (la bienvenue n'est pas comptée). */
@@ -120,6 +139,35 @@ export function householdSummary(h: UserProfile['household']): string {
   const p = householdPortions(h);
   const portions = Number.isInteger(p) ? String(p) : String(p).replace('.', ',');
   return `${parts.join(', ')} · ${portions} portion${p > 1 ? 's' : ''}`;
+}
+
+/** En dessous de ce nombre de repas encore planifiables d'ici dimanche, on démarre la semaine suivante. */
+export const MIN_FIRST_WEEK_MEALS = 3;
+
+/**
+ * Semaine du premier planning (fin d'onboarding) : la semaine en cours si le
+ * moteur peut y placer assez de repas sans toucher un jour passé, sinon la
+ * suivante. On demande au moteur lui-même quels créneaux il remplirait
+ * (`openSlots`, avec `fromDate` = aujourd'hui comme `planStore.generate`) :
+ * s'il remplit depuis le lundi, le moindre créneau passé fait basculer sur la
+ * semaine suivante ; s'il saute les jours passés, on garde la semaine en
+ * cours tant qu'il reste au moins `MIN_FIRST_WEEK_MEALS` repas à planifier.
+ * Dans tous les cas : jamais de repas déjà passé, ni de courses pour lui.
+ */
+export function firstPlanWeekStart(profile: UserProfile, maxMeals: number, today: string): string {
+  const current = startOfWeek(today);
+  // Seuls les créneaux comptent : pas besoin du catalogue de recettes.
+  const input: MealEngineInput & { fromDate?: string } = {
+    profile,
+    recipes: [],
+    ingredientsById: {},
+    weekStart: current,
+    maxMeals,
+    fromDate: today,
+  };
+  const planned = openSlots(input);
+  const enough = Math.min(MIN_FIRST_WEEK_MEALS, Math.max(1, maxMeals), weekSlots(profile, current).length);
+  return planned.length >= enough && planned.every((s) => s.date >= today) ? current : addDays(current, 7);
 }
 
 /** Messages qui défilent pendant la génération du planning. */

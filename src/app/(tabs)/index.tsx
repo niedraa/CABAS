@@ -58,11 +58,12 @@ import {
   useToast,
 } from '@/components/ui';
 import type { PlannedMeal } from '@/core';
-import { compareList, formatDayLabel, formatPrice, formatWeekRange, parseISODate, MONTH_SHORT } from '@/core';
+import { compareList, formatDayLabel, formatPrice, formatWeekRange, parseISODate, weekdayIndex, MONTH_SHORT } from '@/core';
 import { useCurrentWeek, useHydrated, useSubscription } from '@/hooks';
 import { haptics } from '@/lib/haptics';
 import { useCatalog } from '@/services/catalog';
 import {
+  activeWeek,
   findMeal,
   isBasketStale,
   useBasketStore,
@@ -91,7 +92,8 @@ export default function WeekScreen() {
   const ws = week.activeWeekStart;
   const plan = useWeekPlan(ws);
   const days = useMealsByDay(ws);
-  const generating = usePlanStore((s) => s.status === 'generating' && s.generatingWeekStart === ws);
+  // État de génération de CETTE semaine (une autre peut se générer en parallèle).
+  const generating = usePlanStore((s) => s.generatingWeeks[ws] === true);
   const sub = useSubscription();
   const catalog = useCatalog();
   const list = useWeekList(ws);
@@ -112,8 +114,10 @@ export default function WeekScreen() {
       ),
     [meals, catalog, basketTotal, listEstimate],
   );
-  const openSlots = useMemo(() => openSlotsOf(profile, ws, meals), [profile, ws, meals]);
+  // Jours passés exclus : pas de carte « Ajouter » / « Débloquer » pour hier.
+  const openSlots = useMemo(() => openSlotsOf(profile, ws, meals, week.today), [profile, ws, meals, week.today]);
   const atFreeLimit = !sub.isPremium && meals.length >= sub.maxMealsPerWeek;
+  const totalItems = list?.items.length ?? 0;
   const remainingItems = useMemo(() => (list?.items ?? []).filter((i) => !i.checked).length, [list]);
 
   // ── Semaine affichée : sens du glissement ─────────────────────────────────
@@ -122,7 +126,8 @@ export default function WeekScreen() {
   const switchWeek = (key: WeekKey) => {
     if (key === weekKey) return;
     setDirection(key === 'next' ? 1 : -1);
-    setSelected(key === 'current' ? todayIndex(days, week.today) : 0);
+    // `days` décrit encore la semaine affichée (l'autre) : l'index d'aujourd'hui se calcule sans lui.
+    setSelected(key === 'current' ? weekdayIndex(week.today) : 0);
     if (key === 'next') week.goToNextWeek();
     else week.goToCurrentWeek();
   };
@@ -255,10 +260,16 @@ export default function WeekScreen() {
     const fresh = useListStore.getState().lists[ws];
     const est = fresh ? listEstimateCents(compareList(fresh.items, catalog.index)) : null;
     const s = computeWeekStats(res.plan.meals, catalog.recipesById, est !== null ? { cents: est, exact: false } : null);
+    const message = `${s.meals} repas, ≈ ${formatPrice(Math.round(s.budgetCents / 100) * 100)} estimés.`;
+    // L'utilisateur a changé de semaine entre-temps : pas de célébration ici, on nomme la semaine prête.
+    if (res.plan.weekStart !== activeWeek()) {
+      toast.show({ title: `Semaine du ${formatWeekRange(res.plan.weekStart)} prête`, message, tone: 'success' });
+      return;
+    }
     if (opts.celebrate) setCelebrate((n) => n + 1);
     toast.show({
       title: opts.celebrate ? 'Ta semaine est prête !' : 'Nouvelles idées au menu',
-      message: `${s.meals} repas, ≈ ${formatPrice(Math.round(s.budgetCents / 100) * 100)} estimés.`,
+      message,
       tone: 'success',
     });
   };
@@ -447,7 +458,7 @@ export default function WeekScreen() {
               ))}
               {plan && !generating && meals.length > 0 ? (
                 <Animated.View entering={FadeIn.delay(200)} style={{ marginTop: t.spacing.xxl }}>
-                  <ListReadyCard items={remainingItems} onPress={goToList} testID="list-ready" />
+                  <ListReadyCard items={remainingItems} total={totalItems} onPress={goToList} testID="list-ready" />
                 </Animated.View>
               ) : null}
             </>

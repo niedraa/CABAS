@@ -18,6 +18,7 @@ import {
   parseAmountInput,
   recentDayChoices,
   shortDayLabel,
+  spendingAddedMessage,
   storeLabel,
   weeklyBars,
 } from '../budgetView';
@@ -97,6 +98,8 @@ describe('message de la semaine', () => {
       expect(`${m.title} ${m.body}`).not.toMatch(/attention|dépassé|trop|!!!|erreur/i);
     }
     expect(budgetMessage(s(3000, 0)).title).toBe('Pas encore de budget');
+    // Aucune promesse que le planificateur ne tient pas (il ne lit pas les dépenses).
+    expect(over.body).toBe('Ça arrive ! Tu peux ajuster ton budget dans ton profil.');
   });
 
   it('phrase du raccourci « Budget »', () => {
@@ -118,6 +121,15 @@ describe('saisie d’une dépense', () => {
     expect(parseAmountInput('abc')).toMatchObject({ ok: false, message: expect.stringMatching(/42,50/) });
     expect(parseAmountInput('0')).toMatchObject({ ok: false });
     expect(parseAmountInput(String(MAX_MANUAL_SPENDING_CENTS / 100 + 1))).toMatchObject({ ok: false });
+  });
+
+  it('toast d’ajout : semaine en cours, ou la semaine passée concernée', () => {
+    // Mercredi 11 novembre : semaine du 9 au 15.
+    expect(spendingAddedMessage(4250, '2026-11-11', '2026-11-09')).toBe(`42,50${NNBSP}€ comptés dans ta semaine.`);
+    expect(spendingAddedMessage(4250, '2026-11-09', '2026-11-09')).toBe(`42,50${NNBSP}€ comptés dans ta semaine.`);
+    // Dimanche 8 : semaine précédente, la carte « Cette semaine » ne bouge pas.
+    expect(spendingAddedMessage(4250, '2026-11-08', '2026-11-09')).toBe(`42,50${NNBSP}€ ajoutés à la semaine du 2 – 8 nov.`);
+    expect(spendingAddedMessage(1200, '2026-06-07', '2026-06-08')).toBe(`12,00${NNBSP}€ ajoutés à la semaine du 1 – 7 juin.`);
   });
 
   it('propose les 7 derniers jours', () => {
@@ -183,6 +195,9 @@ describe('composants du budget', () => {
     const onUpgrade = jest.fn();
     await render(<BudgetTeaser savingsCents={2630} trialDays={7} onUpgrade={onUpgrade} />);
     expect(screen.getByText(`26,30${NNBSP}€ déjà économisés avec Cabas`)).toBeTruthy();
+    // Graphique d'exemple sans montants (même là où le flou retombe sur un simple voile).
+    expect(screen.queryByText(`98${NNBSP}€`)).toBeNull();
+    expect(screen.queryByText(/Budget hebdo/)).toBeNull();
     await fireEvent.press(screen.getByRole('button', { name: 'Essayer 7 jours gratuits' }));
     expect(onUpgrade).toHaveBeenCalledTimes(1);
   });

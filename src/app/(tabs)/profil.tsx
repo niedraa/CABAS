@@ -29,14 +29,22 @@ import {
   type ProfileSectionId,
 } from '@/components/feature/account';
 import { budgetShortcutSubtitle } from '@/components/feature/budget';
-import { offeredTrialDays, premiumHref, subscriptionStatus } from '@/components/feature/premium';
+import { offeredTrialDays, premiumHref, subscriptionStatus, trialLengthDays } from '@/components/feature/premium';
 import { Card, EmptyState, Screen, staggerEntering, StoreBadgeStack, Text } from '@/components/ui';
 import type { Store } from '@/core';
 import { useSubscription } from '@/hooks';
 import { isDemoMode } from '@/lib/env';
 import { haptics } from '@/lib/haptics';
 import { useCatalog } from '@/services/catalog';
-import { useBudgetStatus, useExpiringSoon, usePantryStore, useProfileStore, useSettingsStore, useSubscriptionStore } from '@/stores';
+import {
+  useBudgetStatus,
+  useExpiringSoon,
+  usePantryStore,
+  useProfileStore,
+  useSettingsStore,
+  useSubscriptionStore,
+  useWeekStore,
+} from '@/stores';
 import { useTheme } from '@/theme';
 
 export default function ProfileTab() {
@@ -46,7 +54,9 @@ export default function ProfileTab() {
   const offerings = useSubscriptionStore((s) => s.offerings);
   const sub = useSubscription();
   const catalog = useCatalog();
-  const budget = useBudgetStatus();
+  // Semaine EN COURS (comme l'écran Budget), pas la semaine consultée dans « Ma semaine ».
+  const currentWeek = useWeekStore((s) => s.currentWeekStart);
+  const budget = useBudgetStatus(currentWeek);
   const pantryCount = usePantryStore((s) => s.items.length);
   const expiring = useExpiringSoon(3).length;
   const themePreference = useSettingsStore((s) => s.themePreference);
@@ -98,6 +108,7 @@ export default function ProfileTab() {
           <SubscriptionCard
             status={status}
             trialDays={trialDays}
+            trialLengthDays={trialLengthDays(offerings, subState.productId)}
             onUpgrade={() => go(premiumHref())}
             onManage={() => go('/parametres/abonnement')}
           />

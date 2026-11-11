@@ -43,8 +43,17 @@ export interface DietAllergySectionProps {
   onChange: (value: DietAllergyValue) => void;
   /** Ingrédients du catalogue (recherche « je n'aime pas »). */
   ingredients: readonly Ingredient[];
-  /** Appelé quand des résultats de recherche apparaissent (l'écran peut les amener en vue). */
+  /**
+   * Appelé quand la recherche affiche quelque chose sous le champ (résultats,
+   * ou « Aucun ingrédient ne correspond… ») : l'écran peut l'amener en vue.
+   */
   onSearchResults?: () => void;
+  /**
+   * Appelé quand le champ « Je n'aime pas » prend le focus. Sur iOS, le
+   * clavier réduit la zone défilante sans la faire défiler : l'écran peut
+   * ramener le champ (placé tout en bas) au-dessus du clavier.
+   */
+  onSearchFocus?: () => void;
   /** Horloge injectable (tests). */
   now?: () => string;
   testID?: string;
@@ -57,6 +66,7 @@ export function DietAllergySection({
   onChange,
   ingredients,
   onSearchResults,
+  onSearchFocus,
   now = () => new Date().toISOString(),
   testID = 'diet-allergy',
 }: DietAllergySectionProps) {
@@ -77,11 +87,13 @@ export function DietAllergySection({
   );
 
   const hasResults = results.length > 0;
+  const noMatch = !hasResults && query.trim().length >= 2;
+  const feedback = hasResults ? 'results' : noMatch ? 'none' : null;
   useEffect(() => {
-    if (hasResults) onSearchResults?.();
-    // Seulement à l'apparition des résultats.
+    if (feedback) onSearchResults?.();
+    // Seulement quand ce qui s'affiche sous le champ change (résultats ↔ aucun résultat).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasResults]);
+  }, [feedback]);
 
   const addDisliked = (id: string) => {
     onChange({ ...value, dislikedIngredientIds: [...value.dislikedIngredientIds, id] });
@@ -190,6 +202,7 @@ export function DietAllergySection({
             placeholder="Coriandre, champignons…"
             accessibilityLabel="Rechercher un ingrédient que tu n’aimes pas"
             returnKeyType="done"
+            onFocus={onSearchFocus}
             onSubmitEditing={() => {
               const first = results[0];
               if (first) addDisliked(first.id);
@@ -226,8 +239,8 @@ export function DietAllergySection({
                 ))}
               </Card>
             </Animated.View>
-          ) : query.trim().length >= 2 ? (
-            <Text variant="footnote" color="textSecondary">
+          ) : noMatch ? (
+            <Text variant="footnote" color="textSecondary" accessibilityLiveRegion="polite" testID={`${testID}-no-match`}>
               Aucun ingrédient ne correspond à « {query.trim()} ».
             </Text>
           ) : null}
@@ -241,7 +254,8 @@ export function DietAllergySection({
                   layout={LinearTransition.springify().damping(t.motion.spring.damping)}
                 >
                   <Chip
-                    size="sm"
+                    // Taille « md » : 44 pt de haut, la cible tactile minimale.
+                    size="md"
                     role="button"
                     label={byId.get(id)?.name ?? id}
                     icon={X}

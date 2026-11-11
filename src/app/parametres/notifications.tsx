@@ -2,11 +2,12 @@
  * Réglages › Notifications : autorisation demandée par un geste explicite
  * (jamais au lancement), rappel de planification (jour + heure), rappel de
  * commande, baisses de prix (Premium). Chaque changement reprogramme les
- * rappels (`updateNotificationPrefs`).
+ * rappels (`updateNotificationPrefs`). L'autorisation est relue à chaque retour
+ * dans l'app (après « Ouvrir les réglages ») : accordée, les rappels repartent.
  */
 import { router, type Href } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Linking, Platform, StyleSheet, View } from 'react-native';
+import { AppState, Linking, Platform, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 import { BellRing, CalendarClock, Crown, ShoppingCart, TrendingDown } from 'lucide-react-native';
 
@@ -23,7 +24,7 @@ import { premiumHref } from '@/components/feature/premium';
 import { Button, Card, InfoBanner, Row, Screen, Stack, staggerEntering, Stepper, Switch, Text, useToast } from '@/components/ui';
 import type { NotificationPreferences } from '@/core';
 import { useSubscription } from '@/hooks';
-import { getPermissionStatus, type PermissionStatus } from '@/services/notifications';
+import { applyNotificationPreferences, getPermissionStatus, type PermissionStatus } from '@/services/notifications';
 import { useSettingsStore } from '@/stores';
 import { useTheme } from '@/theme';
 
@@ -36,12 +37,27 @@ export default function NotificationSettings() {
   const [permission, setPermission] = useState<PermissionStatus | null>(known);
   const [requesting, setRequesting] = useState(false);
 
-  // Statut réel (l'utilisateur a pu changer d'avis dans les réglages du téléphone).
+  // Statut réel, relu à l'ouverture puis à chaque retour au premier plan :
+  // l'utilisateur a pu changer d'avis dans les réglages du téléphone.
   useEffect(() => {
     let alive = true;
-    void getPermissionStatus().then((s) => alive && setPermission(s));
+    const sync = async () => {
+      const status = await getPermissionStatus();
+      if (!alive) return;
+      setPermission(status);
+      const before = useSettingsStore.getState().notificationPermission;
+      if (status === before) return;
+      useSettingsStore.setState({ notificationPermission: status });
+      // Tout juste accordée : on programme les rappels sans attendre un redémarrage.
+      if (status === 'granted') await applyNotificationPreferences(useSettingsStore.getState().notificationPrefs);
+    };
+    void sync();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void sync();
+    });
     return () => {
       alive = false;
+      sub.remove();
     };
   }, []);
 

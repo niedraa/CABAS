@@ -55,7 +55,8 @@ export function MealSlotsSection({ value, onChange, freeLimit = null, onPremiumP
         {SLOT_PRESETS.map((p) => (
           <Chip
             key={p.id}
-            size="sm"
+            // Taille « md » : 44 pt de haut, la cible tactile minimale.
+            size="md"
             role="radio"
             emoji={p.emoji}
             label={p.label}

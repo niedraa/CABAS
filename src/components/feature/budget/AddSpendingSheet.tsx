@@ -101,9 +101,10 @@ export function AddSpendingSheet({ visible, onClose, onSubmit, stores, today, te
         />
         <Stack gap="sm">
           <Text variant="subhead">Enseigne</Text>
+          {/* Puces « md » (44 pt) : la cible tactile minimale. */}
           <ChipGroup
             mode="single"
-            size="sm"
+            size="md"
             options={storeOptions}
             value={storeId}
             onChange={setStoreId}
@@ -124,7 +125,7 @@ export function AddSpendingSheet({ visible, onClose, onSubmit, stores, today, te
             {days.map((d) => (
               <Chip
                 key={d.value}
-                size="sm"
+                size="md"
                 role="radio"
                 label={d.label}
                 selected={d.value === date}

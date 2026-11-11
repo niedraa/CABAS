@@ -2,7 +2,8 @@
  * Fiche recette : en-tête immersif (emoji sur pastel, parallaxe, barre qui se
  * replie), méta, portions qui recalculent les quantités en direct,
  * allergènes / régimes déduits des ingrédients, ingrédients à cocher, étapes,
- * et « Mode cuisine » pas à pas.
+ * et « Mode cuisine » pas à pas (étape et minuteurs gardés à la fermeture,
+ * notification locale à l'échéance d'un minuteur).
  *
  * Paramètres : `id` (recette), `mealId` (facultatif : repas du planning dont
  * on règle les portions — la liste de courses suit).
@@ -28,8 +29,11 @@ import {
   dietLabel,
   formatMinutes,
   IngredientChecklist,
+  runningTimers,
   scaledIngredientLines,
   StepList,
+  useCookingSession,
+  type TimerAlerts,
 } from '@/components/feature/recipe';
 import {
   Badge,
@@ -46,10 +50,17 @@ import {
 import { CUISINE_LABELS, householdServings, MEAL_TYPE_LABELS, formatDayLabel } from '@/core';
 import { haptics } from '@/lib/haptics';
 import { useCatalog } from '@/services/catalog';
+import { cancelCookingTimerAlert, scheduleCookingTimerAlert } from '@/services/notifications';
 import { useMeal, usePlanStore, useProfileStore } from '@/stores';
 import { boxShadow, useTheme } from '@/theme';
 
 const HERO_H = 300;
+
+/** Minuteurs du mode cuisine → notifications locales (sans effet sur le web). */
+const TIMER_ALERTS: TimerAlerts = {
+  schedule: (key, endsAt, content) => void scheduleCookingTimerAlert(key, new Date(endsAt), content),
+  cancel: (key) => void cancelCookingTimerAlert(key),
+};
 
 export default function RecipeScreen() {
   const t = useTheme();
@@ -66,7 +77,10 @@ export default function RecipeScreen() {
   const [localServings, setLocalServings] = useState(defaultServings);
   const servings = meal ? meal.servings : localServings;
   const [checked, setChecked] = useState<Record<string, boolean>>({});
-  const [cooking, setCooking] = useState<{ open: boolean; step: number }>({ open: false, step: 0 });
+  // `step` absent : le mode cuisine reprend l'étape de la session en cours.
+  const [cooking, setCooking] = useState<{ open: boolean; step?: number }>({ open: false });
+  const session = useCookingSession(recipe?.id);
+  const resumable = !!session && (session.step > 0 || runningTimers(session) > 0);
 
   const lines = useMemo(
     () => (recipe ? scaledIngredientLines(recipe, servings, catalog.ingredientsById) : []),
@@ -131,7 +145,7 @@ export default function RecipeScreen() {
     if (meal) usePlanStore.getState().setServings(meal.id, n);
     else setLocalServings(n);
   };
-  const openCooking = (step = 0) => {
+  const openCooking = (step?: number) => {
     haptics.impact();
     setCooking({ open: true, step });
   };
@@ -292,7 +306,20 @@ export default function RecipeScreen() {
               {recipe.title}
             </Text>
           </Animated.View>
-          {meal?.locked ? <IconButton icon={Lock} variant="accent" accessibilityLabel="Plat gardé dans ton planning" haptic="none" /> : <View style={styles.barSide} />}
+          {meal?.locked ? (
+            // Simple indicateur (pas un bouton) : le verrou se règle depuis la carte du repas.
+            <View
+              accessible
+              accessibilityRole="image"
+              accessibilityLabel="Plat gardé dans ton planning"
+              style={[styles.lockPill, { width: t.layout.minTouchTarget, height: t.layout.minTouchTarget, borderRadius: t.radius.pill, backgroundColor: c.accent }]}
+              testID="recipe-locked"
+            >
+              <Lock size={t.iconSize.md} color={c.onAccent} />
+            </View>
+          ) : (
+            <View style={styles.barSide} />
+          )}
         </View>
       </View>
 
@@ -304,7 +331,14 @@ export default function RecipeScreen() {
         ]}
       >
         <View style={[styles.column, { maxWidth: t.layout.maxContentWidth }]}>
-          <Button label="Mode cuisine" leftIcon={ChefHat} size="lg" fullWidth onPress={() => openCooking(0)} testID="cooking-open" />
+          <Button
+            label={resumable ? 'Reprendre la cuisine' : 'Mode cuisine'}
+            leftIcon={ChefHat}
+            size="lg"
+            fullWidth
+            onPress={() => openCooking()}
+            testID="cooking-open"
+          />
         </View>
       </View>
 
@@ -314,6 +348,8 @@ export default function RecipeScreen() {
         emoji={recipe.emoji}
         steps={recipe.steps}
         initialStep={cooking.step}
+        sessionKey={recipe.id}
+        timerAlerts={TIMER_ALERTS}
         onClose={() => setCooking((s) => ({ ...s, open: false }))}
       />
     </View>
@@ -335,5 +371,6 @@ const styles = StyleSheet.create({
   barRow: { height: 56, flexDirection: 'row', alignItems: 'center', gap: 8 },
   barTitle: { flex: 1, alignItems: 'center' },
   barSide: { width: 44 },
+  lockPill: { alignItems: 'center', justifyContent: 'center' },
   footer: { borderTopWidth: StyleSheet.hairlineWidth * 2 },
 });

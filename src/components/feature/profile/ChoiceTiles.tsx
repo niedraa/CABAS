@@ -19,6 +19,11 @@ export interface ChoiceTile<T extends string | number> {
 export interface ChoiceTilesProps<T extends string | number> {
   options: readonly ChoiceTile<T>[];
   value: T;
+  /**
+   * Appelé à chaque appui, y compris sur la tuile déjà choisie : le parent
+   * peut ainsi corriger une valeur stockée qui n'est pas exactement celle de
+   * la tuile affichée (ex. 60 min affiché « 60+ »).
+   */
   onChange: (value: T) => void;
   accessibilityLabel: string;
   testID?: string;
@@ -29,7 +34,7 @@ export function ChoiceTiles<T extends string | number>({ options, value, onChang
   return (
     <View accessibilityRole="radiogroup" accessibilityLabel={accessibilityLabel} style={[styles.row, { gap: t.spacing.sm }]} testID={testID}>
       {options.map((o) => (
-        <Tile key={String(o.value)} option={o} selected={o.value === value} onPress={() => o.value !== value && onChange(o.value)} groupLabel={accessibilityLabel} testID={testID ? `${testID}-${o.value}` : undefined} />
+        <Tile key={String(o.value)} option={o} selected={o.value === value} onPress={() => onChange(o.value)} groupLabel={accessibilityLabel} testID={testID ? `${testID}-${o.value}` : undefined} />
       ))}
     </View>
   );

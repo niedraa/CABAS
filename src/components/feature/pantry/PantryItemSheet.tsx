@@ -62,6 +62,7 @@ function Editor({
   const t = useTheme();
   const [quantity, setQuantity] = useState(item.quantity);
   const [expiresAt, setExpiresAt] = useState<string | undefined>(item.expiresAt?.slice(0, 10));
+  // Quantité NaN (champ vide ou invalide) : rien n'est enregistré.
   const valid = quantity > 0;
   return (
     <View style={{ gap: t.spacing.xl }}>

@@ -2,7 +2,7 @@ import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react-native';
 
 import type { BasketStorePart, OrderHandoff, Product, ShoppingListItem, Store } from '@/core';
-import { buildCatalogIndex, buildOrderHandoff, compareList, MINUS, NNBSP, optimizeBasket } from '@/core';
+import { buildCatalogIndex, buildOrderHandoff, compareList, formatWeekRange, MINUS, NNBSP, optimizeBasket } from '@/core';
 import { ingredients, prices, products, stores } from '@/data';
 
 import { OrderActions } from '../OrderActions';
@@ -12,6 +12,9 @@ import { ORDER_COLLAPSED_LINES, OrderReceipt } from '../OrderReceipt';
 import {
   historyOrder,
   ORDER_STATUS_LABELS,
+  orderBudgetSentence,
+  orderBudgetView,
+  orderBudgetWeek,
   orderLineViews,
   orderMatchesPart,
   orderStage,
@@ -80,11 +83,40 @@ describe('orderView', () => {
   });
 
   it('date la commande en relatif', () => {
-    expect(orderWhenLabel({ status: 'confirmed', createdAt: '2026-11-09T10:00:00Z', confirmedAt: '2026-11-10T18:00:00Z' }, '2026-11-10')).toBe(
-      'Validée aujourd’hui',
+    // Horodatages construits en heure locale : indépendants du fuseau de la machine.
+    const at = (day: number, hour: number) => new Date(2026, 10, day, hour).toISOString();
+    expect(orderWhenLabel({ status: 'confirmed', createdAt: at(9, 10), confirmedAt: at(10, 18) }, '2026-11-10')).toBe('Validée aujourd’hui');
+    expect(orderWhenLabel({ status: 'prepared', createdAt: at(9, 10) }, '2026-11-10')).toBe('Préparée hier');
+    expect(orderWhenLabel({ status: 'opened', createdAt: at(5, 10) }, '2026-11-10')).toBe(`${ORDER_STATUS_LABELS.opened} jeudi 5 novembre`);
+  });
+
+  it('compare le jour LOCAL de l’horodatage, pas son jour UTC', () => {
+    // 0 h 30 heure locale le 12 nov. (à Paris, l'horodatage UTC est encore le 11).
+    const afterMidnight = new Date(2026, 10, 12, 0, 30).toISOString();
+    expect(orderWhenLabel({ status: 'confirmed', createdAt: afterMidnight, confirmedAt: afterMidnight }, '2026-11-12')).toBe('Validée aujourd’hui');
+    // 21 h heure locale le 11 nov. (aux Antilles, l'horodatage UTC est déjà le 12).
+    const evening = new Date(2026, 10, 11, 21, 0).toISOString();
+    expect(orderWhenLabel({ status: 'prepared', createdAt: evening }, '2026-11-11')).toBe('Préparée aujourd’hui');
+  });
+
+  it('budget : semaine de la dépense (jour de validation), reste ou dépassement', () => {
+    // Validée le samedi 14 nov. pour la semaine du 16 : la dépense compte dans la semaine du 9.
+    const saturday = new Date(2026, 10, 14, 11, 0).toISOString();
+    expect(orderBudgetWeek({ confirmedAt: saturday }, '2026-11-16')).toBe('2026-11-09');
+    expect(orderBudgetWeek({}, '2026-11-16')).toBe('2026-11-16');
+    expect(orderBudgetWeek(null, '2026-11-16')).toBe('2026-11-16');
+
+    const within = orderBudgetView({ spentCents: 6240, remainingCents: 1760, over: false }, 8000, '2026-11-09', '2026-11-09');
+    expect(within).toEqual({ remainingCents: 1760, overCents: 0, period: 'cette semaine' });
+    expect(orderBudgetSentence(within)).toBe(`Il te reste 17,60${NNBSP}€ cette semaine.`);
+    const over = orderBudgetView({ spentCents: 9500, remainingCents: 0, over: true }, 8000, '2026-11-09', '2026-11-09');
+    expect(over).toMatchObject({ remainingCents: 0, overCents: 1500 });
+    expect(orderBudgetSentence(over)).toBe(`Tu dépasses ton budget de 15,00${NNBSP}€ cette semaine.`);
+    expect(orderBudgetView({ spentCents: 6240, remainingCents: 1760, over: false }, 8000, '2026-11-02', '2026-11-09')?.period).toBe(
+      `sur la semaine du ${formatWeekRange('2026-11-02')}`,
     );
-    expect(orderWhenLabel({ status: 'prepared', createdAt: '2026-11-09T10:00:00Z' }, '2026-11-10')).toBe('Préparée hier');
-    expect(orderWhenLabel({ status: 'opened', createdAt: '2026-11-05T10:00:00Z' }, '2026-11-10')).toBe(`${ORDER_STATUS_LABELS.opened} jeudi 5 novembre`);
+    expect(orderBudgetView({ spentCents: 6240, remainingCents: 0, over: true }, 0, '2026-11-09', '2026-11-09')).toBeNull();
+    expect(orderBudgetSentence(null)).toBe('');
   });
 
   it('attribue au magasin sa part des économies', () => {
@@ -134,6 +166,7 @@ describe('OrderActions', () => {
     expect(screen.getByText('Ouvre Carrefour')).toBeTruthy();
     await fireEvent.press(screen.getByRole('button', { name: 'Copier la liste' }));
     expect(h.onCopy).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('Avec Premium, un seul geste : ta liste est copiée et Carrefour s’ouvre.')).toBeTruthy();
     await fireEvent.press(screen.getByRole('button', { name: 'Découvrir Premium' }));
     expect(h.onPremium).toHaveBeenCalledTimes(1);
     await view.rerender(<OrderActions stage="ready" oneClick={false} storeName="Carrefour" copied {...h} testID="a" />);
@@ -143,6 +176,9 @@ describe('OrderActions', () => {
   it('Premium : commande en un clic, sans invitation', async () => {
     await render(<OrderActions stage="ready" oneClick storeName="Carrefour" copied={false} {...handlers()} />);
     expect(screen.getByText('Commande en un clic')).toBeTruthy();
+    // La V1 copie la liste et ouvre le site : pas de « panier prêt » promis.
+    expect(screen.getByText('En un geste, ta liste est copiée et Carrefour s’ouvre : colle-la dans la recherche du site, puis valide.')).toBeTruthy();
+    expect(screen.queryByText(/panier est prêt/)).toBeNull();
     expect(screen.queryByText('Ta commande en 2 étapes')).toBeNull();
     expect(screen.queryByText('Découvrir Premium')).toBeNull();
   });
@@ -158,11 +194,40 @@ describe('OrderActions', () => {
 
 describe('OrderConfirmedCard & OrderHistoryRow', () => {
   it('célèbre la commande, économies d’abord', async () => {
-    await render(<OrderConfirmedCard storeName="Carrefour" totalCents={4642} savingsCents={301} remainingCents={7358} when="Validée aujourd’hui" testID="ok" />);
+    await render(
+      <OrderConfirmedCard
+        storeName="Carrefour"
+        totalCents={4642}
+        savingsCents={301}
+        budget={{ remainingCents: 7358, overCents: 0, period: 'cette semaine' }}
+        when="Validée aujourd’hui"
+        testID="ok"
+      />,
+    );
     expect(screen.getByText('Commande validée !')).toBeTruthy();
     expect(screen.getByTestId('ok-savings')).toHaveTextContent(`${MINUS}3,01${NNBSP}€`);
     expect(screen.getByText(/Il te reste 73,58/)).toBeTruthy();
     expect(screen.getByLabelText(/^Commande validée chez Carrefour\. 3 euros 1 économisés\./)).toBeTruthy();
+    expect(screen.getByLabelText(/Il te reste 73 euros 58 cette semaine\.$/)).toBeTruthy();
+  });
+
+  it('budget dépassé : le dit, au lieu d’un reste à 0 €', async () => {
+    await render(
+      <OrderConfirmedCard
+        storeName="Leclerc"
+        totalCents={6240}
+        savingsCents={0}
+        budget={{ remainingCents: 0, overCents: 1500, period: 'cette semaine' }}
+        when="Validée aujourd’hui"
+      />,
+    );
+    expect(screen.getByText(/Tu dépasses ton budget de 15,00/)).toBeTruthy();
+    expect(screen.queryByText(/Il te reste/)).toBeNull();
+  });
+
+  it('sans budget hebdo : pas de reste', async () => {
+    await render(<OrderConfirmedCard storeName="Leclerc" totalCents={6240} savingsCents={0} budget={null} when="Validée aujourd’hui" />);
+    expect(screen.getByText(/ajoutés à ton suivi du budget\.$/)).toBeTruthy();
   });
 
   it('rappelle la dernière commande de la semaine', async () => {

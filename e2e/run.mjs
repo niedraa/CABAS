@@ -6,12 +6,17 @@
  *   npm run build:web && npm run e2e
  *   E2E_BASE_URL=http://localhost:8081 npm run e2e   (contre le serveur de dev)
  *   E2E_ONLY=dark-390 npm run e2e                    (une seule configuration)
+ *   E2E_NOW=2026-11-15T18:00:00+01:00 npm run e2e    (autre date simulée)
  *
  * Chaque configuration (thème × largeur d'écran) rejoue le parcours complet
  * dans un navigateur vierge : onboarding → planning → recette → liste → prix →
  * commande → Premium → profil → suppression du compte. Les captures sont
  * écrites dans `e2e/screenshots/<configuration>/`. Toute erreur JavaScript
  * (exception ou `console.error`) fait échouer la configuration.
+ *
+ * L'horloge du navigateur part d'une date fixe (un mercredi matin par défaut)
+ * puis avance normalement : le planning ne dépend plus du jour où l'on lance
+ * les tests, et le cas « milieu de semaine » (jours déjà passés) est couvert.
  */
 import { mkdirSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -25,6 +30,8 @@ import { serveStatic } from './serve.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SCREENSHOTS = join(here, 'screenshots');
+/** Date simulée au démarrage de chaque configuration (heure de Paris). */
+const NOW = new Date(process.env.E2E_NOW ?? '2026-11-11T09:30:00+01:00');
 
 const CONFIGS = [
   { name: 'light-390', colorScheme: 'light', viewport: { width: 390, height: 844 } },
@@ -40,7 +47,8 @@ async function main() {
 
   const server = process.env.E2E_BASE_URL ? null : await serveStatic(join(here, '..', 'dist'));
   const baseUrl = (process.env.E2E_BASE_URL ?? server.url).replace(/\/+$/, '');
-  console.log(`▶ Cabas e2e sur ${baseUrl}`);
+  if (Number.isNaN(NOW.getTime())) throw new Error(`E2E_NOW invalide : ${process.env.E2E_NOW}`);
+  console.log(`▶ Cabas e2e sur ${baseUrl}, horloge au ${NOW.toLocaleString('fr-FR', { timeZone: 'Europe/Paris' })}`);
 
   rmSync(SCREENSHOTS, { recursive: true, force: true });
   const browser = await chromium.launch();
@@ -61,8 +69,9 @@ async function main() {
       });
       // Presse-papiers (copie de la liste) autorisé.
       await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: baseUrl });
+      await context.clock.install({ time: NOW });
       const page = await context.newPage();
-      const h = createHarness({ page, baseUrl, dir, config });
+      const h = createHarness({ page, baseUrl, dir, config, now: NOW });
       console.log(`\n■ ${config.name}`);
       try {
         for (const flow of FLOWS) {

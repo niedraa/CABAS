@@ -8,7 +8,9 @@
  *  - `downgraded` : un compte gratuit a demandé « le moins cher » et reçoit
  *    « un seul magasin » (→ proposer Premium) ;
  *  - `status: 'idle' | 'computing' | 'ready' | 'error'`, `error`, `source` ;
- *  - `weekStart` / `listUpdatedAt` : liste qui a servi au calcul (voir `isBasketStale`) ;
+ *  - `weekStart` / `listUpdatedAt` / `storeIds` : liste et magasins qui ont servi
+ *    au calcul (voir `isBasketStale`) ;
+ *  - `entitlement` : droit (gratuit / Premium) appliqué au calcul (voir `basketRightsChanged`) ;
  *  - `selectedAlternatives: Record<itemId, productId>` (ex. MDD moins chère choisie).
  * Actions (async) :
  *  - `compute()` : articles NON cochés de la liste active, magasins préférés du profil
@@ -16,13 +18,14 @@
  *  - `setMode(mode)`, `setChannel(channel)` : recalculent si un panier existe ;
  *  - `selectAlternative(itemId, productId | null)` : recalcule ;
  *  - `reset()`.
- * Sélecteurs purs : `isBasketStale(state, list)`, `comparisonFor(state, itemId)`.
+ * Sélecteurs purs : `isBasketStale(state, list, weekStart, preferredStoreIds?)`,
+ * `basketRightsChanged(state, entitlement)`, `comparisonFor(state, itemId)`.
  * Hooks : `useBasketIsStale()`.
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-import type { BasketMode, BasketPlan, ItemComparison, OrderChannel, ShoppingList } from '@/core';
+import type { BasketMode, BasketPlan, Entitlement, ItemComparison, OrderChannel, ShoppingList } from '@/core';
 import { track } from '@/services/analytics';
 import { getBasketService, type BasketResult } from '@/services/basket';
 import { captureError } from '@/services/monitoring';
@@ -48,6 +51,8 @@ export interface BasketState {
   weekStart: string | null;
   listUpdatedAt: string | null;
   storeIds: string[];
+  /** Droit utilisé au dernier calcul réussi (null : jamais calculé). */
+  entitlement: Entitlement | null;
   selectedAlternatives: Record<string, string>;
   compute(): Promise<BasketPlan | null>;
   setMode(mode: BasketMode): Promise<void>;
@@ -56,11 +61,37 @@ export interface BasketState {
   reset(): void;
 }
 
-/** Le panier ne correspond plus à la liste (articles cochés / ajoutés depuis). */
-export function isBasketStale(state: Pick<BasketState, 'weekStart' | 'listUpdatedAt' | 'plan'>, list: ShoppingList | null, weekStart: string): boolean {
+/** Mêmes magasins, dans n'importe quel ordre. */
+function sameStoreIds(a: readonly string[], b: readonly string[]): boolean {
+  const sa = new Set(a);
+  const sb = new Set(b);
+  return sa.size === sb.size && [...sa].every((id) => sb.has(id));
+}
+
+/**
+ * Le panier ne correspond plus à la liste (articles cochés / ajoutés depuis)
+ * ou, si `preferredStoreIds` est fourni, aux magasins préférés du profil.
+ */
+export function isBasketStale(
+  state: Pick<BasketState, 'weekStart' | 'listUpdatedAt' | 'plan'> & Partial<Pick<BasketState, 'storeIds'>>,
+  list: ShoppingList | null,
+  weekStart: string,
+  preferredStoreIds?: readonly string[],
+): boolean {
   if (!state.plan) return true;
   if (state.weekStart !== weekStart) return true;
+  if (preferredStoreIds && !sameStoreIds(state.storeIds ?? [], preferredStoreIds)) return true;
   return (list?.updatedAt ?? null) !== state.listUpdatedAt;
+}
+
+/**
+ * Les droits ont changé depuis le calcul (Premium souscrit, ou expiré) : à
+ * recalculer. On compare au droit APPLIQUÉ au calcul, pas au résultat : un
+ * serveur en retard sur le webhook peut encore rétrograder un compte Premium,
+ * et le résultat seul relancerait le calcul sans fin.
+ */
+export function basketRightsChanged(state: Pick<BasketState, 'plan' | 'entitlement'>, entitlement: Entitlement): boolean {
+  return !!state.plan && state.entitlement !== entitlement;
 }
 
 export function comparisonFor(state: Pick<BasketState, 'comparisons'>, itemId: string): ItemComparison | undefined {
@@ -84,6 +115,7 @@ export const useBasketStore = create<BasketState>()(
       weekStart: null,
       listUpdatedAt: null,
       storeIds: [],
+      entitlement: null,
       selectedAlternatives: {},
 
       async compute() {
@@ -115,6 +147,7 @@ export const useBasketStore = create<BasketState>()(
             weekStart: ws,
             listUpdatedAt: list.updatedAt,
             storeIds,
+            entitlement,
           });
           track('basket_computed', {
             mode: res.mode,
@@ -170,6 +203,7 @@ export const useBasketStore = create<BasketState>()(
           weekStart: null,
           listUpdatedAt: null,
           storeIds: [],
+          entitlement: null,
           selectedAlternatives: {},
         });
       },
@@ -186,6 +220,7 @@ export const useBasketStore = create<BasketState>()(
         weekStart: s.weekStart,
         listUpdatedAt: s.listUpdatedAt,
         storeIds: s.storeIds,
+        entitlement: s.entitlement,
         selectedAlternatives: s.selectedAlternatives,
       }),
       merge: (persisted, current) => {
@@ -199,12 +234,20 @@ export const useBasketStore = create<BasketState>()(
 
 registerPersistedStore('basket', useBasketStore);
 
-/** Vrai si le panier doit être recalculé (liste modifiée, autre semaine, jamais calculé). */
+const NO_STORES: readonly string[] = [];
+
+/**
+ * Vrai si le panier doit être recalculé : liste modifiée, autre semaine,
+ * magasins préférés changés dans le profil, ou jamais calculé.
+ */
 export function useBasketIsStale(): boolean {
   const ws = useWeekStore((s) => s.activeWeekStart);
   const list = useListStore((s) => s.lists[ws] ?? null);
   const plan = useBasketStore((s) => s.plan);
   const weekStart = useBasketStore((s) => s.weekStart);
   const listUpdatedAt = useBasketStore((s) => s.listUpdatedAt);
-  return isBasketStale({ plan, weekStart, listUpdatedAt }, list, ws);
+  const storeIds = useBasketStore((s) => s.storeIds);
+  // Mêmes magasins que `compute()` : ceux du profil (aucun = tous).
+  const preferred = useProfileStore((s) => s.profile?.preferredStoreIds) ?? NO_STORES;
+  return isBasketStale({ plan, weekStart, listUpdatedAt, storeIds }, list, ws, preferred);
 }

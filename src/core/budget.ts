@@ -3,7 +3,7 @@
  * économies réalisées grâce au comparateur.
  */
 import type { OrderHandoff, SpendingEntry } from './types';
-import { addDays, formatMonthLabel, formatWeekRange, startOfWeek } from './dates';
+import { addDays, formatMonthLabel, formatWeekRange, localISODate, startOfWeek } from './dates';
 import { createId } from './ids';
 
 export interface SpendingPeriod {
@@ -65,11 +65,11 @@ export function totalSavings(entries: readonly SpendingEntry[]): number {
   return entries.reduce((s, e) => s + (e.savingsCents || 0), 0);
 }
 
-/** Dépense issue d'une commande transmise. */
+/** Dépense issue d'une commande transmise, datée du jour LOCAL de `createdAt`. */
 export function spendingFromHandoff(handoff: OrderHandoff, savingsCents = 0, label?: string): SpendingEntry {
   const entry: SpendingEntry = {
     id: `spend_${handoff.id}`,
-    date: handoff.createdAt.slice(0, 10),
+    date: localISODate(handoff.createdAt),
     storeId: handoff.storeId,
     totalCents: handoff.totalCents,
     savingsCents: Math.max(0, savingsCents),

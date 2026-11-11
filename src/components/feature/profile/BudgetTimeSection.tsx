@@ -1,6 +1,10 @@
 /**
  * Section « Budget & temps » : budget courses hebdo (curseur aimanté) et
  * temps de cuisine maximum en semaine / le week-end. Composant contrôlé.
+ *
+ * Les temps sont toujours émis ramenés sur les tuiles affichées
+ * (`normalizeCookTimes`) : un 60 min stocké s'affiche « 60+ » et devient 120
+ * dès qu'on touche la section, pour que le moteur applique ce qui est montré.
  */
 import React from 'react';
 
@@ -9,7 +13,7 @@ import type { Household } from '@/core';
 
 import { BudgetSlider } from './BudgetSlider';
 import { ChoiceTiles } from './ChoiceTiles';
-import { BUDGET_RANGE, COOK_TIME_CHOICES, budgetHint, nearestCookTime, snapBudgetCents } from './profileOptions';
+import { BUDGET_RANGE, COOK_TIME_CHOICES, budgetHint, nearestCookTime, normalizeCookTimes, snapBudgetCents } from './profileOptions';
 
 export interface BudgetTimeValue {
   weeklyBudgetCents: number;
@@ -27,13 +31,21 @@ export interface BudgetTimeSectionProps {
 
 export function BudgetTimeSection({ value, onChange, household = { adults: 2, children: 0 }, testID = 'budget-time' }: BudgetTimeSectionProps) {
   const budget = snapBudgetCents(value.weeklyBudgetCents, BUDGET_RANGE);
+  const emit = (patch: Partial<BudgetTimeValue>) => {
+    const next = normalizeCookTimes({ ...value, ...patch });
+    const changed =
+      next.weeklyBudgetCents !== value.weeklyBudgetCents ||
+      next.maxCookTimeWeekdayMin !== value.maxCookTimeWeekdayMin ||
+      next.maxCookTimeWeekendMin !== value.maxCookTimeWeekendMin;
+    if (changed) onChange(next);
+  };
   return (
     <Stack gap="xxl" testID={testID}>
       <Stack gap="md">
         <SectionHeader title="Budget courses" subtitle="Pour toute la semaine, frais de drive compris." />
         <Card variant="elevated" padding="lg">
           <Stack gap="md">
-            <BudgetSlider value={budget} onChange={(weeklyBudgetCents) => onChange({ ...value, weeklyBudgetCents })} testID={`${testID}-slider`} />
+            <BudgetSlider value={budget} onChange={(weeklyBudgetCents) => emit({ weeklyBudgetCents })} testID={`${testID}-slider`} />
             <Text variant="footnote" color="textSecondary" align="center">
               {budgetHint(budget, household)}
             </Text>
@@ -46,7 +58,7 @@ export function BudgetTimeSection({ value, onChange, household = { adults: 2, ch
         <ChoiceTiles
           options={COOK_TIME_CHOICES}
           value={nearestCookTime(value.maxCookTimeWeekdayMin)}
-          onChange={(maxCookTimeWeekdayMin) => onChange({ ...value, maxCookTimeWeekdayMin })}
+          onChange={(maxCookTimeWeekdayMin) => emit({ maxCookTimeWeekdayMin })}
           accessibilityLabel="Temps en semaine"
           testID={`${testID}-weekday`}
         />
@@ -57,7 +69,7 @@ export function BudgetTimeSection({ value, onChange, household = { adults: 2, ch
         <ChoiceTiles
           options={COOK_TIME_CHOICES}
           value={nearestCookTime(value.maxCookTimeWeekendMin)}
-          onChange={(maxCookTimeWeekendMin) => onChange({ ...value, maxCookTimeWeekendMin })}
+          onChange={(maxCookTimeWeekendMin) => emit({ maxCookTimeWeekendMin })}
           accessibilityLabel="Temps le week-end"
           testID={`${testID}-weekend`}
         />

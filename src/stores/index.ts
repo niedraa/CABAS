@@ -19,6 +19,7 @@
  *  - `addFromCheckedList(weekStart?)` : après les courses, le surplus des
  *    articles cochés rejoint le placard ;
  *  - `deleteAccount()` : suppression RGPD (serveur puis appareil) + remise à zéro ;
+ *    `onAccountDeleted(fn)` prévient ensuite le démarrage (src/hooks), qui se relance ;
  *  - `startAutoSync()` / `applyPulledData()` : synchronisation Supabase (production).
  */
 import { deleteMyAccount } from '@/services/account';
@@ -26,7 +27,7 @@ import { getPurchases } from '@/services/purchases';
 
 import { useBasketStore } from './basketStore';
 import { useBudgetStore } from './budgetStore';
-import { getList, useListStore } from './listStore';
+import { useListStore } from './listStore';
 import { useOrderStore } from './orderStore';
 import { usePantryStore } from './pantryStore';
 import { usePlanStore } from './planStore';
@@ -80,14 +81,25 @@ export async function resetAllStores(opts: { resetSimulatedPurchases?: boolean }
 
 /**
  * Après les courses : le surplus des articles cochés (paquet entamé) rejoint le
- * placard. Renvoie le nombre d'articles ajoutés / mis à jour.
+ * placard. Renvoie le nombre d'articles ajoutés. Un article déjà rangé ne l'est
+ * pas une seconde fois (listStore › storeLeftovers).
  */
 export function addFromCheckedList(weekStart: string = activeWeek()): number {
-  const list = getList(weekStart);
-  return usePantryStore.getState().addFromShopping(
-    list.items.filter((i) => i.checked),
-    weekStart,
-  );
+  return useListStore.getState().storeLeftovers(weekStart);
+}
+
+const accountDeletedListeners = new Set<() => void>();
+
+/**
+ * Appelé après chaque suppression de compte réussie (appareil remis à zéro).
+ * Le démarrage (`src/hooks/useAppBootstrap`) s'y abonne pour repartir de zéro :
+ * nouvelle session, RevenueCat ré-identifié, synchronisation relancée.
+ */
+export function onAccountDeleted(listener: () => void): () => void {
+  accountDeletedListeners.add(listener);
+  return () => {
+    accountDeletedListeners.delete(listener);
+  };
 }
 
 /**
@@ -97,4 +109,5 @@ export function addFromCheckedList(weekStart: string = activeWeek()): number {
 export async function deleteAccount(): Promise<void> {
   await deleteMyAccount();
   await resetAllStores({ resetSimulatedPurchases: true });
+  for (const l of Array.from(accountDeletedListeners)) l();
 }

@@ -1,6 +1,7 @@
 /**
  * Comment passer la commande, selon l'offre et l'étape :
- *  - Premium : « commande en un clic » (panier prêt, ouverture directe) ;
+ *  - Premium : « commande en un clic » (liste copiée + site ouvert d'un seul
+ *    geste ; la V1 ne pré-remplit pas le panier de l'enseigne : ne pas le promettre) ;
  *  - gratuit : 2 étapes (copier la liste, ouvrir le site) + invitation Premium sobre ;
  *  - après ouverture : « De retour ? » (rouvrir, copier) avant la confirmation.
  */
@@ -89,7 +90,7 @@ export function OrderActions({ stage, oneClick, storeName, copied, busy, onCopy,
           </Text>
         </View>
         <Text variant="callout" color="textSecondary">
-          Ton panier est prêt : il ne reste qu’à valider chez {storeName}. On copie aussi ta liste, au cas où.
+          En un geste, ta liste est copiée et {storeName} s’ouvre : colle-la dans la recherche du site, puis valide.
         </Text>
         <View style={[styles.row, { gap: t.spacing.sm }]}>
           <Text variant="footnote" color="textSecondary" style={styles.flex}>
@@ -114,7 +115,7 @@ export function OrderActions({ stage, oneClick, storeName, copied, busy, onCopy,
         tone="premium"
         icon={Crown}
         title={FEATURE_COPY.one_click_order.title}
-        message="Avec Premium, ton panier drive est prêt : il ne reste qu’à valider."
+        message={`Avec Premium, un seul geste : ta liste est copiée et ${storeName} s’ouvre.`}
         action={{ label: 'Découvrir Premium', onPress: onPremium }}
       />
     </View>

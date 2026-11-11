@@ -7,7 +7,7 @@ import React from 'react';
 import { ChipGroup, SectionHeader, Stack, Text } from '@/components/ui';
 import type { Cuisine, Equipment } from '@/core';
 
-import { CUISINE_CHOICES, EQUIPMENT_CHOICES } from './profileOptions';
+import { CUISINE_CHOICES, EQUIPMENT_CHOICES, NO_EQUIPMENT_HINT } from './profileOptions';
 
 export interface EquipmentCuisineValue {
   equipment: Equipment[];
@@ -34,8 +34,8 @@ export function EquipmentCuisineSection({ value, onChange, testID = 'equipment-c
           testID={`${testID}-equipment`}
         />
         {value.equipment.length === 0 ? (
-          <Text variant="footnote" color="textSecondary">
-            Sans ustensile, on misera sur les salades et les plats sans cuisson.
+          <Text variant="footnote" color="textSecondary" accessibilityLiveRegion="polite" testID={`${testID}-no-equipment`}>
+            {NO_EQUIPMENT_HINT}
           </Text>
         ) : null}
       </Stack>

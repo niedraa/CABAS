@@ -57,7 +57,7 @@ export const FEATURE_COPY: Record<Feature, { title: string; description: string 
   },
   one_click_order: {
     title: 'Commande en un clic',
-    description: 'Ton panier drive ou livraison est prêt : il ne reste qu’à valider chez l’enseigne.',
+    description: 'Un seul geste : ta liste est copiée et le site de l’enseigne s’ouvre, tu n’as plus qu’à la coller.',
   },
   price_alerts: {
     title: 'Alertes baisse de prix',

@@ -3,9 +3,10 @@
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { isRecipeSafe } from '@/core';
+import { addDays, isRecipeSafe } from '@/core';
 import { isHapticsEnabled } from '@/lib/haptics';
 import { getCatalogSnapshot } from '@/services/catalog';
+import { __setMealPlannerForTests, getMealPlanner } from '@/services/mealPlanner';
 
 import {
   addFromCheckedList,
@@ -67,6 +68,12 @@ function onboard(draft: ProfileDraft = CAMILLE) {
 
 const week = () => useWeekStore.getState().currentWeekStart;
 
+/** Attend (micro-tâches) qu'une condition devienne vraie. */
+async function waitFor(cond: () => boolean, tries = 50): Promise<void> {
+  for (let i = 0; i < tries && !cond(); i++) await new Promise((r) => setTimeout(r, 0));
+  if (!cond()) throw new Error('condition jamais remplie');
+}
+
 beforeAll(async () => {
   await waitForHydration();
 });
@@ -74,6 +81,9 @@ beforeAll(async () => {
 beforeEach(async () => {
   await AsyncStorage.clear();
   await resetAllStores({ resetSimulatedPurchases: true });
+  // Rien n'est planifié sur un jour passé : on se place le lundi de la semaine en
+  // cours pour que les tests ne dépendent pas du jour où ils tournent.
+  useWeekStore.getState().refreshToday(useWeekStore.getState().currentWeekStart);
 });
 
 describe('profileStore', () => {
@@ -159,6 +169,71 @@ describe('planStore', () => {
     const slot = mealsByDay(free).find((d) => !used.has(`${d.date}|diner`))!;
     const res = usePlanStore.getState().addMeal({ date: slot.date, type: 'diner' });
     expect(res).toMatchObject({ ok: false, reason: 'limit' });
+  });
+
+  it('en milieu de semaine : aucun repas sur un jour passé, les repas passés restent en place', async () => {
+    onboard();
+    const ws = week();
+    const thursday = addDays(ws, 3);
+    // Lundi : 3 repas gratuits (lundi, mardi, mercredi soir).
+    await usePlanStore.getState().generate();
+    const monday = usePlanStore.getState().plans[ws].meals;
+    expect(monday.map((m) => m.date)).toEqual([ws, addDays(ws, 1), addDays(ws, 2)]);
+
+    // Jeudi, compte gratuit tout neuf : les 3 repas tombent à partir d'aujourd'hui.
+    await resetAllStores({ resetSimulatedPurchases: true });
+    onboard();
+    useWeekStore.getState().refreshToday(thursday);
+    const res = await usePlanStore.getState().generate();
+    expect(res.ok).toBe(true);
+    const fresh = usePlanStore.getState().plans[ws].meals;
+    expect(fresh).toHaveLength(3);
+    expect(fresh.every((m) => m.date >= thursday)).toBe(true);
+
+    // Premium, régénération le jeudi : les repas d'avant jeudi sont gardés tels quels.
+    await useSubscriptionStore.getState().purchase('monthly');
+    usePlanStore.getState().setPlan({ ...usePlanStore.getState().plans[ws], meals: monday });
+    await usePlanStore.getState().generate(ws, { keepLocked: true });
+    const regen = usePlanStore.getState().plans[ws].meals;
+    for (const m of monday) {
+      if (m.date < thursday) expect(regen.find((r) => r.id === m.id)).toEqual(m);
+    }
+    expect(regen.filter((m) => m.date < thursday)).toHaveLength(monday.filter((m) => m.date < thursday).length);
+    expect(regen.some((m) => m.date >= thursday)).toBe(true);
+  });
+
+  it('générations simultanées : chaque semaine garde son propre état « en cours »', async () => {
+    onboard();
+    const ws = week();
+    const next = addDays(ws, 7);
+    // Planificateur « lent » : chaque semaine attend qu'on la libère.
+    const real = getMealPlanner();
+    const gates: Record<string, () => void> = {};
+    __setMealPlannerForTests({
+      ...real,
+      requestMealPlan: async (req) => {
+        await new Promise<void>((resolve) => (gates[req.weekStart] = resolve));
+        return real.requestMealPlan(req);
+      },
+    });
+    try {
+      const a = usePlanStore.getState().generate(ws);
+      const b = usePlanStore.getState().generate(next);
+      await waitFor(() => !!gates[ws] && !!gates[next]);
+      expect(usePlanStore.getState().generatingWeeks).toEqual({ [ws]: true, [next]: true });
+      gates[ws]();
+      await a;
+      // La semaine en cours est prête, la suivante tourne encore.
+      expect(usePlanStore.getState().generatingWeeks[ws]).toBeUndefined();
+      expect(usePlanStore.getState().generatingWeeks[next]).toBe(true);
+      expect(usePlanStore.getState().status).toBe('generating');
+      gates[next]();
+      await b;
+      expect(usePlanStore.getState().generatingWeeks).toEqual({});
+      expect(usePlanStore.getState().status).toBe('idle');
+    } finally {
+      __setMealPlannerForTests(null);
+    }
   });
 
   it('remplacement sûr, verrou conservé à la régénération, portions, suppression', async () => {

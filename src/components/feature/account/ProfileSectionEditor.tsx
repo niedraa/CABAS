@@ -29,7 +29,10 @@ export interface ProfileSectionEditorProps {
   /** Limite de repas de l'offre gratuite (null = Premium). */
   freeLimit: number | null;
   onPremiumPress?: () => void;
+  /** Régime : la recherche « Je n'aime pas » affiche des résultats (l'écran peut les amener en vue). */
   onSearchResults?: () => void;
+  /** Régime : le champ « Je n'aime pas » (en bas de page) prend le focus. */
+  onSearchFocus?: () => void;
 }
 
 export function ProfileSectionEditor({
@@ -41,6 +44,7 @@ export function ProfileSectionEditor({
   freeLimit,
   onPremiumPress,
   onSearchResults,
+  onSearchFocus,
 }: ProfileSectionEditorProps) {
   switch (section) {
     case 'foyer':
@@ -76,6 +80,7 @@ export function ProfileSectionEditor({
           onChange={(v) => onChange(v)}
           ingredients={ingredients}
           onSearchResults={onSearchResults}
+          onSearchFocus={onSearchFocus}
         />
       );
     case 'budget-temps':

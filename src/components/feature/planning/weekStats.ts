@@ -73,15 +73,20 @@ export interface OpenSlot {
   type: MealType;
 }
 
-/** Créneaux du profil encore sans repas cette semaine (triés). */
+/**
+ * Créneaux du profil encore sans repas cette semaine (triés). Avec `today`,
+ * les jours déjà passés sont ignorés : on ne propose pas d'ajouter (ni de
+ * débloquer) un repas d'hier.
+ */
 export function openSlotsOf(
   profile: Pick<UserProfile, 'mealSlots'> | null | undefined,
   weekStart: string,
   meals: readonly PlannedMeal[],
+  today?: string,
 ): OpenSlot[] {
   if (!profile) return [];
   const taken = new Set(meals.map((m) => slotKey(m.date, m.type)));
-  return weekSlots(profile, weekStart).filter((s) => !taken.has(slotKey(s.date, s.type)));
+  return weekSlots(profile, weekStart).filter((s) => !taken.has(slotKey(s.date, s.type)) && (!today || s.date >= today));
 }
 
 /** Prénom pour le message d'accueil (« Camille Martin » → « Camille »). */

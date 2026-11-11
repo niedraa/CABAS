@@ -22,6 +22,8 @@ export interface SpendingChartProps {
   referenceCents?: number | null;
   referenceLabel?: string;
   height?: number;
+  /** Masque les montants (barres et légende) : graphique d'exemple, sans chiffres à confondre. */
+  hideAmounts?: boolean;
   testID?: string;
 }
 
@@ -33,6 +35,7 @@ export function SpendingChart({
   referenceCents = null,
   referenceLabel = 'Budget hebdo',
   height = 150,
+  hideAmounts = false,
   testID = 'spending-chart',
 }: SpendingChartProps) {
   const t = useTheme();
@@ -44,7 +47,7 @@ export function SpendingChart({
     <View testID={testID}>
       <View style={[styles.plot, { height: height - LABEL_H, gap: t.spacing.xs }]}>
         {bars.map((b, i) => (
-          <Bar key={b.key} bar={b} index={i} maxCents={maxCents} plotH={plotH} />
+          <Bar key={b.key} bar={b} index={i} maxCents={maxCents} plotH={plotH} hideAmount={hideAmounts} />
         ))}
         {refY !== null ? (
           <View pointerEvents="none" style={[styles.ref, { bottom: refY }]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
@@ -68,7 +71,7 @@ export function SpendingChart({
           </Text>
         ))}
       </View>
-      {refY !== null && referenceCents ? (
+      {refY !== null && referenceCents && !hideAmounts ? (
         <View style={[styles.legend, { gap: t.spacing.sm, marginTop: t.spacing.sm }]} testID={`${testID}-legend`}>
           <View style={[styles.legendLine, { borderColor: c.textTertiary }]} />
           <Text variant="caption" color="textSecondary">
@@ -80,14 +83,26 @@ export function SpendingChart({
   );
 }
 
-function Bar({ bar, index, maxCents, plotH }: { bar: ChartBar; index: number; maxCents: number; plotH: number }) {
+function Bar({
+  bar,
+  index,
+  maxCents,
+  plotH,
+  hideAmount,
+}: {
+  bar: ChartBar;
+  index: number;
+  maxCents: number;
+  plotH: number;
+  hideAmount: boolean;
+}) {
   const t = useTheme();
   const c = t.colors;
   const reduced = useReducedMotion();
   const empty = bar.totalCents <= 0;
   const target = empty ? 4 : Math.max(8, (bar.totalCents / Math.max(1, maxCents)) * plotH);
   const h = useDerivedValue(
-    () => (reduced ? target : withDelay(Math.min(400, index * t.motion.stagger), withSpring(target, t.motion.spring))),
+    () => (reduced ? target : withDelay(Math.min(t.motion.duration.slow, index * t.motion.stagger), withSpring(target, t.motion.spring))),
     [target, reduced],
   );
   const barStyle = useAnimatedStyle(() => ({ height: h.get() }));
@@ -98,7 +113,7 @@ function Bar({ bar, index, maxCents, plotH }: { bar: ChartBar; index: number; ma
 
   return (
     <View style={styles.col} accessible accessibilityRole="text" accessibilityLabel={a11y} testID={`bar-${bar.key}`}>
-      {!empty ? (
+      {!empty && !hideAmount ? (
         <Text variant="caption" color={bar.current ? 'accentText' : 'textSecondary'} numberOfLines={1} style={styles.value} tabular>
           {formatPrice(Math.round(bar.totalCents / 100) * 100, { compact: true })}
         </Text>

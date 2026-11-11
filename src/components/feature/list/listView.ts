@@ -165,6 +165,37 @@ export function listPhase(total: number, done: number): ListPhase {
   return done >= total ? 'complete' : 'todo';
 }
 
+/** Rangement du surplus au placard, une fois tout coché. */
+export type LeftoversState = 'todo' | 'stored' | 'none';
+
+/**
+ * « todo » tant qu'un article coché n'a pas été rangé ; ensuite « stored » si au
+ * moins un surplus a rejoint le placard, « none » s'il n'y avait rien à ranger.
+ */
+export function leftoversState(
+  items: readonly ShoppingListItem[],
+  record: { itemIds: readonly string[]; stored: number } | undefined,
+): LeftoversState {
+  if (!record) return 'todo';
+  const done = new Set(record.itemIds);
+  if (items.some((i) => i.checked && !done.has(i.id))) return 'todo';
+  return record.stored > 0 ? 'stored' : 'none';
+}
+
+/** Toast après « Ranger le reste au placard » (accordé au nombre de restes). */
+export function leftoversToast(n: number): { title: string; message: string } {
+  if (n <= 0) return { title: 'Rien à ranger', message: 'Tout part en cuisine cette semaine.' };
+  return {
+    title: `${countFr(n, 'reste')} au placard`,
+    message: n > 1 ? 'Cabas te proposera de quoi les cuisiner.' : 'Cabas te proposera de quoi le cuisiner.',
+  };
+}
+
+/** Bouton qui déplie les articles cochés sous la carte « bravo ». */
+export function reviewCheckedLabel(done: number): string {
+  return done > 1 ? `Revoir les ${done} articles cochés` : 'Revoir l’article coché';
+}
+
 /** Titre de la carte de progression : « Encore 12 articles », « Plus qu’un article ». */
 export function remainingHeadline(remaining: number): string {
   if (remaining <= 0) return 'Tout est dans le cabas';

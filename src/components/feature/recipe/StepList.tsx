@@ -9,6 +9,7 @@ import { Timer } from 'lucide-react-native';
 
 import { Badge, PressableScale, staggerEntering, Text } from '@/components/ui';
 import type { RecipeStep } from '@/core';
+import { formatDurationForA11y } from '@/lib/a11y';
 import { useTheme } from '@/theme';
 
 export interface StepListProps {
@@ -28,7 +29,7 @@ export function StepList({ steps, onOpenStep, testID }: StepListProps) {
             onPress={onOpenStep ? () => onOpenStep(i) : undefined}
             disabled={!onOpenStep}
             scaleTo={0.98}
-            accessibilityLabel={`Étape ${i + 1} sur ${steps.length} : ${s.text}${s.timerMin ? `. Minuteur de ${s.timerMin} minutes.` : ''}`}
+            accessibilityLabel={`Étape ${i + 1} sur ${steps.length} : ${s.text}${s.timerMin ? `. Minuteur de ${formatDurationForA11y(s.timerMin)}.` : ''}`}
             accessibilityHint={onOpenStep ? 'Ouvre le mode cuisine à cette étape.' : undefined}
             style={[styles.row, { backgroundColor: c.surface, borderRadius: t.radius.lg, borderColor: c.border, padding: t.spacing.md }]}
           >

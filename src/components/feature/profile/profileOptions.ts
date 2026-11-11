@@ -14,6 +14,7 @@ import {
   EQUIPMENT_LABELS,
   foldText,
   householdPortions,
+  joinFr,
   type Allergen,
   type Cuisine,
   type Diet,
@@ -195,6 +196,24 @@ export function nearestCookTime(min: number): number {
   return min >= 60 ? COOK_TIME_CHOICES[COOK_TIME_CHOICES.length - 1].value : best;
 }
 
+export interface CookTimes {
+  maxCookTimeWeekdayMin: number;
+  maxCookTimeWeekendMin: number;
+}
+
+/**
+ * Ramène les temps de cuisine sur les choix affichés (`nearestCookTime`) :
+ * ce que l'écran montre est ce que le moteur applique. Sans ça, l'ancien
+ * défaut de 60 min s'affiche « 60+ min · Mijoté » alors que le moteur écarte
+ * tout plat de plus de 60 min.
+ */
+export function normalizeCookTimes<T extends CookTimes>(v: T): T {
+  const maxCookTimeWeekdayMin = nearestCookTime(v.maxCookTimeWeekdayMin);
+  const maxCookTimeWeekendMin = nearestCookTime(v.maxCookTimeWeekendMin);
+  if (maxCookTimeWeekdayMin === v.maxCookTimeWeekdayMin && maxCookTimeWeekendMin === v.maxCookTimeWeekendMin) return v;
+  return { ...v, maxCookTimeWeekdayMin, maxCookTimeWeekendMin };
+}
+
 // ─── Ustensiles & cuisines ───────────────────────────────────────────────────
 
 export const EQUIPMENT_EMOJI: Record<Equipment, string> = {
@@ -232,6 +251,18 @@ export const CUISINE_CHOICES: readonly ProfileChoice<Cuisine>[] = CUISINES.map((
   emoji: CUISINE_EMOJI[c],
 }));
 
+/**
+ * Rien de coché : le moteur (`core/constraints`) suppose des plaques de
+ * cuisson. Les textes le disent tels quels, sans promettre de plats sans cuisson.
+ */
+export const NO_EQUIPMENT_HINT = 'Rien de coché ? On partira du principe que tu as au moins des plaques de cuisson.';
+export const NO_EQUIPMENT_SUMMARY = 'Plaques de cuisson (par défaut)';
+
+/** « Four et Plaques de cuisson », ou le défaut supposé par le moteur. */
+export function equipmentSummary(equipment: readonly Equipment[]): string {
+  return equipment.length ? joinFr(equipment.map((e) => EQUIPMENT_LABELS[e])) : NO_EQUIPMENT_SUMMARY;
+}
+
 // ─── Foyer ───────────────────────────────────────────────────────────────────
 
 export const HOUSEHOLD_LIMITS = { adults: { min: 1, max: 12 }, children: { min: 0, max: 12 } } as const;
@@ -246,6 +277,16 @@ export function formatPortions(n: number): string {
 export function portionsSentence(h: Household): string {
   const p = householdPortions(h);
   return `Cabas cuisinera pour ≈ ${formatPortions(p)} portion${p > 1 ? 's' : ''}`;
+}
+
+/**
+ * Libellé lu par le lecteur d'écran pour l'illustration du foyer, portions
+ * comprises : « Ton foyer : 2 adultes, 1 enfant. Cabas cuisinera pour environ 2,5 portions ».
+ */
+export function householdA11yLabel(h: Household): string {
+  const p = householdPortions(h);
+  const people = `${h.adults} adulte${h.adults > 1 ? 's' : ''}, ${h.children} enfant${h.children > 1 ? 's' : ''}`;
+  return `Ton foyer : ${people}. Cabas cuisinera pour environ ${formatPortions(p)} portion${p > 1 ? 's' : ''}`;
 }
 
 /** Emoji d'illustration du foyer (un par personne, plafonné). */

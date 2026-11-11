@@ -7,19 +7,11 @@ import { StyleSheet, View } from 'react-native';
 import { ChevronRight } from 'lucide-react-native';
 
 import { Badge, Card, PressableScale, StaggeredList, StoreBadgeStack, Text } from '@/components/ui';
-import {
-  ALLERGEN_LABELS,
-  CUISINE_LABELS,
-  DIET_LABELS,
-  EQUIPMENT_LABELS,
-  formatPrice,
-  joinFr,
-  type Store,
-} from '@/core';
+import { ALLERGEN_LABELS, CUISINE_LABELS, DIET_LABELS, formatPrice, joinFr, type Store } from '@/core';
 import type { ProfileDraft } from '@/stores';
 import { useTheme } from '@/theme';
 
-import { COOK_TIME_CHOICES, nearestCookTime } from '../profile/profileOptions';
+import { COOK_TIME_CHOICES, equipmentSummary, nearestCookTime } from '../profile/profileOptions';
 import { householdSummary, type OnboardingStepId } from './steps';
 
 export interface ProfileSummaryProps {
@@ -36,8 +28,11 @@ export function ProfileSummary({ draft, stores, onEdit }: ProfileSummaryProps) {
   const t = useTheme();
   const chosenStores = draft.preferredStoreIds.map((id) => stores.find((s) => s.id === id)).filter((s): s is Store => !!s);
   const diets = draft.diets.map((d) => DIET_LABELS[d]);
-  const equipment = draft.equipment.map((e) => EQUIPMENT_LABELS[e]);
+  const allergens = draft.allergens.map((a) => ALLERGEN_LABELS[a]);
   const cuisines = draft.favoriteCuisines.map((c) => CUISINE_LABELS[c]);
+  const weekday = cookLabel(draft.maxCookTimeWeekdayMin);
+  const weekend = cookLabel(draft.maxCookTimeWeekendMin);
+  const cuisinesLine = cuisines.length ? `Envie de : ${joinFr(cuisines).toLowerCase()}` : null;
 
   return (
     <Card variant="plain" padding="none" testID="profile-summary">
@@ -49,11 +44,12 @@ export function ProfileSummary({ draft, stores, onEdit }: ProfileSummaryProps) {
           step="regime"
           onEdit={onEdit}
           value={diets.length ? joinFr(diets) : 'Aucun régime particulier'}
+          a11yDetail={allergens.length ? `Allergies : ${joinFr(allergens).toLowerCase()}` : 'Aucune allergie déclarée'}
         >
           {draft.allergens.length > 0 ? (
             <View style={styles.badges}>
-              {draft.allergens.map((a) => (
-                <Badge key={a} label={ALLERGEN_LABELS[a]} tone="danger" size="sm" />
+              {draft.allergens.map((a, i) => (
+                <Badge key={a} label={allergens[i]} tone="danger" size="sm" />
               ))}
             </View>
           ) : (
@@ -68,9 +64,10 @@ export function ProfileSummary({ draft, stores, onEdit }: ProfileSummaryProps) {
           step="budget-temps"
           onEdit={onEdit}
           value={`${formatPrice(draft.weeklyBudgetCents, { compact: true })} par semaine`}
+          a11yDetail={`${weekday} en semaine, ${weekend} le week-end`}
         >
           <Text variant="footnote" color="textSecondary">
-            {cookLabel(draft.maxCookTimeWeekdayMin)} en semaine · {cookLabel(draft.maxCookTimeWeekendMin)} le week-end
+            {weekday} en semaine · {weekend} le week-end
           </Text>
         </SummaryRow>
         <SummaryRow
@@ -78,11 +75,12 @@ export function ProfileSummary({ draft, stores, onEdit }: ProfileSummaryProps) {
           title="Cuisine"
           step="cuisine"
           onEdit={onEdit}
-          value={equipment.length ? joinFr(equipment) : 'Sans ustensile'}
+          value={equipmentSummary(draft.equipment)}
+          a11yDetail={cuisinesLine}
         >
-          {cuisines.length ? (
+          {cuisinesLine ? (
             <Text variant="footnote" color="textSecondary" numberOfLines={2}>
-              Envie de : {joinFr(cuisines).toLowerCase()}
+              {cuisinesLine}
             </Text>
           ) : null}
         </SummaryRow>
@@ -112,10 +110,16 @@ export function ProfileSummary({ draft, stores, onEdit }: ProfileSummaryProps) {
   );
 }
 
+/** « Budget & temps : 80 € par semaine. 30 min en semaine, 60+ min le week-end. Modifier » */
+function summaryRowLabel(title: string, value: string, detail?: string | null): string {
+  return `${title} : ${value}.${detail ? ` ${detail}.` : ''} Modifier`;
+}
+
 function SummaryRow({
   emoji,
   title,
   value,
+  a11yDetail,
   step,
   onEdit,
   right,
@@ -125,6 +129,8 @@ function SummaryRow({
   emoji: string;
   title: string;
   value: string;
+  /** Contenu secondaire (allergies, temps, cuisines) lu par le lecteur d'écran. */
+  a11yDetail?: string | null;
   step: OnboardingStepId;
   onEdit: (step: OnboardingStepId) => void;
   right?: React.ReactNode;
@@ -136,7 +142,7 @@ function SummaryRow({
     <PressableScale
       onPress={() => onEdit(step)}
       accessibilityRole="button"
-      accessibilityLabel={`${title} : ${value}. Modifier`}
+      accessibilityLabel={summaryRowLabel(title, value, a11yDetail)}
       scaleTo={0.985}
       style={[
         styles.row,
