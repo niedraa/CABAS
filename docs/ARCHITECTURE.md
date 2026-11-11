@@ -120,6 +120,8 @@ ses tests dans `__tests__/`.
 - `npm run typecheck`, `npm run lint`, `npm test` (Jest + Testing Library),
   `npm run e2e` (Playwright sur le build web : parcours complet en 13 étapes, de
   l'onboarding à la suppression du compte, dans 4 configurations clair / sombre ×
-  390 / 360 pt ; voir `e2e/`), `deno test` pour les fonctions.
+  390 / 360 pt ; horloge du navigateur fixée à un mercredi, ou à `E2E_NOW`,
+  pour couvrir le milieu de semaine sans dépendre du jour ; voir `e2e/`),
+  `deno test` pour les fonctions.
 - CI GitHub Actions à chaque PR (`.github/workflows/ci.yml`).
 - Sentry (erreurs) et PostHog (analytique produit) sont des no-op sans clé.

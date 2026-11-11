@@ -49,6 +49,8 @@ Outils de développement (build de dev ou `EXPO_PUBLIC_DEV_TOOLS=1`) :
 
 `E2E_BASE_URL=http://localhost:8081 npm run e2e` rejoue les parcours contre le
 serveur de développement ; `E2E_ONLY=dark-390` limite à une configuration.
+L'horloge du navigateur démarre un mercredi matin (jours déjà passés compris) ;
+`E2E_NOW=2026-11-15T18:00:00+01:00` simule une autre date, ici un dimanche soir.
 
 ## Architecture
 
