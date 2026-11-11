@@ -100,12 +100,25 @@ commande/[storeId].tsx      Commande : panier pré-rempli → drive / livraison
 premium.tsx                 Paywall
 placard.tsx                 (V2) Placard & anti-gaspi
 budget.tsx                  (V2) Suivi du budget
-parametres/*                Notifications, abonnement, compte & données (RGPD), apparence
+parametres/profil/[section]  Édition d'une section du profil (foyer, regime, budget-temps,
+                            cuisine, magasins, creneaux) — consentement RGPD exigé
+parametres/notifications    Rappels (planification, commande), baisses de prix (Premium)
+parametres/apparence        Thème (auto / clair / sombre), retour haptique
+parametres/abonnement       Statut, restauration, gestion de l'abonnement
+parametres/compte           Compte & données (RGPD) : consentements, export JSON, suppression
+dev/seed, design-system     Outils de développement (état de démo, galerie de la DA)
 ```
+
+Composants métier par écran : `src/components/feature/<domaine>/` (onboarding,
+profile, planning, recipe, list, pantry, basket, order, premium, account,
+budget), chacun avec sa logique de présentation pure (`*View.ts`, testée) et
+ses tests dans `__tests__/`.
 
 ## Qualité
 
 - `npm run typecheck`, `npm run lint`, `npm test` (Jest + Testing Library),
-  `npm run e2e` (Playwright sur le build web : parcours complet), `deno test` pour les fonctions.
+  `npm run e2e` (Playwright sur le build web : parcours complet en 13 étapes, de
+  l'onboarding à la suppression du compte, dans 4 configurations clair / sombre ×
+  390 / 360 pt ; voir `e2e/`), `deno test` pour les fonctions.
 - CI GitHub Actions à chaque PR (`.github/workflows/ci.yml`).
 - Sentry (erreurs) et PostHog (analytique produit) sont des no-op sans clé.
