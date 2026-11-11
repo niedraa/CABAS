@@ -8,6 +8,8 @@
  * - `checkPriceDrops()` : détecte les baisses et envoie UNE notification locale
  *   par (produit, magasin, prix) — si Premium et réglage « baisses de prix » actif.
  *   Appelé par `useAppBootstrap` après le chargement du catalogue.
+ * Jamais d'alerte sur un produit contenant un allergène déclaré du profil
+ * (allergènes de l'ingrédient ∪ Open Food Facts), même commandé avant.
  */
 import { useMemo } from 'react';
 
@@ -17,6 +19,7 @@ import { getCatalogSnapshot, useCatalog } from '@/services/catalog';
 import { notifyPriceDrop } from '@/services/notifications';
 
 import { useOrderStore, type StoredOrder } from './orderStore';
+import { useProfileStore } from './profileStore';
 import { useSettingsStore } from './settingsStore';
 import { currentEntitlement } from './subscriptionStore';
 
@@ -32,7 +35,11 @@ export function usePriceWatches(): PriceWatch[] {
 export function usePriceDrops(): PriceDrop[] {
   const watches = usePriceWatches();
   const catalog = useCatalog();
-  return useMemo(() => detectPriceDrops(watches, catalog.prices), [watches, catalog]);
+  const allergens = useProfileStore((s) => s.profile?.allergens);
+  return useMemo(
+    () => detectPriceDrops(watches, catalog.prices, { products: catalog.productsById, excludeAllergens: allergens }),
+    [watches, catalog, allergens],
+  );
 }
 
 /** Détecte et notifie les nouvelles baisses de prix. Renvoie les baisses notifiées. */
@@ -40,7 +47,11 @@ export async function checkPriceDrops(): Promise<PriceDrop[]> {
   const settings = useSettingsStore.getState();
   if (!settings.notificationPrefs.priceDrops || !canUse('price_alerts', currentEntitlement())) return [];
   const catalog = getCatalogSnapshot();
-  const drops = detectPriceDrops(selectPriceWatches(useOrderStore.getState().orders), catalog.prices);
+  const allergens = useProfileStore.getState().profile?.allergens;
+  const drops = detectPriceDrops(selectPriceWatches(useOrderStore.getState().orders), catalog.prices, {
+    products: catalog.productsById,
+    excludeAllergens: allergens,
+  });
   const sent: PriceDrop[] = [];
   for (const drop of drops) {
     const key = `${drop.productId}|${drop.storeId}`;

@@ -18,7 +18,9 @@ Texte de la licence : <https://opendatacommons.org/licenses/odbl/1-0/>.
 ## Attribution
 
 La mention suivante doit rester visible dans l'app, là où les prix sont
-présentés (constante `DATA_ATTRIBUTION`, `src/data/index.ts`) :
+présentés (constante `DATA_ATTRIBUTION`, `src/data/index.ts`, reprise par
+`DATA_ATTRIBUTION_LINE` de `components/feature/sources` : onglet Prix, détail
+d'un article, ticket de commande — vérifié par les tests) :
 
 > Produits : Open Food Facts · Prix : Open Prices · Enseignes : © contributeurs OpenStreetMap · Licence ODbL
 

@@ -365,3 +365,132 @@ test('fichiers générés à jour (sync-shared --check, generate-seed --check)',
   execFileSync(process.execPath, [join(ROOT, 'scripts/sync-shared.mjs'), '--check'], { stdio: 'pipe' });
   execFileSync(process.execPath, ['--no-warnings', join(ROOT, 'scripts/generate-seed.mjs'), '--check'], { stdio: 'pipe' });
 });
+
+test('generate-seed : socles fidèles à l’instantané (proximité, vrac à la pièce) et curseur au dernier relevé de l’export', async () => {
+  const db = await freshDb();
+  // État de collecte antérieur : un lot en retard, un lot en avance ; deux relevés collectés.
+  await db.exec(buildSeedSql(realCatalog()));
+  await db.query(
+    `update public.price_collection_state set created_cursor = '2026-11-01T00:00:00Z',
+            batch_cursors = '{"1-600": "2026-11-01T00:00:00Z", "601-700": "2026-11-15T00:00:00Z"}'::jsonb`,
+  );
+  await db.query(
+    `insert into public.price_observations (product_id, chain, kind, open_prices_id, regular_milli, observed_on, source_created_at) values
+       ('prd_tomate', 'leclerc', 'observation', 11, 3190, '2026-11-10', '2026-11-10T22:00:00Z'),
+       ('prd_tomate', 'leclerc', 'observation', 12, 3190, '2026-11-10', '2026-11-10T23:30:00Z')`,
+  );
+  const real = realCatalog();
+  // Concombre : ingrédient au poids (350 g = 1 pièce), relevés À LA PIÈCE ; ail : catégorie secondaire.
+  real.ingredients.push(ING('concombre', { gramsPerPiece: 350 }));
+  real.products.push(
+    PRODUCT('prd_concombre_vrac', 'concombre', {
+      offCategoryTag: 'en:cucumbers', offCategoryTags: ['en:cucumbers'], offPricePer: 'UNIT', offPackFactor: 1, packSize: 350,
+    }),
+    PRODUCT('prd_ail_vrac', 'tomate', {
+      offCategoryTag: 'en:garlic', offCategoryTags: ['en:garlic', 'en:garlics'], offPricePer: 'KILOGRAM', offPackFactor: 0.1, packSize: 100,
+    }),
+  );
+  real.prices.push(
+    PRICE('prd_concombre_vrac', 'leclerc', 79, { source: 'open_prices', updatedAt: '2026-11-02', observationCount: 4, observedFrom: '2026-05-01' }),
+    PRICE('prd_ail_vrac', 'leclerc', 69, { source: 'open_prices', updatedAt: '2026-11-02', observationCount: 2, observedFrom: '2026-05-01' }),
+  );
+  real.meta = { ...META, lastCreatedAt: '2026-11-10T22:52:46.303406Z' };
+  real.snapshot = {
+    aggregates: {
+      // prd_riz chez Lidl : médiane de magasins Lidl « Express » seulement.
+      'ean:3111952035624': { leclerc: { medianCents: 175, count: 12 }, lidl: { medianCents: 180, count: 1, proximityOnly: true } },
+      'cat:en:cucumbers:UNIT': { leclerc: { medianCents: 79, count: 4 } },
+      'cat:en:garlics:KILOGRAM': { leclerc: { medianCents: 690, count: 2 } },
+    },
+  };
+  await db.exec(buildSeedSql(real));
+  const base = async (p, c) =>
+    (await rows(
+      db,
+      `select proximity, price_per, category_tag, regular_milli from public.price_observations
+        where kind = 'snapshot' and product_id = $1 and chain = $2`,
+      [p, c],
+    ))[0];
+  assert.deepEqual(await base('prd_riz', 'lidl'), { proximity: true, price_per: null, category_tag: null, regular_milli: 1800 });
+  assert.deepEqual(await base('prd_riz', 'leclerc'), { proximity: false, price_per: null, category_tag: null, regular_milli: 1750 });
+  assert.deepEqual(await base('prd_concombre_vrac', 'leclerc'), { proximity: false, price_per: 'UNIT', category_tag: 'en:cucumbers', regular_milli: 790 });
+  assert.deepEqual(await base('prd_ail_vrac', 'leclerc'), { proximity: false, price_per: 'KILOGRAM', category_tag: 'en:garlics', regular_milli: 6900 });
+  assert.deepEqual(
+    await rows(db, `select off_category_tags, off_price_per, off_pack_factor::float8 as f from public.products where id = 'prd_ail_vrac'`),
+    [{ off_category_tags: ['en:garlic', 'en:garlics'], off_price_per: 'KILOGRAM', f: 0.1 }],
+  );
+  // Relevé créé après le dernier relevé de l'export : absent de l'instantané, donc CONSERVÉ.
+  assert.deepEqual(
+    (await rows(db, `select open_prices_id from public.price_observations where kind = 'observation' order by 1`)).map((r) => Number(r.open_prices_id)),
+    [12],
+  );
+  // Curseurs : juste après le dernier relevé (milliseconde supérieure), jamais reculés.
+  const state = (await rows(db, `select created_cursor, batch_cursors from public.price_collection_state`))[0];
+  assert.equal(state.created_cursor.toISOString(), '2026-11-10T22:52:46.304Z');
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(state.batch_cursors).map(([k, v]) => [k, new Date(v).toISOString()])),
+    { '1-600': '2026-11-10T22:52:46.304Z', '601-700': '2026-11-15T00:00:00.000Z' },
+  );
+  await db.close();
+});
+
+// ─── Pipeline de données ouvertes (fixtures, sans réseau) ─────────────────────
+
+test('data:snapshot : « magasins » = lieux ayant fourni un relevé RETENU (ni station-service, ni lieu sans relevé)', async () => {
+  const { mkdtempSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { gzipSync } = await import('node:zlib');
+  const dir = mkdtempSync(join(tmpdir(), 'cabas-snap-'));
+  const loc = (id, extra = {}) => ({
+    id, type: 'OSM', osm_brand: 'E.Leclerc', osm_name: 'E.Leclerc', osm_tag_value: 'supermarket',
+    osm_address_postcode: '69007', osm_address_country: 'France', osm_address_country_code: 'FR', ...extra,
+  });
+  const locations = [loc(1), loc(2, { osm_tag_value: 'fuel' }), loc(3), loc(4)];
+  const price = (id, locationId, extra = {}) => ({
+    id, type: 'PRODUCT', product_code: '3017620422003', price: '2.49', currency: 'EUR', date: '2026-10-01',
+    location_id: locationId, duplicate_of: null, created: `2026-10-01T08:00:0${id}.000000Z`, ...extra,
+  });
+  // Lieu 1 : relevé retenu ; lieu 2 : station-service ; lieu 3 : relevé HORS fenêtre ; lieu 4 : aucun relevé.
+  const prices = [price(1, 1), price(2, 2), price(3, 3, { date: '2024-01-01' })];
+  const jsonl = (rows) => gzipSync(rows.map((r) => JSON.stringify(r)).join('\n'));
+  writeFileSync(join(dir, 'locations.jsonl.gz'), jsonl(locations));
+  writeFileSync(join(dir, 'prices.jsonl.gz'), jsonl(prices));
+  writeFileSync(join(dir, 'sources.json'), JSON.stringify({ productSources: [{ ingredientId: 'pates_spaghetti', national: { ean: '3017620422003' } }] }));
+  const out = join(dir, 'snap.json');
+  const report = execFileSync(
+    process.execPath,
+    ['--no-warnings', join(ROOT, 'scripts/open-data/build-snapshot.mjs'), '--date', '2026-11-11', '--cache-dir', dir, '--sources', join(dir, 'sources.json'), '--out', out],
+    { encoding: 'utf8' },
+  );
+  const snap = JSON.parse(readFileSync(out, 'utf8'));
+  assert.equal(snap.stats.observations, 1);
+  assert.equal(snap.stats.stores, 1, 'un seul magasin a fourni un relevé retenu');
+  assert.equal(snap.source.lastCreatedAt, '2026-10-01T08:00:03.000000Z');
+  assert.match(report, /4 lieux, 4 lieux candidats .*, 1 magasins avec relevés retenus/);
+});
+
+test('data:generate : accepte { productSources: [...] } comme fetch et snapshot, refuse clairement un autre format', async () => {
+  const { mkdtempSync, writeFileSync, existsSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { spawnSync } = await import('node:child_process');
+  const dir = mkdtempSync(join(tmpdir(), 'cabas-gen-'));
+  const source = { ingredientId: 'moules', national: { ean: '8710387005261', packSize: 1400, packUnit: 'g' } };
+  const runGen = (payload, out) => {
+    writeFileSync(join(dir, 'src.json'), JSON.stringify(payload));
+    return spawnSync(
+      process.execPath,
+      ['--no-warnings', join(ROOT, 'src/data/generator/run.mjs'), '--sources', join(dir, 'src.json'), '--out', join(dir, out)],
+      { encoding: 'utf8' },
+    );
+  };
+  const obj = runGen({ productSources: [source] }, 'obj');
+  assert.equal(obj.status, 0, obj.stderr);
+  assert.ok(existsSync(join(dir, 'obj', 'products.ts')));
+  const arr = runGen([source], 'arr');
+  assert.equal(arr.status, 0, arr.stderr);
+  assert.equal(readFileSync(join(dir, 'obj', 'products.ts'), 'utf8'), readFileSync(join(dir, 'arr', 'products.ts'), 'utf8'));
+  const bad = runGen({}, 'bad');
+  assert.notEqual(bad.status, 0);
+  assert.match(bad.stderr, /✗ .*tableau d'IngredientSource attendu/);
+  assert.doesNotMatch(bad.stderr, /TypeError/);
+});

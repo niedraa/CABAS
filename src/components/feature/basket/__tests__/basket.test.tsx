@@ -22,6 +22,7 @@ import {
   missingRows,
   orderCtaLabel,
   packLabel,
+  minOrderWarning,
   packsLabel,
   productTitle,
   receiptSummary,
@@ -115,6 +116,8 @@ describe('libellés', () => {
     expect(packLabel({ packSize: 250, packUnit: 'g' })).toBe(`250${NBSP}g`);
     expect(packLabel({ packSize: 1000, packUnit: 'g' })).toBe(`1${NBSP}kg`);
     expect(packLabel({ packSize: 6, packUnit: 'piece' })).toBe(`6${NBSP}pièces`);
+    // Sachet d'herbes plus petit qu'une botte : fraction lisible, virgule française.
+    expect(packLabel({ packSize: 0.4, packUnit: 'piece' })).toBe(`0,4${NBSP}pièce`);
     expect(packsLabel(2, { packSize: 250, packUnit: 'g' })).toBe(`2${NBSP}×${NBSP}250${NBSP}g`);
     expect(packsLabel(1, undefined)).toBe(`1${NBSP}×`);
     expect(productTitle({ name: 'Ail blanc', brand: 'Auchan' }, 'Ail')).toBe('Ail blanc · Auchan');
@@ -195,7 +198,15 @@ describe('comparisonRows', () => {
       const line = lineForItem(single, r.itemId);
       if (!line) continue;
       if (line.storeId === r.bestStoreId && line.totalCents === r.best.totalCents) expect(r.basket).toBeNull();
-      else expect(r.basket).toEqual({ storeId: line.storeId, totalCents: line.totalCents, extraCents: Math.max(0, line.totalCents - r.best.totalCents) });
+      else {
+        expect(r.basket).toEqual({
+          storeId: line.storeId,
+          totalCents: line.totalCents,
+          extraCents: Math.max(0, line.totalCents - r.best.totalCents),
+          // Prix estimé dans le panier : toujours signalé.
+          estimated: line.priceSource === 'estimate',
+        });
+      }
     }
     expect(lineForItem(null, FIRST.id)).toBeNull();
     expect(lineForItem(single, 'i-eau')).toBeNull();
@@ -224,9 +235,44 @@ describe('missingRows', () => {
     const plan: BasketPlan = { ...single, missingItemIds: [FIRST.id] };
     const [row] = missingRows(plan, comparisons);
     const best = comparisons[0].best as NonNullable<ItemComparison['best']>;
-    expect(row).toEqual({ itemId: FIRST.id, label: FIRST.label, reason: 'elsewhere', elsewhere: { storeId: best.storeId, totalCents: best.totalCents } });
+    expect(row).toEqual({
+      itemId: FIRST.id,
+      label: FIRST.label,
+      reason: 'elsewhere',
+      elsewhere: { storeId: best.storeId, totalCents: best.totalCents, estimated: best.priceSource === 'estimate' },
+    });
     expect(missingReason(row, storesById)).toMatch(/^Pas dans tes magasins\. Dispo chez /);
     expect(missingRows(null, comparisons)).toEqual([]);
+  });
+
+  it('dit « prix estimé » quand le meilleur prix ailleurs est une estimation', () => {
+    const row = { itemId: 'x', label: 'Riz', reason: 'elsewhere' as const, elsewhere: { storeId: 'leclerc', totalCents: 595, estimated: true } };
+    expect(missingReason(row, storesById)).toBe(`Pas dans tes magasins. Dispo chez Leclerc à 5,95${NNBSP}€ (prix estimé).`);
+    expect(missingReason({ ...row, elsewhere: { ...row.elsewhere, estimated: false } }, storesById)).not.toMatch(/estimé/);
+  });
+
+  it('distingue un article écarté pour une allergie et un magasin écarté pour son minimum de commande', () => {
+    const plan: BasketPlan = {
+      ...single,
+      missingItemIds: ['i-eau', FIRST.id],
+      minOrderSkipped: [{ storeId: 'monoprix', minOrderCents: 6000, itemIds: [FIRST.id] }],
+    };
+    const noOffers = comparisons.map((c) => (c.itemId === FIRST.id ? c : { ...c, offers: [], best: undefined }));
+    const rows = missingRows(plan, noOffers, { allergenExcludedItemIds: ['i-eau'] });
+    expect(rows.map((r) => [r.itemId, r.reason])).toEqual([
+      ['i-eau', 'allergen'],
+      [FIRST.id, 'min_order'],
+    ]);
+    expect(missingReason(rows[0], storesById)).toMatch(/contiennent un de tes allergènes/);
+    expect(missingReason(rows[1], storesById)).toBe(`Chez Monoprix, mais ta commande y resterait sous son minimum de 60,00${NNBSP}€.`);
+  });
+
+  it('avertit d’une part sous le minimum de commande (montant manquant)', () => {
+    expect(minOrderWarning({ subtotalCents: 619, minOrderShortfallCents: 5381 }, storesById.monoprix)).toEqual({
+      title: `Minimum de commande : 60,00${NNBSP}€`,
+      message: `Il manque 53,81${NNBSP}€ pour commander chez Monoprix : ajoute des articles ou fais tes courses sur place.`,
+    });
+    expect(minOrderWarning({ subtotalCents: 6200 }, storesById.monoprix)).toBeNull();
   });
 });
 
@@ -353,6 +399,12 @@ describe('BasketReceipt', () => {
     expect(screen.getByTestId('r-total')).toBeTruthy();
   });
 
+  it('courses en magasin seulement (Lidl, Aldi, Netto) : pas de ligne « frais de retrait »', async () => {
+    const plan: BasketPlan = { ...single, parts: single.parts.map((p) => ({ ...p, storeId: 'lidl', feesCents: 0 })) };
+    await render(<BasketReceipt summary={receiptSummary(plan, storesById)} channel="drive" />);
+    expect(screen.queryByText('Frais de retrait')).toBeNull();
+  });
+
   it('montre les frais de livraison et masque l’économie nulle', async () => {
     const plan: BasketPlan = { ...single, savingsCents: 0, missingItemIds: [], parts: single.parts.map((p) => ({ ...p, feesCents: 599 })) };
     await render(<BasketReceipt summary={receiptSummary(plan, storesById)} channel="delivery" />);
@@ -408,6 +460,15 @@ describe('StorePartCard', () => {
     expect(onOpenItem).toHaveBeenCalledWith(bigPart.lines[0].itemId);
     await fireEvent.press(screen.getByRole('button', { name: orderCtaLabel(store) }));
     expect(onOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it('signale une part sous le minimum de commande (montant manquant)', async () => {
+    const monoprix = storesById.monoprix;
+    const below = { ...part, storeId: 'monoprix', subtotalCents: 619, minOrderShortfallCents: 5381 };
+    await render(<StorePartCard part={below} store={monoprix} channel="drive" productsById={productsById} onOrder={jest.fn()} testID="sp" />);
+    expect(screen.getByTestId('sp-min-order')).toBeTruthy();
+    expect(screen.getByText(`Minimum de commande : 60,00${NNBSP}€`)).toBeTruthy();
+    expect(screen.getByText(/Il manque 53,81/)).toBeTruthy();
   });
 
   it('signale une commande déjà validée', async () => {

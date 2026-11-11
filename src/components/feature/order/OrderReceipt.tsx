@@ -1,7 +1,8 @@
 /**
  * Ticket de la commande d'un magasin : lignes (article, produit, quantité,
  * prix — « prix estimé » signalé), sous-total (« dont 2 prix estimés »),
- * frais, économie et total. Repliée au-delà de 6 lignes.
+ * frais (aucune ligne « frais de retrait » pour des courses en magasin),
+ * économie et total. Repliée au-delà de 6 lignes.
  */
 import React, { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -28,12 +29,24 @@ export interface OrderReceiptProps {
   channel: OrderChannel;
   /** Service rendu (« Drive », « Click & collect », « En magasin »…) ; défaut : le canal. */
   service?: string;
+  /** Courses en magasin (enseigne sans retrait en ligne) : pas de ligne de frais de retrait. */
+  inStoreOnly?: boolean;
   testID?: string;
 }
 
 export const ORDER_COLLAPSED_LINES = 6;
 
-export function OrderReceipt({ lines, subtotalCents, feesCents, totalCents, savingsCents, channel, service, testID }: OrderReceiptProps) {
+export function OrderReceipt({
+  lines,
+  subtotalCents,
+  feesCents,
+  totalCents,
+  savingsCents,
+  channel,
+  service,
+  inStoreOnly,
+  testID,
+}: OrderReceiptProps) {
   const t = useTheme();
   const c = t.colors;
   const [expanded, setExpanded] = useState(false);
@@ -90,7 +103,9 @@ export function OrderReceipt({ lines, subtotalCents, feesCents, totalCents, savi
         ) : null}
         <Divider variant="dashed" spacing={t.spacing.xs} />
         <ReceiptLine label="Sous-total" hint={estimatedNote(estimated) || undefined} value={formatPrice(subtotalCents)} />
-        <ReceiptLine label={feesLabel(channel)} value={feesValue(feesCents)} valueColor={feesCents > 0 ? 'text' : 'success'} />
+        {inStoreOnly && feesCents === 0 ? null : (
+          <ReceiptLine label={feesLabel(channel)} value={feesValue(feesCents)} valueColor={feesCents > 0 ? 'text' : 'success'} />
+        )}
         {savingsCents > 0 ? (
           <ReceiptLine
             label="Économie"

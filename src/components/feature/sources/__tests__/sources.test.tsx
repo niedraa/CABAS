@@ -10,13 +10,14 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 
 import type { CatalogMeta } from '@/core';
 import { STORE_CHAINS } from '@/core';
-import { catalogMeta, PRICE_DATA_NOTICE, stores } from '@/data';
+import { catalogMeta, DATA_ATTRIBUTION, PRICE_DATA_NOTICE, stores } from '@/data';
 
 import SourcesSettings from '@/app/parametres/sources';
 
 import { observedDayLabel, offProductUrl, priceProvenance } from '../../basket/provenanceView';
 import {
   chainRows,
+  DATA_ATTRIBUTION_LINE,
   dataSources,
   ESTIMATE_METHODS,
   formatCount,
@@ -154,5 +155,12 @@ describe('écran « Sources et licences »', () => {
     await fireEvent.press(screen.getByTestId('sources-license'));
     expect(open).toHaveBeenLastCalledWith(ODBL.url);
     open.mockRestore();
+  });
+});
+
+describe('attribution ODbL', () => {
+  it('affiche exactement la mention exigée par DATA_LICENSE.md (constante DATA_ATTRIBUTION)', () => {
+    expect(DATA_ATTRIBUTION_LINE).toBe(DATA_ATTRIBUTION);
+    expect(DATA_ATTRIBUTION_LINE).toMatch(/Open Food Facts.*Open Prices.*© contributeurs OpenStreetMap.*Licence ODbL/);
   });
 });

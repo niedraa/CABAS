@@ -75,8 +75,19 @@ export interface OpenDataSnapshot {
   snapshotAt: string;
   pricesFrom: string;
   pricesTo: string;
-  source?: { prices: string; locations: string; lastContributionAt: string | null };
-  stats?: { observations: number; byChain: Partial<Record<StoreChain, { observations: number; products: number }>> };
+  source?: {
+    prices: string;
+    locations: string;
+    lastContributionAt: string | null;
+    /** `created` (ISO complet) du relevé le plus récent de l'export. */
+    lastCreatedAt?: string | null;
+  };
+  stats?: {
+    observations: number;
+    /** Magasins (lieux) ayant fourni au moins un relevé retenu. */
+    stores?: number;
+    byChain: Partial<Record<StoreChain, { observations: number; products: number }>>;
+  };
   chainIndex: Record<StoreChain, ChainPriceIndex>;
   offProducts: Record<string, OffProductInfo>;
   /** Clé (`ean:<gtin>`, `cat:<tag>:<KILOGRAM|UNIT>[:organic]`) → enseigne → prix national. */
@@ -144,18 +155,24 @@ function isGtin(code: string): boolean {
   return (10 - (sum % 10)) % 10 === code.charCodeAt(code.length - 1) - 48;
 }
 
-/** g ↔ ml (densité, 1 par défaut), pièce ↔ g (poids moyen). `null` si impossible. */
-function convertQuantity(q: number, from: BaseUnit, to: BaseUnit, ing: Ingredient): number | null {
+/**
+ * g ↔ ml (densité de l'ingrédient), pièce ↔ g (poids moyen). `null` si
+ * impossible — en particulier g ↔ ml SANS densité : jamais « 1 ml = 1 g » par
+ * défaut (un sac de moules « 2 l » pèse 1,4 kg, pas 2 kg).
+ */
+export function convertQuantity(q: number, from: BaseUnit, to: BaseUnit, ing: Ingredient): number | null {
   if (from === to) return q;
-  const density = ing.density && ing.density > 0 ? ing.density : 1;
+  const density = ing.density && ing.density > 0 ? ing.density : undefined;
   const gpp = ing.gramsPerPiece && ing.gramsPerPiece > 0 ? ing.gramsPerPiece : undefined;
   let grams: number;
   if (from === 'g') grams = q;
-  else if (from === 'ml') grams = q * density;
-  else if (gpp !== undefined) grams = q * gpp;
+  else if (from === 'ml') {
+    if (density === undefined) return null;
+    grams = q * density;
+  } else if (gpp !== undefined) grams = q * gpp;
   else return null;
   if (to === 'g') return grams;
-  if (to === 'ml') return grams / density;
+  if (to === 'ml') return density !== undefined ? grams / density : null;
   return gpp !== undefined ? grams / gpp : null;
 }
 
@@ -345,9 +362,16 @@ export function buildCatalog(
         warnings.push(`${id} : écarté, prix ${loose.pricePer} non convertible en ${ing.baseUnit} (poids moyen manquant)`);
         return null;
       }
+      // Facteur arrondi au millionième : le même que celui stocké sur le produit (collecte).
+      const packFactor = Math.round(pack.factor * 1e6) / 1e6;
       const product: Product = {
         id,
         offCategoryTag: tags[0],
+        // Mêmes règles que l'instantané pour la collecte : catégories par ordre
+        // de préférence, unité des relevés de la SOURCE, facteur de conditionnement.
+        offCategoryTags: tags,
+        offPricePer: loose.pricePer,
+        offPackFactor: packFactor,
         name: cleanProductName(loose.name),
         brand: 'Vrac',
         isStoreBrand: false,
@@ -362,7 +386,7 @@ export function buildCatalog(
         for (const tag of tags) {
           const agg = snapshot.aggregates[`cat:${tag}:${loose.pricePer}${loose.organic ? ':organic' : ''}`]?.[chain];
           if (!agg) continue;
-          const exact = agg.medianCents * pack.factor;
+          const exact = agg.medianCents * packFactor;
           observed.set(chain, { cents: Math.max(1, Math.round(exact)), exact, count: agg.count, from: agg.from, to: agg.to });
           break; // catégories par ordre de préférence
         }
@@ -490,6 +514,7 @@ export function buildCatalog(
     coverage,
     sources: DATA_SOURCES.map((s) => ({ ...s })),
   };
+  if (snapshot.source?.lastCreatedAt) meta.lastCreatedAt = snapshot.source.lastCreatedAt;
   return { products, prices, meta, warnings };
 }
 

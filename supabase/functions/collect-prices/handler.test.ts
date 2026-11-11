@@ -428,6 +428,7 @@ function fakeRepo(opts: {
   const repo: Fake = {
     state: {
       createdCursor: opts.state?.createdCursor ?? null,
+      batchCursors: opts.state?.batchCursors ?? {},
       locationsRefreshedAt: opts.state?.locationsRefreshedAt ?? '2026-11-08T00:00:00.000Z',
     },
     locations: opts.locations ?? LOCATIONS,
@@ -439,11 +440,13 @@ function fakeRepo(opts: {
     loadState: () =>
       Promise.resolve({
         createdCursor: repo.state.createdCursor,
+        batchCursors: { ...repo.state.batchCursors },
         locationsRefreshedAt: repo.state.locationsRefreshedAt,
       }),
     saveState: (s) => {
       repo.state = {
         createdCursor: s.createdCursor,
+        batchCursors: { ...s.batchCursors },
         locationsRefreshedAt: s.locationsRefreshedAt,
         lastStats: s.lastStats,
       };
@@ -756,8 +759,8 @@ Deno.test('collecte : `since` (rejeu) et validation', async () => {
 
 Deno.test("baisses de prix : notification mise en file (une seule fois), dryRun n'écrit rien", async () => {
   const watches: PriceWatchRow[] = [
-    { userId: 'u1', productId: 'prd_riz', storeId: 'leclerc', referenceCents: 199 },
-    { userId: 'u2', productId: 'prd_riz', storeId: 'leclerc', referenceCents: 170 }, // baisse < 5 %
+    { userId: 'u1', productId: 'prd_riz', storeId: 'leclerc', referenceCents: 199, allergens: [] },
+    { userId: 'u2', productId: 'prd_riz', storeId: 'leclerc', referenceCents: 170, allergens: [] }, // baisse < 5 %
   ];
   const repo = fakeRepo({ watches });
   const { fetch } = fakeFetch(() => page([item({ id: 77, price: 1.69 })]));
@@ -782,4 +785,200 @@ Deno.test("baisses de prix : notification mise en file (une seule fois), dryRun 
 
   const again = await (await handler(cronReq({ since: '2026-11-04T00:00:00Z' }))).json();
   assertEquals(again.stats.notificationsQueued, 0, 'dédupliquée');
+});
+
+// ─── Régressions ─────────────────────────────────────────────────────────────
+
+Deno.test('baisses de prix : jamais sur un produit contenant un allergène déclaré ; profil illisible → aucune alerte', async () => {
+  const watches: PriceWatchRow[] = [
+    // Pâtes (gluten) surveillées chez Intermarché par trois utilisateurs.
+    { userId: 'celiac', productId: PATES_MDD.id, storeId: 'intermarche', referenceCents: 199, allergens: ['gluten'] },
+    { userId: 'ok', productId: PATES_MDD.id, storeId: 'intermarche', referenceCents: 199, allergens: ['arachides'] },
+    { userId: 'unknown', productId: PATES_MDD.id, storeId: 'intermarche', referenceCents: 199, allergens: null },
+  ];
+  const repo = fakeRepo({ watches });
+  const { fetch } = fakeFetch(() => page([item({ id: 501, product_code: PATES_MDD.ean, loc: 401, price: 1.19 })]));
+  const { status, stats } = await run(repo, fetch);
+  assertEquals(status, 200);
+  assertEquals(stats.priceDrops, 1);
+  assertEquals(repo.queued.map((n) => n.userId), ['ok']);
+});
+
+Deno.test('collecte : un prix barré absurde (9 999 999 €) est écarté, la collecte continue et le curseur avance', async () => {
+  const repo = fakeRepo({ state: { createdCursor: '2026-11-04T00:00:00.000Z' } });
+  const { fetch } = fakeFetch(() =>
+    page([
+      item({
+        id: 601,
+        price: 1,
+        price_is_discounted: true,
+        price_without_discount: 9999999,
+        created: '2026-11-08T08:00:00.000Z',
+      }),
+      item({ id: 602, price: 1.69, created: '2026-11-08T09:00:00.000Z' }),
+    ])
+  );
+  const { status, stats } = await run(repo, fetch);
+  assertEquals(status, 200);
+  assertEquals(stats.rejectedObservations, 1);
+  assertEquals(stats.observationsInserted, 1);
+  assert(repo.observations.every((o) => o.regularMilli <= 2_147_483_647));
+  assert(repo.state.createdCursor! > '2026-11-04T00:00:00.000Z', 'curseur avancé');
+});
+
+Deno.test('collecte : un lot trop gros pour un passage reprend où il s’est arrêté, sans bloquer les autres lots', async () => {
+  // 1 448 lieux → 3 lots ; le 1er lot a 10 pages de relevés, maxPages = 5 par passage.
+  const locs = Array.from({ length: 1448 }, (_, i) => locationFromRaw(rawLoc(i + 1))!);
+  const repo = fakeRepo({ locations: locs, state: { createdCursor: '2026-11-04T00:00:00.000Z' } });
+  const requested: { first: string; gte: string; page: number }[] = [];
+  const created = (n: number) => new Date(Date.parse('2026-11-05T00:00:00.000Z') + n * 60_000).toISOString();
+  const { fetch } = fakeFetch((url) => {
+    const first = url.searchParams.get('location_id__in')!.split(',')[0];
+    const gte = url.searchParams.get('created__gte')!;
+    const p = Number(url.searchParams.get('page'));
+    requested.push({ first, gte, page: p });
+    if (first !== '1') return page([]);
+    // 1 000 relevés (un par minute), 100 par page, triés par création, à partir de `gte`.
+    const all = Array.from({ length: 1000 }, (_, n) => n).filter((n) => created(n) >= gte);
+    const slice = all.slice((p - 1) * 100, p * 100);
+    return page(
+      slice.map((n) => item({ id: 10_000 + n, loc: 1, location: rawLoc(1), created: created(n) })),
+      p,
+      Math.max(1, Math.ceil(all.length / 100)),
+    );
+  });
+  const cursors: string[] = [];
+  for (let k = 0; k < 4; k++) {
+    requested.length = 0;
+    const { status } = await run(repo, fetch, { maxPages: 5 });
+    assertEquals(status, 200);
+    cursors.push(repo.state.batchCursors['1-600']);
+    if (k === 0) {
+      assertEquals(
+        requested.map((r) => r.first),
+        ['1', '1', '1', '1', '1'],
+        '1er passage : le lot le plus en retard d’abord',
+      );
+    }
+    if (k === 1) {
+      assert(
+        requested.some((r) => r.first === '601') && requested.some((r) => r.first === '1201'),
+        '2e passage : les autres lots sont lus',
+      );
+    }
+  }
+  // Le curseur du gros lot avance à chaque passage, jusqu'à l'épuiser.
+  assert(cursors[0] > '2026-11-04T00:00:00.000Z');
+  assert(cursors[1] > cursors[0], `${cursors[1]} > ${cursors[0]}`);
+  assertEquals(
+    repo.state.batchCursors['601-1200'],
+    '2026-11-10T08:50:00.000Z',
+    'lot épuisé : début du passage − 10 min',
+  );
+  assertEquals(repo.state.batchCursors['1201-1448'], '2026-11-10T08:50:00.000Z');
+  assertEquals(cursors[3], '2026-11-10T08:50:00.000Z', 'gros lot finalement épuisé');
+  assertEquals(
+    new Set(repo.observations.map((o) => o.openPricesId)).size,
+    1000,
+    'aucun relevé perdu ni compté deux fois',
+  );
+  assertEquals(repo.state.createdCursor, '2026-11-10T08:50:00.000Z', 'curseur global = le plus en retard');
+});
+
+Deno.test('collecte : un lot toujours en erreur ne bloque pas les autres (curseur propre à chaque lot)', async () => {
+  const locs = Array.from({ length: 700 }, (_, i) => locationFromRaw(rawLoc(i + 1))!); // 2 lots
+  const repo = fakeRepo({ locations: locs, state: { createdCursor: '2026-11-04T00:00:00.000Z' } });
+  const { fetch } = fakeFetch((url) =>
+    url.searchParams.get('location_id__in')!.startsWith('1,')
+      ? Response.json({ error: 'boom' }, { status: 500 })
+      : page([item({ id: 701, loc: 601, location: rawLoc(601), created: '2026-11-07T10:00:00Z' })])
+  );
+  await run(repo, fetch);
+  assertEquals(repo.state.batchCursors['1-600'], '2026-11-04T00:00:00.000Z', 'lot en erreur : inchangé');
+  assertEquals(repo.state.batchCursors['601-700'], '2026-11-10T08:50:00.000Z', 'lot sain : avancé');
+  // Passage suivant : le lot sain repart de SON curseur, pas du plus en retard.
+  const { fetch: f2, calls } = fakeFetch((url) =>
+    url.searchParams.get('location_id__in')!.startsWith('1,')
+      ? Response.json({ error: 'boom' }, { status: 500 })
+      : page([])
+  );
+  await run(repo, f2);
+  const healthy = calls.find((u) => u.searchParams.get('location_id__in')!.startsWith('601,'))!;
+  assertEquals(healthy.searchParams.get('created__gte'), '2026-11-10T08:50:00.000Z');
+});
+
+Deno.test('rattachement vrac : unité de la source (concombre à la pièce) et toutes les catégories, la 1re qui a des relevés', () => {
+  // Concombre : ingrédient au poids (350 g = 1 pièce), relevé À LA PIÈCE comme dans l'instantané.
+  const CONCOMBRE: Product = {
+    id: 'prd_concombre_vrac',
+    offCategoryTag: 'en:cucumbers',
+    offCategoryTags: ['en:cucumbers'],
+    offPricePer: 'UNIT',
+    offPackFactor: 1,
+    name: 'Concombre',
+    brand: 'Vrac',
+    isStoreBrand: false,
+    ingredientId: 'concombre',
+    packSize: 350,
+    packUnit: 'g',
+    allergens: [],
+  };
+  // Ail : en:garlic puis en:garlics (catégorie secondaire de l'instantané).
+  const AIL: Product = {
+    ...CONCOMBRE,
+    id: 'prd_ail_vrac',
+    offCategoryTag: 'en:garlic',
+    offCategoryTags: ['en:garlic', 'en:garlics'],
+    offPricePer: 'KILOGRAM',
+    offPackFactor: 0.1,
+    ingredientId: 'ail',
+    packSize: 100,
+  };
+  const matcher = buildProductMatcher([CONCOMBRE, AIL]);
+  const m = (i: ApiPriceItem) => matchItem(i, WINDOW, matcher);
+  const unit = m(vrac({ category_tag: 'en:cucumbers', price_per: 'UNIT', price: 0.79 }));
+  assertEquals(unit.status, 'matched');
+  if (unit.status === 'matched') {
+    assertEquals([unit.rows[0].pricePer, unit.rows[0].categoryTag], ['UNIT', 'en:cucumbers']);
+  }
+  assertEquals(m(vrac({ category_tag: 'en:cucumbers', price_per: 'KILOGRAM' })).status, 'unmatched');
+  const garlics = m(vrac({ category_tag: 'en:garlics', price: 6.9 }));
+  assertEquals(garlics.status, 'matched');
+  if (garlics.status === 'matched') assertEquals(garlics.rows[0].categoryTag, 'en:garlics');
+  // Prix : relevé à la pièce × facteur de la source (0,79 € la pièce).
+  assertEquals(
+    chainPriceFromObservations(CONCOMBRE, 'leclerc', [
+      obs({ productId: CONCOMBRE.id, pricePer: 'UNIT', categoryTag: 'en:cucumbers', regularMilli: 790 }),
+    ], WINDOW)?.priceCents,
+    79,
+  );
+  // Ail : la 1re catégorie qui a des relevés gagne ; sinon la suivante.
+  const g = (regularMilli: number, categoryTag: string) =>
+    obs({ productId: AIL.id, pricePer: 'KILOGRAM', categoryTag, regularMilli });
+  assertEquals(chainPriceFromObservations(AIL, 'superu', [g(6900, 'en:garlics')], WINDOW)?.priceCents, 69);
+  assertEquals(
+    chainPriceFromObservations(AIL, 'superu', [g(6900, 'en:garlics'), g(9900, 'en:garlic')], WINDOW)?.priceCents,
+    99,
+  );
+});
+
+Deno.test("prix d'enseigne : un socle de l'instantané issu de la PROXIMITÉ cède la place au 1er relevé hyper / super", () => {
+  const base = obs({
+    kind: 'snapshot',
+    openPricesId: undefined,
+    weight: 2,
+    regularMilli: 1510,
+    proximity: true,
+    observedOn: '2026-10-01',
+  });
+  const hyper = obs({ regularMilli: 1290, observedOn: '2026-11-08' });
+  const p = chainPriceFromObservations(RIZ, 'intermarche', [base, hyper], WINDOW)!;
+  assertEquals([p.priceCents, p.observationCount], [129, 1]);
+  // Socle hors proximité : il pèse son nombre de relevés (médiane de 1,51 ; 1,51 ; 1,29).
+  const regularBase = { ...base, proximity: false };
+  assertEquals(chainPriceFromObservations(RIZ, 'intermarche', [regularBase, hyper], WINDOW)?.priceCents, 151);
+  // Aller-retour SQL de la catégorie vrac.
+  const row = observationToRow(obs({ pricePer: 'KILOGRAM', categoryTag: 'en:garlics' }));
+  assertEquals(row.category_tag, 'en:garlics');
+  assertEquals(rowToObservation({ ...row, id: 1 }).categoryTag, 'en:garlics');
 });

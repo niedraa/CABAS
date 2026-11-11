@@ -41,7 +41,9 @@ export function ComparisonRow({ row, storesById, totalStores = 0, onPress, testI
     `meilleur prix ${formatPriceForA11y(row.best.totalCents)} chez ${bestName}${row.bestEstimated ? ', prix estimé' : ''}`,
     plural(row.stores, 'enseigne comparée', 'enseignes comparées'),
     row.best.isPromo ? 'en promo' : '',
-    row.basket ? `dans ton panier : ${formatPriceForA11y(row.basket.totalCents)} chez ${basketName}` : '',
+    row.basket
+      ? `dans ton panier : ${formatPriceForA11y(row.basket.totalCents)} chez ${basketName}${row.basket.estimated ? ', prix estimé' : ''}`
+      : '',
     mdd?.kind === 'chosen' ? `marque distributeur, ${formatPriceForA11y(mdd.savingsCents)} de moins que la marque` : '',
     mdd?.kind === 'available' ? `marque distributeur moins chère chez ${mddStore}` : '',
   ]
@@ -78,6 +80,7 @@ export function ComparisonRow({ row, storesById, totalStores = 0, onPress, testI
             <Text variant="footnote" color="textSecondary" numberOfLines={1} tabular style={styles.flex}>
               {basketName} {formatPrice(row.basket.totalCents)}
               {row.basket.extraCents > 0 ? ` (+${formatPrice(row.basket.extraCents)})` : ''}
+              {row.basket.estimated ? ' · estimé' : ''}
             </Text>
           </View>
         ) : null}

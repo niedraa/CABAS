@@ -12,7 +12,7 @@ export const catalogMeta: CatalogMeta = {
   "snapshotAt": "2026-11-11",
   "pricesFrom": "2025-11-11",
   "pricesTo": "2026-11-11",
-  "observedPrices": 1145,
+  "observedPrices": 1142,
   "estimatedPrices": 1216,
   "chainIndex": {
     "leclerc": {
@@ -72,11 +72,11 @@ export const catalogMeta: CatalogMeta = {
       "estimated": 89
     },
     "carrefour": {
-      "observed": 217,
+      "observed": 216,
       "estimated": 107
     },
     "auchan": {
-      "observed": 161,
+      "observed": 160,
       "estimated": 140
     },
     "intermarche": {
@@ -88,7 +88,7 @@ export const catalogMeta: CatalogMeta = {
       "estimated": 138
     },
     "lidl": {
-      "observed": 47,
+      "observed": 46,
       "estimated": 35
     },
     "aldi": {
@@ -124,5 +124,6 @@ export const catalogMeta: CatalogMeta = {
       "url": "https://www.openstreetmap.org/copyright",
       "license": "ODbL 1.0"
     }
-  ]
+  ],
+  "lastCreatedAt": "2026-11-10T22:52:46.303406Z"
 };

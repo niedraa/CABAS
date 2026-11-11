@@ -33,7 +33,6 @@ import {
   DayStrip,
   GeneratingBanner,
   greetingFor,
-  listEstimateCents,
   ListReadyCard,
   LockedSlotCard,
   MealCard,
@@ -58,9 +57,10 @@ import {
   useToast,
 } from '@/components/ui';
 import type { PlannedMeal } from '@/core';
-import { compareList, formatDayLabel, formatPrice, formatWeekRange, parseISODate, weekdayIndex, MONTH_SHORT } from '@/core';
+import { formatDayLabel, formatPrice, formatWeekRange, parseISODate, weekdayIndex, MONTH_SHORT } from '@/core';
 import { useCurrentWeek, useHydrated, useSubscription } from '@/hooks';
 import { haptics } from '@/lib/haptics';
+import { listEstimateFor } from '@/services/basket';
 import { useCatalog } from '@/services/catalog';
 import {
   activeWeek,
@@ -101,9 +101,11 @@ export default function WeekScreen() {
 
   const meals = useMemo(() => plan?.meals ?? [], [plan]);
   // Budget : panier calculé s'il est à jour, sinon liste chiffrée (meilleures offres), sinon estimation.
+  // (Jamais chiffrée avec un produit contenant un allergène déclaré : comme le panier.)
+  const allergens = profile?.allergens;
   const listEstimate = useMemo(
-    () => (list && list.items.length > 0 ? listEstimateCents(compareList(list.items, catalog.index)) : null),
-    [list, catalog],
+    () => (list && list.items.length > 0 ? listEstimateFor(list.items, allergens, catalog) : null),
+    [list, allergens, catalog],
   );
   const stats = useMemo(
     () =>
@@ -258,7 +260,7 @@ export default function WeekScreen() {
       return;
     }
     const fresh = useListStore.getState().lists[ws];
-    const est = fresh ? listEstimateCents(compareList(fresh.items, catalog.index)) : null;
+    const est = fresh ? listEstimateFor(fresh.items, useProfileStore.getState().profile?.allergens, catalog) : null;
     const s = computeWeekStats(res.plan.meals, catalog.recipesById, est !== null ? { cents: est, exact: false } : null);
     const message = `${s.meals} repas, ≈ ${formatPrice(Math.round(s.budgetCents / 100) * 100)} estimés.`;
     // L'utilisateur a changé de semaine entre-temps : pas de célébration ici, on nomme la semaine prête.

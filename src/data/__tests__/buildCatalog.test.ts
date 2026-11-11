@@ -248,6 +248,10 @@ describe('buildCatalog — produits', () => {
     expect(product('prd_tomate_vrac')).toEqual({
       id: 'prd_tomate_vrac',
       offCategoryTag: 'en:tomatoes',
+      // Règles de l'instantané reprises par la collecte : catégories dans l'ordre, unité, facteur.
+      offCategoryTags: ['en:tomatoes', 'en:fresh-tomatoes'],
+      offPricePer: 'KILOGRAM',
+      offPackFactor: 0.12,
       name: 'Tomates en vrac',
       brand: 'Vrac',
       isStoreBrand: false,
@@ -256,7 +260,14 @@ describe('buildCatalog — produits', () => {
       packUnit: 'g',
       allergens: [],
     });
-    expect(product('prd_citron_vrac')).toMatchObject({ name: 'Citrons bio', organic: true, packSize: 1, packUnit: 'piece' });
+    expect(product('prd_citron_vrac')).toMatchObject({
+      name: 'Citrons bio',
+      organic: true,
+      packSize: 1,
+      packUnit: 'piece',
+      offPricePer: 'UNIT',
+      offPackFactor: 1,
+    });
     for (const p of built.products) expect(p.ean === undefined).toBe(p.offCategoryTag !== undefined);
   });
 });
@@ -451,6 +462,38 @@ describe('buildCatalog — erreurs de source', () => {
     const partial: Partial<OpenDataSnapshot['chainIndex']> = { ...SNAPSHOT.chainIndex };
     delete partial.netto;
     expect(run(SOURCES, { ...SNAPSHOT, chainIndex: partial as OpenDataSnapshot['chainIndex'] })).toThrow(/Indice de prix manquant/);
+  });
+
+  it('ne convertit JAMAIS ml ↔ g sans densité (un sac « 2 l » de moules ne pèse pas 2 kg)', () => {
+    const moulesEan = ean('300000000098');
+    const snap: OpenDataSnapshot = {
+      ...SNAPSHOT,
+      offProducts: { ...SNAPSHOT.offProducts, [moulesEan]: { name: 'Moules', quantity: '2 l (1,4 kg)', size: 2000, unit: 'ml', allergens: [] } },
+      aggregates: { ...SNAPSHOT.aggregates, [`ean:${moulesEan}`]: { leclerc: agg(599, 1) } },
+    };
+    const moules = ingredient('moules', { allergens: ['mollusques'] });
+    const run = (src: IngredientSource) => buildCatalog([src], snap, [...INGREDIENTS, moules], stores, ALLERGENS);
+    // Sans densité ni surcharge : écarté et signalé (plus de « 2000 ml = 2000 g » silencieux).
+    const skipped = run({ ingredientId: 'moules', national: { ean: moulesEan } });
+    expect(skipped.products).toEqual([]);
+    expect(skipped.warnings.some((w) => w.includes(moulesEan) && w.includes('non convertible en g'))).toBe(true);
+    // Surcharge au poids net : retenue telle quelle.
+    expect(run({ ingredientId: 'moules', national: { ean: moulesEan, packSize: 1400, packUnit: 'g' } }).products[0]).toMatchObject({
+      packSize: 1400,
+      packUnit: 'g',
+    });
+    // Avec une densité, la conversion reste possible.
+    const dense = buildCatalog([{ ingredientId: 'moules', national: { ean: moulesEan } }], snap, [...INGREDIENTS, { ...moules, density: 0.7 }], stores, ALLERGENS);
+    expect(dense.products[0]).toMatchObject({ packSize: 1400, packUnit: 'g' });
+  });
+
+  it('reprend l’horodatage exact du dernier relevé de l’export dans la méta', () => {
+    const snap: OpenDataSnapshot = {
+      ...SNAPSHOT,
+      source: { prices: 'p', locations: 'l', lastContributionAt: '2026-11-10', lastCreatedAt: '2026-11-10T22:52:46.303406Z' },
+    };
+    expect(buildCatalog(SOURCES, snap, INGREDIENTS, stores, ALLERGENS).meta.lastCreatedAt).toBe('2026-11-10T22:52:46.303406Z');
+    expect(built.meta.lastCreatedAt).toBeUndefined();
   });
 
   it('écarte (avec un avertissement) un produit sans fiche ni nom', () => {

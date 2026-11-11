@@ -307,6 +307,50 @@ test('seed : socles de collecte = prix relevés de l\'instantané', async () => 
   assert.equal(await count(`select count(*) from public.price_observations where kind = 'observation'`), 0);
 });
 
+test('seed : vrac (catégories, unité et facteur de la source) et provenance des socles (proximité, catégorie)', async () => {
+  const snapshot = JSON.parse(readFileSync(join(ROOT, 'src', 'data', 'openData', 'snapshot.json'), 'utf8'));
+  const loose = new Map(
+    (await db.query(
+      `select id, off_category_tags, off_price_per, off_pack_factor::float8 as f from public.products where off_category_tag is not null`,
+    )).rows.map((r) => [r.id, r]),
+  );
+  for (const p of DATA.products.filter((x) => x.offCategoryTag)) {
+    assert.deepEqual(loose.get(p.id), { id: p.id, off_category_tags: p.offCategoryTags, off_price_per: p.offPricePer, f: p.offPackFactor }, p.id);
+  }
+  // Concombre : ingrédient au poids, relevé À LA PIÈCE (unité de la source).
+  const concombre = await one(
+    `select price_per, category_tag from public.price_observations where kind = 'snapshot' and product_id = 'prd_concombre_vrac' limit 1`,
+  );
+  assert.deepEqual(concombre, { price_per: 'UNIT', category_tag: 'en:cucumbers' });
+  // Ail chez Super U : prix de l'instantané issu de la catégorie SECONDAIRE en:garlics.
+  assert.deepEqual(
+    await one(`select category_tag from public.price_observations where kind = 'snapshot' and product_id = 'prd_ail_vrac' and chain = 'superu'`),
+    { category_tag: 'en:garlics' },
+  );
+  // Socles « proximité seulement » : exactement les médianes de l'instantané sans relevé hyper / super.
+  const proximityBases = new Set(
+    (await db.query(`select product_id || '|' || chain::text as k from public.price_observations where kind = 'snapshot' and proximity`)).rows.map((r) => r.k),
+  );
+  const storesById = new Map(DATA.stores.map((st) => [st.id, st]));
+  const expected = new Set();
+  for (const pr of DATA.prices.filter((x) => x.source === 'open_prices')) {
+    const prod = PRODUCTS_BY_ID.get(pr.productId);
+    const chain = storesById.get(pr.storeId).chain;
+    let agg;
+    if (prod.ean) agg = snapshot.aggregates[`ean:${prod.ean}`]?.[chain];
+    else for (const tag of prod.offCategoryTags) if (!agg) agg = snapshot.aggregates[`cat:${tag}:${prod.offPricePer}${prod.organic ? ':organic' : ''}`]?.[chain];
+    if (agg?.proximityOnly) expected.add(`${pr.productId}|${chain}`);
+  }
+  assert.ok(expected.size > 100, `${expected.size} socles de proximité attendus`);
+  assert.deepEqual([...proximityBases].sort(), [...expected].sort());
+  assert.ok(proximityBases.has('prd_semoule_mdd_intermarche|intermarche'));
+  // Curseur : juste après le dernier relevé de l'export (pas minuit de la date de l'instantané).
+  assert.equal(
+    (await one(`select created_cursor from public.price_collection_state`)).created_cursor.toISOString(),
+    '2026-11-10T22:52:46.304Z',
+  );
+});
+
 test('seed : chaque recette a des ingrédients et des étapes', async () => {
   assert.equal(
     await count(`select count(*) from public.recipes r where not exists (select 1 from public.recipe_ingredients ri where ri.recipe_id = r.id)`),

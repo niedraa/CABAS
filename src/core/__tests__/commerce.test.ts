@@ -93,6 +93,15 @@ describe('order', () => {
     expect(text).not.toContain('Frais');
     expect(text).toContain('• 2 × Tomates rondes — ');
   });
+
+  it('formatOrderAsText : en-tête selon le service réel (en magasin, click & collect)', () => {
+    const header = (store: typeof LECLERC, channel: 'drive' | 'delivery' = 'drive') =>
+      formatOrderAsText(buildOrderHandoff(PART, store, productsById, channel, { id: 'o', now: NOW }), store, productsById).split('\n')[0];
+    expect(header({ ...LIDL, pickup: 'none' })).toBe(`Ma liste Cabas — ${LIDL.name} (En magasin)`);
+    expect(header({ ...LECLERC, pickup: 'click_collect' })).toBe('Ma commande Cabas — Leclerc Test (Click & collect)');
+    expect(header({ ...LECLERC, pickup: 'drive' })).toBe('Ma commande Cabas — Leclerc Test (Drive)');
+    expect(header({ ...LIDL, pickup: 'none' }, 'delivery')).toBe(`Ma commande Cabas — ${LIDL.name} (Livraison)`);
+  });
 });
 
 describe('entitlements', () => {
@@ -203,6 +212,25 @@ describe('alertes prix', () => {
     // promo expirée
     expect(detectPriceDrops(watch, prices, { now: '2026-09-25' }).map((d) => d.productId)).toEqual(['p1']);
     expect(detectPriceDrops([], prices)).toEqual([]);
+  });
+
+  it('detectPriceDrops : jamais d’alerte sur un produit contenant un allergène déclaré (ni sur un produit inconnu)', () => {
+    const watch = [
+      { productId: 'p1', storeId: 's1', referenceCents: 200 },
+      { productId: 'p2', storeId: 's1', referenceCents: 300 },
+    ];
+    const products = { p1: { allergens: ['gluten' as const] }, p2: { allergens: ['lait' as const] } };
+    // Sans allergène déclaré : les deux baisses.
+    expect(detectPriceDrops(watch, prices, { now: NOW, products }).map((d) => d.productId)).toEqual(['p2', 'p1']);
+    // Gluten déclaré : la baisse du produit au gluten disparaît.
+    expect(detectPriceDrops(watch, prices, { now: NOW, products, excludeAllergens: ['gluten'] }).map((d) => d.productId)).toEqual(['p2']);
+    // Map acceptée aussi.
+    expect(
+      detectPriceDrops(watch, prices, { now: NOW, products: new Map(Object.entries(products)), excludeAllergens: ['lait'] }).map((d) => d.productId),
+    ).toEqual(['p1']);
+    // Produit inconnu (ou catalogue absent) : impossible de vérifier, aucune alerte.
+    expect(detectPriceDrops(watch, prices, { now: NOW, products: { p2: products.p2 }, excludeAllergens: ['soja'] }).map((d) => d.productId)).toEqual(['p2']);
+    expect(detectPriceDrops(watch, prices, { now: NOW, excludeAllergens: ['soja'] })).toEqual([]);
   });
 
   const handoffs: OrderHandoff[] = [1, 2, 3].map((n) => ({

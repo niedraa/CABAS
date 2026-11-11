@@ -298,6 +298,13 @@ describe('normalizeObservation', () => {
     expect(normalizeObservation(raw({ price_without_discount: '9.99' }), WINDOW)?.regularEur).toBe(3.99);
   });
 
+  it('écarte un prix barré absurde (même plafond que le prix payé : 10 000 €)', () => {
+    // Saisie « 9999999 » : stocké en millièmes, il déborderait un entier SQL et bloquerait la collecte.
+    expect(normalizeObservation(raw({ price: '1.00', price_is_discounted: true, price_without_discount: '9999999' }), WINDOW)).toBeNull();
+    expect(normalizeObservation(raw({ price: '1.00', price_is_discounted: true, price_without_discount: '10000.01' }), WINDOW)).toBeNull();
+    expect(normalizeObservation(raw({ price: '1.00', price_is_discounted: true, price_without_discount: '10000' }), WINDOW)?.regularEur).toBe(10_000);
+  });
+
   it('marque les formats de proximité', () => {
     const city = normalizeObservation(raw({}, { osm_brand: 'Carrefour City', osm_name: 'Carrefour City' }), WINDOW);
     expect(city).toMatchObject({ chain: 'carrefour', proximity: true });
@@ -396,7 +403,9 @@ describe('aggregateObservations', () => {
     ]);
     expect(mixed).toEqual({ medianCents: 200, count: 1, from: '2026-01-01', to: '2026-01-01' });
     const proximityOnly = aggregateObservations([obs({ regularEur: 3, proximity: true }), obs({ regularEur: 3.2, proximity: true })]);
-    expect(proximityOnly).toMatchObject({ medianCents: 310, count: 2 });
+    expect(proximityOnly).toEqual({ medianCents: 310, count: 2, from: '2026-10-01', to: '2026-10-01', proximityOnly: true });
+    // Le drapeau n'apparaît que sans aucun relevé hyper / super.
+    expect(mixed).not.toHaveProperty('proximityOnly');
   });
 
   it('est indépendante de l’ordre des relevés', () => {
@@ -548,6 +557,21 @@ describe('parseOffQuantity', () => {
     ];
     for (const [quantity, size, unit] of cases) expect(parseOffQuantity({ quantity })).toEqual({ size, unit });
     expect(parseOffQuantity({ quantity: '20.5 oz' })?.size).toBeCloseTo(581.165, 2);
+  });
+
+  it('lit un lot écrit après la contenance et une masse composée « 1 kg 500 »', () => {
+    const cases: [string, number, string][] = [
+      ['125 g x 4', 500, 'g'],
+      ['125g x4', 500, 'g'],
+      ['125 g × 4', 500, 'g'],
+      ['1 l x 6', 6000, 'ml'],
+      ['1 kg 500', 1500, 'g'],
+      ['1kg500', 1500, 'g'],
+      // Le 1er motif gagne toujours : un lot entre parenthèses ne multiplie pas le total.
+      ['210 g (70 g x 3)', 210, 'g'],
+      ['4 x 125 g', 500, 'g'],
+    ];
+    for (const [quantity, size, unit] of cases) expect([quantity, parseOffQuantity({ quantity })]).toEqual([quantity, { size, unit }]);
   });
 
   it('lit les quantités à la pièce', () => {

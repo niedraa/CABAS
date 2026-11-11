@@ -282,6 +282,16 @@ export interface Product {
    * « au kilo » ou « à la pièce » (ex. `en:tomatoes`).
    */
   offCategoryTag?: string;
+  /**
+   * Vrac : catégories Open Food Facts des relevés, par ordre de préférence
+   * (la première = `offCategoryTag`) ; une enseigne est chiffrée par la
+   * première catégorie qui y a des relevés.
+   */
+  offCategoryTags?: string[];
+  /** Vrac : unité des relevés Open Prices (au kilo ou à la pièce), celle de la source. */
+  offPricePer?: 'KILOGRAM' | 'UNIT';
+  /** Vrac : facteur « prix relevé (au kilo / à la pièce) → prix du conditionnement ». */
+  offPackFactor?: number;
   name: string;
   brand: string;
   /** Marque distributeur (MDD) — alternative « moins chère ». */
@@ -371,6 +381,12 @@ export interface CatalogMeta {
   coverage: Record<StoreChain, { observed: number; estimated: number }>;
   /** Sources et licences à créditer. */
   sources: { name: string; url: string; license: string }[];
+  /**
+   * Création (horodatage ISO complet) du relevé le plus récent de l'export
+   * utilisé : borne EXACTE de l'instantané — curseur initial de la collecte
+   * incrémentale (les relevés créés après n'y sont pas).
+   */
+  lastCreatedAt?: string;
 }
 
 // ─── Planning ────────────────────────────────────────────────────────────────
@@ -498,6 +514,20 @@ export interface BasketStorePart {
   lines: BasketLine[];
   subtotalCents: number;
   feesCents: number;
+  /**
+   * Montant manquant pour atteindre le minimum de commande du magasin
+   * (centimes, > 0) — seulement quand AUCUN panier ne le respecte : l'enseigne
+   * peut alors refuser la commande, à signaler.
+   */
+  minOrderShortfallCents?: number;
+}
+
+/** Magasin écarté parce que sa part resterait sous son minimum de commande. */
+export interface MinOrderSkip {
+  storeId: string;
+  minOrderCents: number;
+  /** Articles que ce magasin vend mais qui restent introuvables dans le panier. */
+  itemIds: string[];
 }
 
 export interface BasketPlan {
@@ -508,6 +538,11 @@ export interface BasketPlan {
   savingsCents: number;
   /** Articles introuvables dans les magasins retenus. */
   missingItemIds: string[];
+  /**
+   * Magasins écartés à cause de leur minimum de commande alors qu'ils
+   * vendaient des articles restés introuvables (absent si aucun).
+   */
+  minOrderSkipped?: MinOrderSkip[];
   computedAt: string;
 }
 

@@ -4,7 +4,7 @@
  * price_observations, price_collection_state (service_role uniquement).
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Price, StoreChain } from '../_shared/core/index.ts';
+import type { Allergen, Price, StoreChain } from '../_shared/core/index.ts';
 import {
   effectiveEntitlement,
   isoTimestamp,
@@ -65,6 +65,16 @@ export function rowToLocation(r: Row): CollectLocation {
   };
 }
 
+/** Curseurs par lot (jsonb) → ISO ; entrées illisibles ignorées. */
+export function rowToBatchCursors(v: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return out;
+  for (const [key, value] of Object.entries(v as Record<string, unknown>)) {
+    if (typeof value === 'string' && Number.isFinite(Date.parse(value))) out[key] = isoTimestamp(value);
+  }
+  return out;
+}
+
 export function observationToRow(o: StoredObservation): Row {
   return {
     product_id: o.productId,
@@ -76,6 +86,7 @@ export function observationToRow(o: StoredObservation): Row {
     regular_milli: o.regularMilli,
     promo_milli: o.promoMilli ?? null,
     price_per: o.pricePer,
+    category_tag: o.categoryTag ?? null,
     proximity: o.proximity,
     observed_on: o.observedOn,
     observed_from: o.observedFrom ?? null,
@@ -102,6 +113,8 @@ export function rowToObservation(r: Row): StoredObservation {
   if (promo !== undefined) o.promoMilli = promo;
   const from = optText(r.observed_from);
   if (from) o.observedFrom = from.slice(0, 10);
+  const tag = optText(r.category_tag);
+  if (tag) o.categoryTag = tag;
   const created = optText(r.source_created_at);
   if (created) o.sourceCreatedAt = isoTimestamp(created);
   return o;
@@ -116,12 +129,14 @@ export function createPriceCollectionRepository(client: SupabaseClient, now: () 
       );
       return {
         createdCursor: row?.created_cursor ? isoTimestamp(row.created_cursor) : null,
+        batchCursors: rowToBatchCursors(row?.batch_cursors),
         locationsRefreshedAt: row?.locations_refreshed_at ? isoTimestamp(row.locations_refreshed_at) : null,
       };
     },
     async saveState(
       state: {
         createdCursor: string | null;
+        batchCursors: Record<string, string>;
         locationsRefreshedAt: string | null;
         lastRunAt: string;
         lastStats: CollectStats;
@@ -133,6 +148,7 @@ export function createPriceCollectionRepository(client: SupabaseClient, now: () 
           {
             id: true,
             created_cursor: state.createdCursor,
+            batch_cursors: state.batchCursors,
             locations_refreshed_at: state.locationsRefreshedAt,
             last_run_at: state.lastRunAt,
             last_stats: state.lastStats,
@@ -146,7 +162,10 @@ export function createPriceCollectionRepository(client: SupabaseClient, now: () 
         'catalog_meta',
         await client.from('catalog_meta').select('meta').eq('id', true).maybeSingle(),
       );
-      return rowToCatalogMeta(row)?.snapshotAt ?? null;
+      // Borne exacte de l'instantané (juste après le dernier relevé de l'export), sinon sa date.
+      const meta = rowToCatalogMeta(row);
+      if (meta?.lastCreatedAt) return new Date(Math.floor(Date.parse(meta.lastCreatedAt)) + 1).toISOString();
+      return meta?.snapshotAt ?? null;
     },
     async loadLocations() {
       const rows = await fetchAll<Row>(
@@ -256,6 +275,18 @@ export function createPriceCollectionRepository(client: SupabaseClient, now: () 
           if (optIn.has(uid) && effectiveEntitlement(rowToSubscription(s), now()) === 'premium') eligible.add(uid);
         }
       }
+      // Allergènes déclarés (donnée de santé, lue ici seulement pour NE PAS alerter
+      // sur un produit qui en contient). Profil illisible → null : aucune alerte.
+      const allergensByUser = new Map<string, Allergen[]>();
+      for (const ids of chunks([...eligible])) {
+        const profiles = unwrap<Row[]>(
+          'profiles',
+          await client.from('profiles').select('id, allergens').in('id', ids),
+        ) ?? [];
+        for (const p of profiles) {
+          allergensByUser.set(String(p.id), Array.isArray(p.allergens) ? (p.allergens as Allergen[]) : []);
+        }
+      }
       return watches
         .filter((w) => eligible.has(String(w.user_id)))
         .map((w) => ({
@@ -263,6 +294,7 @@ export function createPriceCollectionRepository(client: SupabaseClient, now: () 
           productId: String(w.product_id),
           storeId: String(w.store_id),
           referenceCents: num(w.reference_cents),
+          allergens: allergensByUser.get(String(w.user_id)) ?? null,
         }));
     },
     async enqueueNotifications(rows: NotificationInsert[]) {

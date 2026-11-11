@@ -136,6 +136,28 @@ describe('optimizeBasket — exemple calculé à la main', () => {
     expect(plan.parts.map((p) => [p.storeId, p.subtotalCents, p.feesCents])).toEqual([['c', 300, 100]]);
     expect(plan.totalCents).toBe(400);
     expect(plan.missingItemIds).toEqual(['i2', 'i4', 'i5']);
+    // Seul choix possible, sous le minimum (10 €) : le montant manquant est signalé.
+    expect(plan.parts[0].minOrderShortfallCents).toBe(700);
+    expect(plan.minOrderSkipped).toBeUndefined();
+  });
+
+  it('minimum de commande : le magasin écarté et ses articles restés introuvables sont signalés', () => {
+    // M (click & collect, minimum 60 €) vend tout ; L (sans minimum) n'a que 2 articles sur 3.
+    const M = st('m', { pickup: 'click_collect', minOrderCents: 6000 });
+    const L = st('l');
+    const comps = [cmp('x', [offer('m', 300), offer('l', 200)]), cmp('y', [offer('m', 200), offer('l', 150)]), cmp('z', [offer('m', 119)])];
+    const single = optimizeBasket(comps, [M, L], 'single_store', { now: NOW });
+    expect(single.parts.map((p) => p.storeId)).toEqual(['l']);
+    expect(single.missingItemIds).toEqual(['z']);
+    expect(single.minOrderSkipped).toEqual([{ storeId: 'm', minOrderCents: 6000, itemIds: ['z'] }]);
+    expect(single.parts[0].minOrderShortfallCents).toBeUndefined();
+    // M seul : panier sous le minimum, faute d'autre choix → il manque 53,81 €.
+    const only = optimizeBasket(comps, [M, L], 'single_store', { allowedStoreIds: ['m'], now: NOW });
+    expect(only.parts.map((p) => [p.storeId, p.subtotalCents, p.minOrderShortfallCents])).toEqual([['m', 619, 5381]]);
+    // Sans minimum : rien à signaler.
+    const free = optimizeBasket(comps, [{ ...M, minOrderCents: 0 }, L], 'single_store', { now: NOW });
+    expect(free.parts.map((p) => p.storeId)).toEqual(['m']);
+    expect(free.minOrderSkipped).toBeUndefined();
   });
 
   it('aucun magasin éligible ou aucun article', () => {

@@ -2,7 +2,8 @@
  * Ticket dentelé du panier : magasins retenus, sous-totaux, frais, économie
  * chiffrée (« −7,14 € ») et total qui défile au ressort quand il change.
  * Les prix estimés (sans relevé dans l'enseigne) sont comptés : « dont 2 prix
- * estimés ».
+ * estimés ». Courses uniquement en magasin (Lidl, Aldi, Netto) : pas de ligne
+ * « frais de retrait ».
  */
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -10,6 +11,7 @@ import { StyleSheet, View } from 'react-native';
 import { ReceiptCard } from '@/components/brand';
 import { AnimatedPrice, Badge, Divider, StoreBadge, StoreBadgeStack, Text } from '@/components/ui';
 import type { OrderChannel } from '@/core';
+import { isInStoreOnly } from '@/core';
 import { formatPriceForA11y } from '@/lib/a11y';
 import { useTheme } from '@/theme';
 
@@ -29,6 +31,7 @@ export interface BasketReceiptProps {
 export function BasketReceipt({ summary, channel, header, updating, testID }: BasketReceiptProps) {
   const t = useTheme();
   const multi = summary.parts.length > 1;
+  const inStoreOnly = summary.parts.length > 0 && summary.parts.every((p) => isInStoreOnly(p.store, channel));
   return (
     <View testID={testID} accessibilityState={{ busy: !!updating }} style={{ opacity: updating ? t.opacity.pressed : 1 }}>
       <ReceiptCard header={header ? `Ticket · ${header}` : 'Ticket'} edges="bottom">
@@ -55,11 +58,13 @@ export function BasketReceipt({ summary, channel, header, updating, testID }: Ba
             testID={testID ? `${testID}-store-${p.storeId}` : undefined}
           />
         ))}
-        <ReceiptLine
-          label={feesLabel(channel)}
-          value={feesValue(summary.feesCents)}
-          valueColor={summary.feesCents > 0 ? 'text' : 'success'}
-        />
+        {inStoreOnly && summary.feesCents === 0 ? null : (
+          <ReceiptLine
+            label={feesLabel(channel)}
+            value={feesValue(summary.feesCents)}
+            valueColor={summary.feesCents > 0 ? 'text' : 'success'}
+          />
+        )}
         {summary.savingsCents > 0 ? (
           <ReceiptLine
             label="Économie"

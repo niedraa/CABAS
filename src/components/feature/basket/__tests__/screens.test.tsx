@@ -140,8 +140,9 @@ describe('Onglet Prix', () => {
     expect(screen.getByText('Ticket · Un seul magasin')).toBeTruthy();
     const chains = comparedStoreIds(useBasketStore.getState().comparisons).length;
     expect(screen.getByText(`4 articles comparés dans ${chains} enseigne${chains > 1 ? 's' : ''}`)).toBeTruthy();
-    // Provenance des prix et lien vers les sources.
+    // Provenance des prix, attribution ODbL et lien vers les sources.
     expect(screen.getByTestId('price-notice')).toHaveTextContent(/Open Prices/);
+    expect(screen.getByTestId('price-attribution')).toHaveTextContent(/Open Food Facts.*Open Prices.*OpenStreetMap.*ODbL/);
     await fireEvent.press(screen.getByRole('link', { name: 'Sources et licences' }));
     expect(mockRouter.push).toHaveBeenLastCalledWith('/parametres/sources');
     expect(screen.getByTestId('comparison-list')).toBeTruthy();
@@ -288,6 +289,7 @@ describe('Détail d’un article', () => {
     expect(screen.getByText(`Besoin : ${needLabel(target)} · 1 recette`)).toBeTruthy();
     expect(screen.getByText('Par enseigne')).toBeTruthy();
     expect(screen.getAllByText('Meilleur prix').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByTestId('comparator-attribution')).toHaveTextContent(/Open Food Facts.*OpenStreetMap.*ODbL/);
     const radios = screen.getAllByRole('radio');
     expect(radios.length).toBeGreaterThanOrEqual(2);
     expect(radios[0]).toBeChecked();
@@ -331,10 +333,100 @@ describe('Détail d’un article', () => {
     }
   });
 
+  it('tous les produits d’un article contiennent un allergène déclaré : on le dit, pas « introuvable »', async () => {
+    const real = getCatalogSnapshot();
+    const target = PRICED[0];
+    // Copie du catalogue : TOUS les produits de cet ingrédient déclarent du lupin.
+    const products = real.products.map((p) =>
+      p.ingredientId === target.ingredientId ? { ...p, allergens: [...p.allergens, 'lupin' as const] } : p,
+    );
+    setCatalogSnapshot(buildCatalogSnapshot({ ...real, products }, 'local'));
+    try {
+      useProfileStore.getState().updateDraft({ ...PROFILE, allergens: ['lupin'] });
+      useProfileStore.getState().setHealthDataConsent(true);
+      expect(useProfileStore.getState().completeOnboarding().ok).toBe(true);
+      setList([target, PRICED[1]]);
+      await render(<PriceScreen />, { wrapper });
+      await waitFor(() => expect(screen.getByTestId('missing-items')).toBeTruthy());
+      expect(useBasketStore.getState().allergenExcludedItemIds).toEqual([target.id]);
+      expect(screen.getByText(/contiennent un de tes allergènes/)).toBeTruthy();
+      expect(screen.queryByText('Pas de prix connu dans nos enseignes : à acheter à part.')).toBeNull();
+      await screen.unmount();
+      mockParams = { itemId: target.id };
+      await render(<ComparatorScreen />, { wrapper });
+      expect(screen.getByText('Écarté pour tes allergies')).toBeTruthy();
+      expect(screen.queryByText('Introuvable partout')).toBeNull();
+    } finally {
+      setCatalogSnapshot(real);
+    }
+  });
+
   it('article disparu : état vide honnête', async () => {
     mockParams = { itemId: 'inconnu' };
     await render(<ComparatorScreen />, { wrapper });
     expect(screen.getByText('Article introuvable')).toBeTruthy();
+  });
+});
+
+describe('Allergie déclarée APRÈS un calcul du panier', () => {
+  it('l’ancien panier n’est ni affiché, ni commandable, ni copiable pendant le recalcul ; le détail est refiltré', async () => {
+    const real = getCatalogSnapshot();
+    useProfileStore.getState().updateDraft({ ...PROFILE, allergens: ['arachides'] });
+    useProfileStore.getState().setHealthDataConsent(true);
+    expect(useProfileStore.getState().completeOnboarding().ok).toBe(true);
+    setList(ITEMS);
+    // Produit du panier qui « déclare » du sésame (copie du catalogue) : sûr AVANT, à risque APRÈS.
+    await act(async () => {
+      await useBasketStore.getState().compute();
+    });
+    const oldPlan = useBasketStore.getState().plan!;
+    const part = oldPlan.parts[0];
+    const tainted = part.lines[0].productId;
+    const itemId = part.lines[0].itemId;
+    const products = real.products.map((p) => (p.id === tainted ? { ...p, allergens: [...p.allergens, 'sesame' as const] } : p));
+    setCatalogSnapshot(buildCatalogSnapshot({ ...real, products }, 'local'));
+    try {
+      // Recalcul « lent » (Edge Function) : la fenêtre pendant laquelle l'ancien panier existe encore.
+      const local = createBasketService({ remote: null });
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      __setBasketServiceForTests({
+        computeBasket: async (req) => {
+          await gate;
+          return local.computeBasket(req);
+        },
+      });
+      await act(async () => {
+        expect(useProfileStore.getState().updateProfile({ allergens: ['arachides', 'sesame'] }).ok).toBe(true);
+      });
+      // Défense en profondeur : la commande et sa copie sont refusées.
+      expect(useOrderStore.getState().prepareOrder(part, part.storeId)).toBeNull();
+      // Onglet Prix : squelettes, pas l'ancien panier ni son « Commander chez … ».
+      await render(<PriceScreen />, { wrapper });
+      expect(screen.queryByTestId('price-ready')).toBeNull();
+      expect(screen.getByTestId('basket-skeleton')).toBeTruthy();
+      expect(useBasketStore.getState().status).toBe('computing');
+      await screen.unmount();
+      // Commande : « Ton panier se met à jour », aucun bouton pour commander.
+      mockParams = { storeId: part.storeId };
+      await render(<OrderScreen />, { wrapper });
+      expect(screen.getByText('Ton panier se met à jour')).toBeTruthy();
+      expect(screen.queryByTestId('order-open')).toBeNull();
+      await screen.unmount();
+      // Détail de l'article : aucune offre ni alternative MDD avec ce produit.
+      mockParams = { itemId };
+      await render(<ComparatorScreen />, { wrapper });
+      expect(screen.queryByText(new RegExp(real.productsById[tainted].name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))).toBeNull();
+      await screen.unmount();
+      // Fin du recalcul : nouveau panier sans le produit.
+      await act(async () => release());
+      await waitFor(() => expect(useBasketStore.getState().status).toBe('ready'));
+      expect(useBasketStore.getState().plan?.parts.flatMap((p) => p.lines).some((l) => l.productId === tainted)).toBe(false);
+    } finally {
+      setCatalogSnapshot(real);
+    }
   });
 });
 
@@ -357,6 +449,8 @@ describe('Commande', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Copier la liste' }));
     await waitFor(() => expect(Clipboard.setStringAsync).toHaveBeenCalledTimes(1));
     expect((Clipboard.setStringAsync as jest.Mock).mock.calls[0][0]).toMatch(/^Ma commande Cabas — /);
+    // Attribution ODbL sous le ticket (là où les prix sont présentés).
+    expect(screen.getByTestId('order-attribution')).toHaveTextContent(/Open Food Facts.*Open Prices.*OpenStreetMap.*ODbL/);
     expect(useOrderStore.getState().orders).toHaveLength(1);
     expect(await screen.findByText('Liste copiée')).toBeTruthy();
 

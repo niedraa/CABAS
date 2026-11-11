@@ -118,6 +118,8 @@ const byKey = new Map();
 /** code-barres → enseigne → prix normaux hors proximité (indice d'enseigne). */
 const forIndex = new Map();
 const stats = { rows: 0, kept: 0, byChain: {}, maxCreated: '' };
+/** Lieux ayant fourni au moins un relevé RETENU (les « magasins » de l'instantané). */
+const usedLocations = new Set();
 for (const chain of op.OPEN_DATA_CHAINS) stats.byChain[chain] = { observations: 0, products: new Set() };
 
 for await (const row of readJsonl(join(cacheDir, 'prices.jsonl.gz'))) {
@@ -145,6 +147,7 @@ for await (const row of readJsonl(join(cacheDir, 'prices.jsonl.gz'))) {
   const obs = op.normalizeObservation(raw, window);
   if (!obs) continue;
   stats.kept++;
+  usedLocations.add(row.location_id ?? row.location);
   const chainStats = stats.byChain[obs.chain];
   chainStats.observations++;
   if (obs.pricePer === null) {
@@ -247,8 +250,12 @@ const snapshot = {
     prices: op.OPEN_PRICES_DUMP_URLS.prices,
     locations: op.OPEN_PRICES_DUMP_URLS.locations,
     lastContributionAt: stats.maxCreated.slice(0, 10) || null,
+    // Horodatage exact du relevé le plus récent de l'export : borne de l'instantané
+    // (curseur initial de la collecte, purge des relevés déjà inclus).
+    lastCreatedAt: stats.maxCreated || null,
   },
-  stats: { observations: stats.kept, byChain: byChainOut },
+  // Nombre de magasins seulement (aucun identifiant de lieu ni de contributeur).
+  stats: { observations: stats.kept, stores: usedLocations.size, byChain: byChainOut },
   chainIndex,
   offProducts,
   aggregates,
@@ -266,7 +273,10 @@ const out = [];
 out.push(section('Instantané'));
 out.push(`  ${relative(ROOT, outFile)} — ${(json.length / 1024).toFixed(0)} Ko`);
 out.push(`  fenêtre ${window.from} → ${window.to} · ${stats.rows} relevés lus, ${stats.kept} retenus (FR métropole, 10 enseignes)`);
-out.push(`  ${locationCount} lieux, ${locations.size} magasins retenus · dernière contribution ${snapshot.source.lastContributionAt}`);
+out.push(
+  `  ${locationCount} lieux, ${locations.size} lieux candidats (FR métropole, 10 enseignes), ` +
+    `${usedLocations.size} magasins avec relevés retenus · dernier relevé ${snapshot.source.lastCreatedAt}`,
+);
 out.push(`  sources : ${origin} — ${sources.length} ingrédients, ${eanRefs.length} codes-barres, ${wantedKeys.size} clés`);
 
 out.push(section('Indice de prix (Leclerc = 1)'));

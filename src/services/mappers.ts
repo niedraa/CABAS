@@ -201,6 +201,12 @@ export function rowToProduct(r: Row): Product {
   if (ean) p.ean = ean;
   const category = optStr(r.off_category_tag);
   if (category) p.offCategoryTag = category;
+  // Vrac : règles des relevés (catégories par préférence, unité de la source, facteur).
+  const tags = arr<string>(r.off_category_tags).filter((t) => typeof t === 'string' && t !== '');
+  if (category && tags.length > 0) p.offCategoryTags = tags;
+  if (r.off_price_per === 'KILOGRAM' || r.off_price_per === 'UNIT') p.offPricePer = r.off_price_per;
+  const factor = optNum(r.off_pack_factor);
+  if (factor !== undefined && factor > 0) p.offPackFactor = factor;
   const chains = rowStoreChains(r);
   if (chains.length > 0) p.storeChains = chains;
   const ns = optStr(r.nutri_score);
@@ -258,6 +264,9 @@ export function rowToCatalogMeta(r: Row | null | undefined): CatalogMeta | null 
         typeof (s as Row).url === 'string' &&
         typeof (s as Row).license === 'string',
     ),
+    ...(typeof m.lastCreatedAt === 'string' && Number.isFinite(Date.parse(m.lastCreatedAt))
+      ? { lastCreatedAt: m.lastCreatedAt }
+      : {}),
   };
 }
 

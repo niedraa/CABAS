@@ -166,8 +166,9 @@ describe('ingrédients', () => {
     expectAllergens('sauce_soja', ['soja', 'gluten']);
     expectAllergens('beurre', ['lait']);
     expectAllergens('parmesan', ['lait']);
-    expectAllergens('pesto', ['lait', 'fruits_a_coque']);
-    expectAllergens('moutarde', ['moutarde']);
+    // Pesto : œuf du Grana Padano (lysozyme) ; Dijon : disulfite de potassium (E224).
+    expectAllergens('pesto', ['oeufs', 'lait', 'fruits_a_coque']);
+    expectAllergens('moutarde', ['moutarde', 'sulfites']);
     expectAllergens('vin_blanc', ['sulfites']);
     expectAllergens('crevettes', ['crustaces']);
     expectAllergens('moules', ['mollusques']);
@@ -524,6 +525,91 @@ describe('produits', () => {
 
   it('ont tous au moins un prix', () => {
     for (const p of products) expect(pricesByProduct.get(p.id)?.length ?? 0).toBeGreaterThan(0);
+  });
+
+  const sourceRefsByEan = new Map(
+    productSources.flatMap((s) => [s.national, s.bio, ...(s.mdd ?? [])].filter((r) => !!r).map((r) => [r!.ean, r!] as const)),
+  );
+
+  /**
+   * Codes-barres écartés à la relecture : ce n'est PAS l'ingrédient (preuves :
+   * fiche Open Food Facts et libellés des tickets Open Prices).
+   */
+  const REJECTED_EANS: Record<string, string> = {
+    '3245413824899': 'pizza ovale au chorizo Carrefour, pas du chorizo',
+    '4056489043157': 'Grana Padano Lidl (autre fromage, lysozyme d’œuf), pas du parmesan',
+    '3596710074686': 'pâte brisée Auchan à la matière grasse végétale, pas au beurre',
+  };
+
+  it('n’utilisent aucun code-barres écarté à la relecture (autre produit que l’ingrédient)', () => {
+    const used = productSources.flatMap((s) => [s.national, s.bio, ...(s.mdd ?? [])].filter(Boolean).map((r) => r!.ean));
+    expect(used.filter((e) => REJECTED_EANS[e]).map((e) => `${e} : ${REJECTED_EANS[e]}`)).toEqual([]);
+  });
+
+  it('n’ont jamais un allergène déclaré par la MAJORITÉ des produits de l’ingrédient absent de l’ingrédient', () => {
+    // La sécurité des recettes repose sur l'ingrédient (core/constraints) : un
+    // allergène porté par au moins la moitié de ses produits réels (≥ 3 fiches)
+    // doit y figurer (étiquetage prudent). Exception à justifier ici.
+    const ALLOWED: Record<string, Allergen[]> = {};
+    const issues: string[] = [];
+    for (const ing of ingredients) {
+      const offs = products.filter((p) => p.ingredientId === ing.id && p.ean && snapshot.offProducts[p.ean]).map((p) => snapshot.offProducts[p.ean!]);
+      if (offs.length < 3) continue;
+      for (const a of ALLERGENS) {
+        if (ing.allergens.includes(a) || ALLOWED[ing.id]?.includes(a)) continue;
+        const n = offs.filter((o) => o.allergens.includes(a)).length;
+        if (n * 2 >= offs.length) issues.push(`${ing.id} : ${a} déclaré par ${n}/${offs.length} produits`);
+      }
+    }
+    expect(issues).toEqual([]);
+  });
+
+  it('ne cachent pas un autre produit derrière un nom de surcharge (mot distinctif de la fiche conservé)', () => {
+    // Ce produit n'est pas l'ingrédient : refus.
+    const NOT_THE_INGREDIENT: Record<string, RegExp> = { parmesan: /grana/i, chorizo: /pizza/i };
+    // Mot qui distingue une variante : s'il est dans le nom Open Food Facts, il reste dans le nom affiché.
+    const DISTINCTIVE = [/c[ée]r[ée]ales/i, /graines/i, /grana/i, /pizza/i];
+    const issues: string[] = [];
+    for (const p of products) {
+      const offName = p.ean ? snapshot.offProducts[p.ean]?.name : undefined;
+      if (!offName) continue;
+      if (NOT_THE_INGREDIENT[p.ingredientId]?.test(offName)) issues.push(`${p.id} : « ${offName} » n'est pas ${p.ingredientId}`);
+      for (const word of DISTINCTIVE) {
+        if (word.test(offName) && !word.test(p.name)) issues.push(`${p.id} : « ${p.name} » cache « ${offName} »`);
+      }
+    }
+    expect(issues).toEqual([]);
+  });
+
+  it('ont la contenance réelle : poids net entre parenthèses, sachets d’herbes en fraction de botte, jamais ml = g', () => {
+    const issues: string[] = [];
+    for (const p of products) {
+      const off = p.ean ? snapshot.offProducts[p.ean] : undefined;
+      if (!off) continue;
+      const ing = ingredientsById[p.ingredientId];
+      // « 2 l (1,4 kg) » : pour un ingrédient au poids, la contenance est le poids net.
+      const net = /\((\d+(?:[.,]\d+)?)\s*(kg|g)\)/i.exec(off.quantity ?? '');
+      if (net && ing.baseUnit === 'g') {
+        const grams = Number(net[1].replace(',', '.')) * (net[2].toLowerCase() === 'kg' ? 1000 : 1);
+        if (Math.abs(p.packSize - grams) / grams > 0.05) issues.push(`${p.id} : ${p.packSize} g au lieu de ${grams} g (« ${off.quantity} »)`);
+      }
+      // Herbes fraîches (une « pièce » = une botte) vendues en sachet au poids :
+      // pièce = poids / poids d'une botte (un sachet de 11 g n'est pas une botte de 30 g).
+      // (Salade en sachet, filet d'avocats : le compte à la pièce est voulu, voir les sources.)
+      const HERBS = ['persil', 'coriandre', 'basilic', 'ciboulette', 'menthe'];
+      if (HERBS.includes(ing.id) && ing.gramsPerPiece && off.unit === 'g' && off.size) {
+        const expected = off.size / ing.gramsPerPiece;
+        if (Math.abs(p.packSize - expected) / expected > 0.3) {
+          issues.push(`${p.id} : ${p.packSize} pièce pour ${off.size} g (≈ ${expected.toFixed(2)} × ${ing.gramsPerPiece} g)`);
+        }
+      }
+      // Fiche en ml pour un ingrédient au poids (ou l'inverse) : densité OU surcharge explicite.
+      const crossed = (off.unit === 'ml' && ing.baseUnit === 'g') || (off.unit === 'g' && ing.baseUnit === 'ml');
+      const override = sourceRefsByEan.get(p.ean!)?.packSize;
+      if (crossed && !ing.density && override === undefined) issues.push(`${p.id} : fiche en ${off.unit}, ingrédient en ${ing.baseUnit} sans densité`);
+    }
+    expect(issues).toEqual([]);
+    expect(productsById.prd_moules.packSize).toBe(1400);
   });
 });
 

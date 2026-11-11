@@ -10,6 +10,7 @@ import { __setMealPlannerForTests, getMealPlanner } from '@/services/mealPlanner
 
 import {
   addFromCheckedList,
+  checkPriceDrops,
   DEFAULT_NOTIFICATION_PREFS,
   getList,
   mealsByDay,
@@ -27,6 +28,7 @@ import {
   useWeekStore,
   waitForHydration,
   type ProfileDraft,
+  type StoredOrder,
 } from '..';
 
 jest.mock('expo-notifications', () => ({
@@ -479,6 +481,50 @@ describe('settingsStore', () => {
       }),
     );
     N.getPermissionsAsync.mockResolvedValue({ granted: false, status: 'undetermined', canAskAgain: true });
+  });
+});
+
+describe('alertes prix', () => {
+  it('jamais de notification de baisse sur un produit contenant un allergène déclaré du profil', async () => {
+    const N = jest.requireMock('expo-notifications') as { scheduleNotificationAsync: jest.Mock };
+    const catalog = getCatalogSnapshot();
+    // Un produit au gluten, au prix relevé, commandé deux fois plus cher : une baisse nette.
+    const price = catalog.prices.find(
+      (p) => p.source === 'open_prices' && !p.promoPriceCents && catalog.productsById[p.productId]?.allergens.includes('gluten'),
+    )!;
+    expect(price).toBeDefined();
+    onboard(CAMILLE);
+    await useSubscriptionStore.getState().purchase('monthly');
+    expect(useSettingsStore.getState().notificationPrefs.priceDrops).toBe(true);
+    const paid = price.priceCents * 2;
+    const order = (n: number): StoredOrder => ({
+      id: `o${n}`,
+      storeId: price.storeId,
+      channel: 'drive',
+      url: '',
+      lines: [{ itemId: 'i1', label: 'Article', productId: price.productId, packs: 1, totalCents: paid, priceSource: 'open_prices' }],
+      totalCents: paid,
+      createdAt: `2026-10-0${n}T10:00:00.000Z`,
+      status: 'confirmed',
+      weekStart: '2026-09-28',
+      savingsCents: 0,
+      mealPlanId: null,
+    });
+    useOrderStore.getState().setOrders([order(2), order(1)]);
+    const priceDropCalls = () =>
+      N.scheduleNotificationAsync.mock.calls.filter((c) => String(c[0]?.identifier).startsWith(`cabas-price-drop-${price.productId}`));
+    N.scheduleNotificationAsync.mockClear();
+
+    // Gluten déclaré APRÈS les commandes : aucune alerte, aucune notification.
+    expect(useProfileStore.getState().updateProfile({ allergens: ['gluten'] }).ok).toBe(true);
+    expect(await checkPriceDrops()).toEqual([]);
+    expect(priceDropCalls()).toHaveLength(0);
+
+    // Témoin : sans cet allergène, la même baisse est bien notifiée.
+    expect(useProfileStore.getState().updateProfile({ allergens: ['arachides'] }).ok).toBe(true);
+    const sent = await checkPriceDrops();
+    expect(sent.map((d) => [d.productId, d.storeId, d.newCents])).toEqual([[price.productId, price.storeId, price.priceCents]]);
+    expect(priceDropCalls()).toHaveLength(1);
   });
 });
 

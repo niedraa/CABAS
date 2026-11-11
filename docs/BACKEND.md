@@ -63,7 +63,8 @@ serveur**.
     drapeaux régime)      quantity, unit)               equipment[], is_published)            │
         ▲                                                                                     │
         │ ingredient_id                                                                       │
-   products (ean GTIN-8/13 UNIQUE | off_category_tag (vrac), pack_size/unit,                   │
+   products (ean GTIN-8/13 UNIQUE | off_category_tag (vrac) + off_category_tags[],            │
+        │    off_price_per, off_pack_factor (règles des relevés vrac), pack_size/unit,          │
         │    MDD → store_chains[], allergènes ingrédient ∪ Open Food Facts)                   │
         ├──► prices (PK product_id × store_id, prix courant, promo, PROVENANCE :               │
         │          │  open_prices = médiane de N relevés · estimate = méthode + base)          │
@@ -77,7 +78,7 @@ serveur**.
    ┌──────── COLLECTE (système, service_role uniquement) ────────┐
    │ open_prices_locations (lieux FR métropole des 10 enseignes)  │
    │ price_observations (relevés rattachés + socles instantané) ──┼──► products (cascade)
-   │ price_collection_state (curseur created__gte, 1 ligne)       │
+   │ price_collection_state (curseurs created__gte par lot, 1 l.) │
    └──────────────────────────────────────────────────────────────┘
 
    auth.users ──1:1──► profiles (foyer, régimes*, allergies*, budget, temps, ustensiles,
@@ -175,7 +176,7 @@ de production existante :
 | Produit au même id mais à l'identité changée (autre EAN / catégorie : produit fictif → réel) | Prix, relevés et **alertes** supprimés (le prix de référence visait un autre produit) ; historique conservé (source `demo` lisible). |
 | Prix `demo` / `estimate` absents du seed | Supprimés. Prix réels (`open_prices`, `partner`, `collect`) absents : **conservés**. |
 | Prix présents | Upsert **non régressif** : la ligne existante n'est écrasée que si elle est `demo` / `estimate`, ou si le prix entrant est un relevé au moins aussi récent ; une estimation ne remplace un relevé réel que s'il est sorti de la fenêtre de l'instantané (`updated_at < pricesFrom`). |
-| Instantané (`meta`) | `catalog_meta` remplacée ; socles de collecte (`price_observations` kind `snapshot`) régénérés depuis les prix `open_prices` du seed ; relevés collectés avant `snapshotAt` purgés (déjà dans l'instantané) ; curseur de collecte avancé à `snapshotAt` (jamais reculé). Sans `meta` : `catalog_meta` vidée. |
+| Instantané (`meta`) | `catalog_meta` remplacée ; socles de collecte (`price_observations` kind `snapshot`) régénérés depuis les prix `open_prices` du seed, dans l'unité de la SOURCE (`off_price_per`, `off_pack_factor`), avec la catégorie vrac retenue et `proximity = true` si la médiane de l'instantané ne reposait que sur des formats de proximité (`src/data/openData/snapshot.json`) ; relevés collectés avant le dernier relevé de l'export purgés (déjà dans l'instantané) ; curseurs de collecte (global et chaque lot) avancés juste après ce dernier relevé (`meta.lastCreatedAt`, arrondi à la milliseconde supérieure ; à défaut `snapshotAt`), jamais reculés. Sans `meta` : `catalog_meta` vidée. |
 
 Validation avant génération (erreurs lisibles) : ids / EAN / couples prix en
 double, EAN et catégorie vrac exclusifs, MDD ⇔ enseignes, prix d'une MDD hors
@@ -354,15 +355,25 @@ stocké.
    SÉQUENTIEL, ≤ 1 requête / 2 s (`OPEN_PRICES_DELAY_MS`, 2000 minimum) ;
    HTTP 429 : `Retry-After` honoré une fois puis arrêt propre ; autre erreur :
    le lot est sauté (repris au passage suivant) ; budget 120 s et
-   `maxPages` (200). Nouveau curseur = le plus en retard des lots (début du
-   passage − 10 min pour un lot épuisé, dernier `created` lu sinon) : rien
-   n'est perdu, les chevauchements sont dédupliqués.
+   `maxPages` (200). **Un curseur par lot de lieux**
+   (`price_collection_state.batch_cursors`, clé « premier id-dernier id ») ;
+   le lot le plus en retard est lu d'abord. Lot épuisé → début du passage −
+   10 min ; lot interrompu (budget, `maxPages`, 429) → dernier `created` lu :
+   il REPREND là au passage suivant ; lot non atteint ou en erreur →
+   inchangé. Un gros import (des milliers de relevés en un jour) ou une panne
+   n'immobilise donc jamais la collecte, et un lot en erreur ne bloque pas
+   les autres. `created_cursor` = le plus en retard (statistiques, repli d'un
+   lot sans curseur). Rien n'est perdu, les chevauchements sont dédupliqués.
 3. **Filtres obligatoires** (`core › normalizeObservation`) : FR métropole,
    EUR, non doublon, date dans la fenêtre de 365 jours, `receipt_quantity` ≤ 1,
    GTIN-8/13 à clé valide hors poids variable, prix normal (un relevé promo
-   sans prix barré est écarté). **Rattachement** : `ean:<gtin>` → produit à ce
-   code-barres ; `cat:<tag>:KILOGRAM|UNIT[:organic]` → produit vrac de cette
-   catégorie (g ↔ au kilo, pièce ↔ à l'unité ; bio et conventionnel séparés).
+   sans prix barré, ou au prix barré > 10 000 €, est écarté ; défense en
+   profondeur : un prix hors de l'entier SQL est rejeté avant insertion).
+   **Rattachement** : `ean:<gtin>` → produit à ce code-barres ;
+   `cat:<tag>:KILOGRAM|UNIT[:organic]` → produit vrac, pour CHACUNE de ses
+   catégories (`off_category_tags`) et dans l'unité de la source
+   (`off_price_per` : concombre, chou-fleur, butternut relevés à la pièce ;
+   à défaut g ↔ au kilo, pièce ↔ à l'unité ; bio et conventionnel séparés).
    Une MDD n'est rattachée qu'à ses enseignes (`store_chains`). Relevés
    rattachés → `price_observations` (sans doublon par relevé × produit).
 4. **Prix d'enseigne** (« national », un magasin par enseigne) pour chaque
@@ -370,7 +381,10 @@ stocké.
    de 365 jours **et le socle de l'instantané** (la médiane du seed, comptée
    autant de fois que les relevés qu'elle résume) — hors proximité préféré,
    médiane du prix normal, `observation_count`, `observed_from`, `updated_at`
-   = dernier relevé. Vrac : prix au kilo / à la pièce × contenance.
+   = dernier relevé. Vrac : la 1re catégorie (ordre de préférence) qui a des
+   relevés dans la fenêtre, comme l'instantané ; prix au kilo / à la pièce ×
+   `off_pack_factor`. Un socle « proximité » cède la place au premier relevé
+   hyper / super.
    **Un relevé réel remplace toujours une estimation** (et un prix `demo`) ;
    un prix réel n'est remplacé que par un calcul au moins aussi récent ; ligne
    identique non réécrite. **Promo** : relevée il y a ≤ 7 jours, valable 7
@@ -378,7 +392,9 @@ stocké.
    n'écrit JAMAIS d'estimation (elles viennent de l'instantané).
 5. Baisses ≥ 5 % (`detectPriceDrops`) sur `price_watches` des utilisateurs
    **Premium** ayant activé « baisses de prix » → `notification_queue`
-   (dédupliqué par prix). `dryRun` : tout est calculé, rien n'est écrit (ni
+   (dédupliqué par prix) — **jamais sur un produit contenant un allergène
+   déclaré du profil** (`profiles.allergens`, lu pour cela seulement ; profil
+   illisible → aucune alerte pour cet utilisateur). `dryRun` : tout est calculé, rien n'est écrit (ni
    relevés, ni prix, ni curseur).
 
 ### 3.4 `send-notifications` (cron, `x-cron-secret`)

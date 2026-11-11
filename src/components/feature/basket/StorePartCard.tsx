@@ -4,14 +4,15 @@
  * sous-total, lignes (repliées au-delà de 3, dépliage au ressort ; « prix
  * estimé » signalé), frais, puis le CTA « Commander chez <enseigne> » (« Ma
  * liste pour <enseigne> » sans commande en ligne). Une commande déjà validée
- * cette semaine est signalée et le CTA devient « Voir ma commande ».
+ * cette semaine est signalée et le CTA devient « Voir ma commande ». Part sous
+ * le minimum de commande (faute d'autre choix) : montant manquant signalé.
  */
 import React, { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, LinearTransition, useAnimatedStyle, useDerivedValue, withSpring } from 'react-native-reanimated';
 import { ArrowRight, ChevronDown, CircleCheck, ExternalLink } from 'lucide-react-native';
 
-import { Badge, Button, Divider, PressableScale, StoreBadge, Text } from '@/components/ui';
+import { Badge, Button, Divider, InfoBanner, PressableScale, StoreBadge, Text } from '@/components/ui';
 import type { BasketStorePart, OrderChannel, OrderHandoff, Product, Store } from '@/core';
 import { formatPrice, hasEstimatedPrice, storeDisplayName } from '@/core';
 import { formatPriceForA11y } from '@/lib/a11y';
@@ -22,6 +23,7 @@ import {
   estimatedCount,
   estimatedNote,
   feesLabel,
+  minOrderWarning,
   orderCtaLabel,
   packsLabel,
   plural,
@@ -51,6 +53,7 @@ export function StorePartCard({ part, store, channel, productsById, orderStatus,
   const short = storeDisplayName(store, { short: true });
   const service = serviceLabel(store, channel);
   const estimated = estimatedCount(part.lines);
+  const minOrder = minOrderWarning(part, store);
   const articles = `${plural(part.lines.length, 'article')}${estimated > 0 ? `, ${estimatedNote(estimated)}` : ''}`;
 
   const rotation = useDerivedValue(() => withSpring(expanded ? 180 : 0, t.motion.springIndicator), [expanded]);
@@ -165,6 +168,12 @@ export function StorePartCard({ part, store, channel, productsById, orderStatus,
           <Text variant="footnote" color="textSecondary" tabular>
             {formatPrice(part.feesCents)}
           </Text>
+        </View>
+      ) : null}
+
+      {minOrder ? (
+        <View testID={testID ? `${testID}-min-order` : undefined}>
+          <InfoBanner tone="warning" title={minOrder.title} message={minOrder.message} />
         </View>
       ) : null}
 

@@ -12,6 +12,10 @@
  * La commande est rangée sous la semaine du PANIER (`basket.weekStart`, comme
  * `prepareOrder`), pas sous la semaine active, qui peut changer pendant qu'on
  * est chez l'enseigne (passage à minuit le dimanche).
+ *
+ * Panier calculé AVANT une nouvelle allergie (une ligne contient un allergène
+ * déclaré) : jamais commandable — « Ton panier se met à jour ». Sous le ticket :
+ * minimum de commande non atteint (montant manquant) et attribution ODbL.
  */
 import { router, useLocalSearchParams, type Href } from 'expo-router';
 import React, { useMemo, useState } from 'react';
@@ -21,7 +25,7 @@ import { SafeAreaProvider, type Metrics } from 'react-native-safe-area-context';
 import { ArrowLeft, CircleCheck, ExternalLink, RotateCcw } from 'lucide-react-native';
 
 import { Celebration, EmptyBasket } from '@/components/brand';
-import { plural, serviceLabel } from '@/components/feature/basket';
+import { minOrderWarning, plural, serviceLabel } from '@/components/feature/basket';
 import {
   historyOrder,
   OrderActions,
@@ -37,10 +41,12 @@ import {
   orderWhenLabel,
   partSavingsCents,
 } from '@/components/feature/order';
+import { DATA_ATTRIBUTION_LINE } from '@/components/feature/sources';
 import {
   Badge,
   Button,
   EmptyState,
+  InfoBanner,
   Screen,
   SectionHeader,
   staggerEntering,
@@ -53,6 +59,7 @@ import {
 import type { OrderChannel } from '@/core';
 import { formatPrice, formatWeekRange, storeDisplayName } from '@/core';
 import { useSubscription } from '@/hooks';
+import { linesHaveAllergen } from '@/services/basket';
 import { useCatalog } from '@/services/catalog';
 import {
   activeWeek,
@@ -61,6 +68,7 @@ import {
   useBudgetStatus,
   useLastOrderForWeek,
   useOrderStore,
+  useProfileStore,
   useWeekStore,
   type StoredOrder,
 } from '@/stores';
@@ -106,7 +114,11 @@ function OrderScreen() {
   const channel = useBasketStore((s) => s.channel);
   // Semaine où `prepareOrder` range la commande : celle du panier.
   const orderWeek = useBasketStore((s) => s.weekStart) ?? ws;
-  const part = useMemo(() => plan?.parts.find((p) => p.storeId === storeId) ?? null, [plan, storeId]);
+  const allergens = useProfileStore((s) => s.profile?.allergens);
+  const planPart = useMemo(() => plan?.parts.find((p) => p.storeId === storeId) ?? null, [plan, storeId]);
+  // Part d'un panier calculé avant une nouvelle allergie : jamais commandée (recalcul sur l'onglet Prix).
+  const unsafePart = useMemo(() => !!planPart && linesHaveAllergen(planPart.lines, allergens, catalog), [planPart, allergens, catalog]);
+  const part = unsafePart ? null : planPart;
   const order = useLastOrderForWeek(orderWeek, storeId);
   const lastOfWeek = useLastOrderForWeek(orderWeek);
   // La dépense est datée du jour de validation : on lit le budget de CETTE semaine-là.
@@ -202,13 +214,20 @@ function OrderScreen() {
       <Screen onBack={close} backIcon="close" testID="order-screen">
         <EmptyState
           illustration={<EmptyBasket size={130} />}
-          title={store ? `Rien à commander chez ${short}` : 'Magasin introuvable'}
-          body={store ? 'Ce magasin n’est plus dans ton panier. Reviens aux prix pour voir où commander.' : 'Il a peut-être quitté le catalogue.'}
+          title={!store ? 'Magasin introuvable' : unsafePart ? 'Ton panier se met à jour' : `Rien à commander chez ${short}`}
+          body={
+            !store
+              ? 'Il a peut-être quitté le catalogue.'
+              : unsafePart
+                ? 'Tes allergies ont changé : on recalcule tes prix avant que tu commandes.'
+                : 'Ce magasin n’est plus dans ton panier. Reviens aux prix pour voir où commander.'
+          }
           action={{ label: 'Retour aux prix', leftIcon: ArrowLeft, onPress: close }}
         />
       </Screen>
     );
   }
+  const minOrder = stage === 'ready' && part ? minOrderWarning(part, store) : null;
 
   const footer =
     stage === 'ready' ? (
@@ -223,7 +242,15 @@ function OrderScreen() {
         testID="order-open"
       />
     ) : stage === 'opened' ? (
-      <Button label="J’ai validé ma commande" size="lg" leftIcon={CircleCheck} fullWidth onPress={confirm} haptic="impact" testID="order-confirm" />
+      <Button
+        label={inStoreOnly ? 'J’ai fait mes courses' : 'J’ai validé ma commande'}
+        size="lg"
+        leftIcon={CircleCheck}
+        fullWidth
+        onPress={confirm}
+        haptic="impact"
+        testID="order-confirm"
+      />
     ) : (
       <Button label="Retour à mes prix" size="lg" variant="secondary" leftIcon={ArrowLeft} fullWidth onPress={close} testID="order-done" />
     );
@@ -282,9 +309,16 @@ function OrderScreen() {
               savingsCents={savings}
               channel={shownChannel}
               service={serviceLabel(store, shownChannel)}
+              inStoreOnly={inStoreOnly}
               testID="order-receipt"
             />
           </Animated.View>
+
+          {minOrder ? (
+            <View testID="order-min-order">
+              <InfoBanner tone="warning" title={minOrder.title} message={minOrder.message} />
+            </View>
+          ) : null}
 
           {stage !== 'confirmed' ? (
             <Animated.View key={stage} entering={FadeInDown.springify().damping(t.motion.spring.damping)}>
@@ -313,6 +347,10 @@ function OrderScreen() {
               />
             </Animated.View>
           ) : null}
+
+          <Text variant="caption" color="textSecondary" align="center" testID="order-attribution">
+            {DATA_ATTRIBUTION_LINE}
+          </Text>
 
           {history ? (
             <Animated.View entering={FadeIn.delay(t.motion.duration.base)} style={{ gap: t.spacing.sm }}>

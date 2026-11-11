@@ -2,7 +2,7 @@
  * Libellés français des référentiels du domaine (affichage UI, raisons,
  * messages d'erreur). Une seule source pour l'app et les Edge Functions.
  */
-import type { Aisle, Allergen, Cuisine, Diet, Equipment, MealType, Store, StoreChain } from './types';
+import type { Aisle, Allergen, Cuisine, Diet, Equipment, MealType, OrderChannel, Store, StoreChain } from './types';
 
 export const ALLERGEN_LABELS: Record<Allergen, string> = {
   gluten: 'Gluten',
@@ -113,4 +113,21 @@ export function storeDisplayName(
   const known = (STORE_CHAIN_LABELS as Record<string, string | undefined>)[store.chain];
   const base = (known ?? String(store.name ?? '').replace(/\s+drive$/i, '').trim()) || (opts.fallback ?? 'l’enseigne');
   return opts.short ? base.replace(/^E\.\s?/, '') : base;
+}
+
+/**
+ * Service réellement rendu par un magasin pour le canal : « Drive »,
+ * « Click & collect », « En magasin » (enseigne sans retrait en ligne :
+ * Lidl, Aldi, Netto) ou « Livraison ».
+ */
+export function storeServiceLabel(store: Partial<Pick<Store, 'pickup'>> | null | undefined, channel: OrderChannel): string {
+  if (channel === 'delivery') return 'Livraison';
+  if (store?.pickup === 'click_collect') return 'Click & collect';
+  if (store?.pickup === 'none') return 'En magasin';
+  return 'Drive';
+}
+
+/** Courses en magasin (aucun retrait en ligne, pas de livraison) : ni « commande » ni « frais de retrait ». */
+export function isInStoreOnly(store: Partial<Pick<Store, 'pickup'>> | null | undefined, channel: OrderChannel): boolean {
+  return channel !== 'delivery' && store?.pickup === 'none';
 }

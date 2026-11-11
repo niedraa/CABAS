@@ -17,9 +17,9 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
+import { loadSources } from '../../../scripts/open-data/lib.mjs';
 import { ALLERGENS } from '../../core/types.ts';
 import { ingredients } from '../ingredients.ts';
-import { productSources } from '../productSources.ts';
 import { stores } from '../stores.ts';
 import { buildCatalog } from './buildCatalog.ts';
 
@@ -41,7 +41,14 @@ if (args.sources && !args.out) {
 
 const snapshotFile = args.snapshot ? abs(args.snapshot) : join(dataDir, 'openData', 'snapshot.json');
 const snapshot = JSON.parse(readFileSync(snapshotFile, 'utf8'));
-const sources = args.sources ? JSON.parse(readFileSync(abs(args.sources), 'utf8')) : productSources;
+// Même lecture que fetch / snapshot : tableau d'IngredientSource ou { productSources: [...] }.
+let sources;
+try {
+  ({ sources } = await loadSources(args.sources));
+} catch (err) {
+  console.error(`✗ ${err instanceof Error ? err.message : String(err)}`);
+  process.exit(1);
+}
 const outDir = args.out ? abs(args.out) : dataDir;
 
 const { products, prices, meta, warnings } = buildCatalog(sources, snapshot, ingredients, stores, ALLERGENS);

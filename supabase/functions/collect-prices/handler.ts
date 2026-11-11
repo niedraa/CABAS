@@ -9,19 +9,22 @@
  *  1. points de vente FR métropole des 10 enseignes : table
  *     `open_prices_locations`, rafraîchie chaque semaine depuis l'export
  *     `locations.jsonl.gz` (une requête) ;
- *  2. relevés créés depuis le dernier passage (curseur `created__gte` ; à
- *     défaut, date de l'instantané du catalogue), par lots de ≤ 600 lieux,
- *     page par page, SÉQUENTIELLEMENT (≤ 1 requête / 2 s, Retry-After honoré
- *     une fois sur HTTP 429, budget de temps) ;
+ *  2. relevés créés depuis le dernier passage, par lots de ≤ 600 lieux, avec
+ *     UN CURSEUR PAR LOT (`created__gte` ; à défaut le curseur global, puis le
+ *     dernier relevé de l'instantané) — le lot le plus en retard d'abord, page
+ *     par page, SÉQUENTIELLEMENT (≤ 1 requête / 2 s, Retry-After honoré une
+ *     fois sur HTTP 429, budget de temps) : un lot qui ne peut pas tout lire en
+ *     un passage reprend où il s'est arrêté, sans bloquer les autres ;
  *  3. filtres obligatoires (core › normalizeObservation) puis rattachement aux
  *     codes-barres et catégories vrac du catalogue → `price_observations` ;
  *  4. pour chaque (produit, enseigne) touché : médiane des relevés de 365 jours
  *     et du socle de l'instantané → prix 'open_prices' de l'enseigne (un relevé
  *     réel remplace TOUJOURS une estimation ; promo valable 7 jours au plus) ;
  *  5. baisses de prix (core › detectPriceDrops) sur les produits surveillés
- *     (Premium, préférence active) → file de notifications dédupliquée.
+ *     (Premium, préférence active) → file de notifications dédupliquée —
+ *     JAMAIS sur un produit contenant un allergène déclaré du profil.
  */
-import type { Price, Product, Store } from '../_shared/core/index.ts';
+import type { Allergen, Price, Product, Store } from '../_shared/core/index.ts';
 import { detectPriceDrops, formatPrice } from '../_shared/core/index.ts';
 import { verifySharedSecret } from '../_shared/auth.ts';
 import { json, readJson, requireMethod, withHandler } from '../_shared/http.ts';
@@ -53,12 +56,21 @@ export interface PriceWatchRow {
   productId: string;
   storeId: string;
   referenceCents: number;
+  /** Allergènes déclarés du profil ; `null` si le profil est illisible (aucune alerte). */
+  allergens: readonly Allergen[] | null;
 }
 
 export interface CollectState {
-  /** Prochain `created__gte` (ISO) ; null au premier passage. */
+  /** Curseur le plus en retard (ISO) ; null au premier passage. Repli des lots sans curseur. */
   createdCursor: string | null;
+  /** Prochain `created__gte` (ISO) de chaque lot de lieux (clé : `batchKey`). */
+  batchCursors: Record<string, string>;
   locationsRefreshedAt: string | null;
+}
+
+/** Clé stable d'un lot de lieux (ids triés) : « premier id-dernier id ». */
+export function batchKey(ids: readonly number[]): string {
+  return `${ids[0]}-${ids[ids.length - 1]}`;
 }
 
 export interface PriceCollectionRepository {
@@ -173,10 +185,12 @@ export function createCollectPricesHandler(deps: CollectPricesDeps): (req: Reque
       deps.repo.loadSnapshotAt(),
       deps.repo.loadLocations(),
     ]);
-    const cursorFrom = since ?? state.createdCursor ??
+    // Curseur de repli (lot sans curseur propre) : global, sinon l'instantané, sinon J−7.
+    const defaultCursor = since ?? state.createdCursor ??
       (snapshotAt && Number.isFinite(Date.parse(snapshotAt))
         ? new Date(Date.parse(snapshotAt)).toISOString()
         : new Date(nowDate.getTime() - 7 * DAY_MS).toISOString());
+    const batchCursorsIn = state.batchCursors ?? {};
 
     const stats: CollectStats = {
       locations: storedLocations.length,
@@ -195,8 +209,8 @@ export function createCollectPricesHandler(deps: CollectPricesDeps): (req: Reque
       errors: 0,
       rateLimited: false,
       stoppedEarly: false,
-      cursorFrom,
-      cursorTo: cursorFrom,
+      cursorFrom: defaultCursor,
+      cursorTo: defaultCursor,
       priceDrops: 0,
       notificationsQueued: 0,
       dryRun,
@@ -233,29 +247,36 @@ export function createCollectPricesHandler(deps: CollectPricesDeps): (req: Reque
     const matcher = buildProductMatcher(products);
     const candidates: StoredObservation[] = [];
     const runStart = new Date(nowDate.getTime() - CURSOR_MARGIN_MS).toISOString();
-    /** Curseur atteint par lot : `runStart` si le lot est épuisé, sinon dernier `created` traité. */
-    const reached: string[] = [];
 
     let pageRequests = 0;
-    const fetchPage = async (ids: number[], page: number): Promise<PricesPage> => {
+    const fetchPage = async (ids: number[], createdGte: string, page: number): Promise<PricesPage> => {
       await throttle();
       pageRequests++;
       try {
-        return await fetchPricesPage({ locationIds: ids, createdGte: cursorFrom, page }, { fetch: deps.fetch });
+        return await fetchPricesPage({ locationIds: ids, createdGte, page }, { fetch: deps.fetch });
       } catch (err) {
         // 429 : on attend Retry-After (borné à 30 s) puis on réessaie UNE fois.
         if (err instanceof OpenPricesHttpError && err.status === 429) {
           await sleep(Math.min(err.retryAfterMs ?? 5000, 30_000));
           requests++;
-          return await fetchPricesPage({ locationIds: ids, createdGte: cursorFrom, page }, { fetch: deps.fetch });
+          return await fetchPricesPage({ locationIds: ids, createdGte, page }, { fetch: deps.fetch });
         }
         throw err;
       }
     };
 
-    const batches = locationBatches(locations);
+    // Un curseur par lot ; le plus en retard passe d'abord (aucun lot ne bloque les autres).
+    const batches = locationBatches(locations).map((ids) => {
+      const key = batchKey(ids);
+      const own = since ? undefined : batchCursorsIn[key];
+      return { ids, key, from: own && Number.isFinite(Date.parse(own)) ? own : defaultCursor };
+    }).sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0) || a.ids[0] - b.ids[0]);
+    /** Curseur atteint par lot : `runStart` si épuisé, dernier `created` lu si interrompu, inchangé sinon. */
+    const batchCursorsOut: Record<string, string> = {};
+    for (const b of batches) batchCursorsOut[b.key] = b.from;
+    if (batches.length > 0) stats.cursorFrom = batches[0].from;
     let halted = false;
-    for (const ids of batches) {
+    for (const { ids, key, from: cursorFrom } of batches) {
       let lastCreated = cursorFrom;
       let done = false;
       for (let page = 1; !halted; page++) {
@@ -266,7 +287,7 @@ export function createCollectPricesHandler(deps: CollectPricesDeps): (req: Reque
         }
         let res: PricesPage;
         try {
-          res = await fetchPage(ids, page);
+          res = await fetchPage(ids, cursorFrom, page);
         } catch (err) {
           if (err instanceof OpenPricesHttpError && err.status === 429) {
             // Limite de débit : on arrête tout, proprement (curseur conservé).
@@ -301,13 +322,15 @@ export function createCollectPricesHandler(deps: CollectPricesDeps): (req: Reque
           break;
         }
       }
-      reached.push(done ? runStart : lastCreated);
+      // Jamais en arrière : un lot épuisé avance au début du passage (− marge), un lot
+      // interrompu reprendra à son dernier relevé lu (doublons ignorés à l'insertion).
+      const next = done ? runStart : lastCreated;
+      if (next > cursorFrom) batchCursorsOut[key] = next;
       if (halted) break;
     }
-    // Lots non atteints : le curseur ne bouge pas pour eux. Sans lieu connu : rien n'a été lu.
-    while (reached.length < batches.length) reached.push(cursorFrom);
-    const cursorTo = reached.length > 0 ? reached.reduce((a, b) => (a < b ? a : b)) : cursorFrom;
-    stats.cursorTo = cursorTo > cursorFrom ? cursorTo : cursorFrom;
+    // Lots non atteints (ou en erreur) : leur curseur ne bouge pas. Global = le plus en retard.
+    const values = Object.values(batchCursorsOut);
+    stats.cursorTo = values.length > 0 ? values.reduce((a, b) => (a < b ? a : b)) : defaultCursor;
     stats.requests = requests;
 
     if (candidates.length > 0) {
@@ -376,9 +399,15 @@ export function createCollectPricesHandler(deps: CollectPricesDeps): (req: Reque
       const storesById = new Map(stores.map((s) => [s.id, s]));
       const notifications: NotificationInsert[] = [];
       for (const [userId, list] of byUser) {
+        // Allergènes du profil : jamais d'alerte sur un produit qui en contient un.
+        // Profil illisible : on ne peut pas vérifier → aucune alerte (fail closed).
+        const allergens = list[0]?.allergens ?? null;
+        if (allergens === null || list.some((w) => w.allergens === null)) continue;
         const drops = detectPriceDrops(list, toUpsert, {
           thresholdPct: deps.dropThresholdPct ?? 5,
           now: nowDate.toISOString(),
+          products: productsById,
+          excludeAllergens: allergens,
         });
         for (const d of drops) {
           const productName = productsById.get(d.productId)?.name ?? 'Un produit habituel';
@@ -411,6 +440,7 @@ export function createCollectPricesHandler(deps: CollectPricesDeps): (req: Reque
     if (!dryRun) {
       await deps.repo.saveState({
         createdCursor: stats.cursorTo,
+        batchCursors: batchCursorsOut,
         locationsRefreshedAt,
         lastRunAt: nowDate.toISOString(),
         lastStats: stats,

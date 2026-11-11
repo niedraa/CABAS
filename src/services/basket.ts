@@ -18,6 +18,7 @@
  */
 import type {
   Allergen,
+  BasketLine,
   BasketMode,
   BasketPlan,
   Entitlement,
@@ -55,6 +56,11 @@ export interface BasketResult {
   source: 'remote' | 'local' | 'fallback';
   durationMs: number;
   fallbackReason?: string;
+  /**
+   * Articles sans aucune offre PARCE QUE tous les produits connus contiennent
+   * un allergène déclaré (à dire comme tel, pas « introuvable »).
+   */
+  allergenExcludedItemIds: string[];
 }
 
 export type BasketRemote = (body: {
@@ -132,6 +138,69 @@ export function withoutAllergenOffers(
   });
 }
 
+/**
+ * Une ligne (panier, commande) vise-t-elle un produit connu contenant un des
+ * allergènes déclarés ? Cas d'un panier calculé AVANT que le profil ne déclare
+ * cet allergène : il ne doit plus être affiché, commandé ni copié.
+ */
+export function linesHaveAllergen(
+  lines: readonly Pick<BasketLine, 'productId'>[],
+  allergens: readonly Allergen[] | undefined,
+  catalog: CatalogSnapshot = getCatalogSnapshot(),
+): boolean {
+  if (!allergens || allergens.length === 0) return false;
+  return lines.some((l) => {
+    const p = catalog.productsById[l.productId];
+    return !!p && productHasAllergen(p, allergens);
+  });
+}
+
+/** Panier dont une part contient un produit allergène pour ce profil (à recalculer, jamais à commander). */
+export function planHasAllergen(
+  plan: Pick<BasketPlan, 'parts'> | null | undefined,
+  allergens: readonly Allergen[] | undefined,
+  catalog: CatalogSnapshot = getCatalogSnapshot(),
+): boolean {
+  return !!plan && plan.parts.some((part) => linesHaveAllergen(part.lines, allergens, catalog));
+}
+
+/**
+ * Articles sans offre sûre alors que le catalogue en a : tous leurs produits
+ * connus contiennent un allergène déclaré du profil.
+ */
+export function allergenExcludedItems(
+  items: readonly ShoppingListItem[],
+  comparisons: readonly ItemComparison[],
+  allergens: readonly Allergen[] | undefined,
+  catalog: CatalogSnapshot = getCatalogSnapshot(),
+): string[] {
+  if (!allergens || allergens.length === 0) return [];
+  const itemsById = new Map(items.map((i) => [i.id, i]));
+  const full = catalogIndexWithoutAllergens(catalog, []);
+  return comparisons
+    .filter((c) => c.offers.length === 0)
+    .map((c) => c.itemId)
+    .filter((id) => {
+      const item = itemsById.get(id);
+      return !!item && allOffersForItem(item, full).length > 0;
+    });
+}
+
+/**
+ * Budget estimé d'une liste (centimes) : somme des meilleures offres, toutes
+ * enseignes, SANS les produits contenant un allergène déclaré (comme le
+ * panier) ; `null` si rien n'est chiffré.
+ */
+export function listEstimateFor(
+  items: readonly ShoppingListItem[],
+  allergens: readonly Allergen[] | undefined,
+  catalog: CatalogSnapshot = getCatalogSnapshot(),
+): number | null {
+  let total = 0;
+  for (const c of compareList(items, catalogIndexWithoutAllergens(catalog, allergens))) total += c.best?.totalCents ?? 0;
+  return total > 0 ? total : null;
+}
+
 /** Comparaison locale (articles non cochés). `storeIds` restreint les offres affichées. */
 export function computeComparison(
   items: readonly ShoppingListItem[],
@@ -178,7 +247,13 @@ export function computeBasketLocal(req: BasketRequest, catalog: CatalogSnapshot 
     allowedStoreIds: allowed.length > 0 ? allowed : undefined,
     now: nowIso,
   });
-  return { comparisons, plan, mode, downgraded: mode !== req.mode };
+  return {
+    comparisons,
+    plan,
+    mode,
+    downgraded: mode !== req.mode,
+    allergenExcludedItemIds: allergenExcludedItems(req.items, comparisons, req.allergens, catalog),
+  };
 }
 
 function parseRemoteBasket(raw: unknown): { comparisons: ItemComparison[]; plan: BasketPlan; mode?: BasketMode } | null {
@@ -240,6 +315,7 @@ export function createBasketService(deps: { remote: BasketRemote | null; getCata
             downgraded: mode !== req.mode,
             source: 'remote',
             durationMs: now() - started,
+            allergenExcludedItemIds: allergenExcludedItems(unchecked, parsed.comparisons, req.allergens, catalog),
           };
         } catch (err) {
           const local = computeBasketLocal({ ...req, items: unchecked }, catalog);

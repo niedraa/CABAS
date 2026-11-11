@@ -7,7 +7,9 @@
  *  - `prepareOrder(part, storeId, channel?)` → StoredOrder (core › buildOrderHandoff :
  *    URL du drive avec UTM, lignes du panier). Une commande « préparée » non
  *    confirmée pour le même magasin et la même semaine est remplacée. Programme
- *    un rappel de commande le lendemain matin si le réglage est actif ;
+ *    un rappel de commande le lendemain matin si le réglage est actif. REFUSÉE
+ *    (null) si une ligne contient un allergène déclaré du profil (panier calculé
+ *    avant la déclaration) ; `openOrder` / `orderText` aussi ;
  *  - `openOrder(id)` → boolean : ouvre le drive (navigateur intégré) et passe à « opened » ;
  *  - `markOpened(id)` ;
  *  - `confirmOrder(id)` → SpendingEntry | null : statut « confirmed » + dépense
@@ -24,6 +26,7 @@ import { persist } from 'zustand/middleware';
 import type { BasketStorePart, OrderChannel, OrderHandoff, SpendingEntry } from '@/core';
 import { buildOrderHandoff, formatOrderAsText, spendingFromHandoff, storeDisplayName } from '@/core';
 import { track } from '@/services/analytics';
+import { linesHaveAllergen } from '@/services/basket';
 import { getCatalogSnapshot } from '@/services/catalog';
 import { cancelOrderReminder, scheduleOrderReminder } from '@/services/notifications';
 import { copyListToClipboard, openOrder as openOrderService } from '@/services/order';
@@ -31,6 +34,7 @@ import { copyListToClipboard, openOrder as openOrderService } from '@/services/o
 import { useBasketStore } from './basketStore';
 import { useBudgetStore } from './budgetStore';
 import { usePlanStore } from './planStore';
+import { useProfileStore } from './profileStore';
 import { basePersistOptions, registerPersistedStore } from './registry';
 import { useSettingsStore } from './settingsStore';
 import { activeWeek, useWeekStore } from './weekStore';
@@ -57,6 +61,11 @@ export interface OrderState {
 }
 
 const MAX_ORDERS = 100;
+
+/** Lignes contenant un allergène déclaré du profil (jamais commandées ni copiées). */
+function unsafeForProfile(lines: readonly { productId: string }[]): boolean {
+  return linesHaveAllergen(lines, useProfileStore.getState().profile?.allergens, getCatalogSnapshot());
+}
 
 export function ordersForWeek(orders: readonly StoredOrder[], weekStart: string): StoredOrder[] {
   return orders.filter((o) => o.weekStart === weekStart);
@@ -94,6 +103,8 @@ export const useOrderStore = create<OrderState>()(
           const catalog = getCatalogSnapshot();
           const store = catalog.storesById[storeId];
           if (!store || part.lines.length === 0) return null;
+          // Panier calculé avant une nouvelle allergie : à recalculer, jamais à commander.
+          if (unsafeForProfile(part.lines)) return null;
           const basket = useBasketStore.getState();
           const ch = channel ?? basket.channel;
           const handoff = buildOrderHandoff(part, store, catalog.productsById, ch);
@@ -120,7 +131,7 @@ export const useOrderStore = create<OrderState>()(
         },
         async openOrder(id) {
           const order = get().orders.find((o) => o.id === id);
-          if (!order) return false;
+          if (!order || unsafeForProfile(order.lines)) return false;
           const ok = await openOrderService(order);
           if (ok) get().markOpened(id);
           return ok;
@@ -151,7 +162,7 @@ export const useOrderStore = create<OrderState>()(
         },
         orderText(id) {
           const order = get().orders.find((o) => o.id === id);
-          if (!order) return null;
+          if (!order || unsafeForProfile(order.lines)) return null;
           const catalog = getCatalogSnapshot();
           const store = catalog.storesById[order.storeId];
           return store ? formatOrderAsText(order, store, catalog.productsById) : null;

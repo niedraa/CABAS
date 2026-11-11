@@ -9,7 +9,9 @@
 --  • stores   : mode de retrait `pickup` (drive / click_collect / none) ;
 --               `delivery_fee_cents` null = pas de livraison (déjà nullable).
 --  • products : `ean` facultatif (vrac), GTIN-8/13 quand présent ;
---               `off_category_tag` (vrac) ; exactement un des deux ;
+--               `off_category_tag` (vrac) ; exactement un des deux ; vrac :
+--               catégories, unité et facteur des relevés (off_category_tags,
+--               off_price_per, off_pack_factor) ;
 --               `store_chains[]` remplace `store_chain` (une MDD Mousquetaires
 --               est vendue chez Intermarché ET Netto sous le même code-barres) —
 --               `store_chain` est conservée une version (= store_chains[1]).
@@ -62,6 +64,34 @@ comment on column public.products.off_category_tag is
   'Vrac sans code-barres : catégorie Open Food Facts des relevés Open Prices « au kilo » / « à la pièce » (ex. en:tomatoes).';
 
 create index products_off_category_idx on public.products (off_category_tag) where off_category_tag is not null;
+
+-- Vrac : règles de l'instantané reprises telles quelles par la collecte
+-- incrémentale (collect-prices) — catégories par ordre de préférence (la 1re =
+-- off_category_tag), unité des relevés de la SOURCE (un ingrédient au poids
+-- peut être relevé à la pièce : concombre, chou-fleur…) et facteur « prix
+-- relevé → prix du conditionnement ».
+alter table public.products
+  add column off_category_tags text[] not null default '{}',
+  add column off_price_per text
+    constraint products_off_price_per_check check (off_price_per is null or off_price_per in ('KILOGRAM', 'UNIT')),
+  add column off_pack_factor numeric
+    constraint products_off_pack_factor_positive check (off_pack_factor is null or off_pack_factor > 0);
+
+alter table public.products
+  add constraint products_loose_fields check (
+    case when off_category_tag is null
+      then cardinality(off_category_tags) = 0 and off_price_per is null and off_pack_factor is null
+      else cardinality(off_category_tags) = 0 or off_category_tags[1] = off_category_tag
+    end
+  ),
+  add constraint products_off_category_tags_no_null check (array_position(off_category_tags, null) is null);
+
+comment on column public.products.off_category_tags is
+  'Vrac : catégories Open Food Facts des relevés, par ordre de préférence (1re = off_category_tag) ; une enseigne est chiffrée par la 1re catégorie qui y a des relevés.';
+comment on column public.products.off_price_per is
+  'Vrac : unité des relevés Open Prices de la source (KILOGRAM / UNIT) ; null = déduite de pack_unit (g → au kilo, pièce → à la pièce).';
+comment on column public.products.off_pack_factor is
+  'Vrac : prix du conditionnement = prix relevé (au kilo / à la pièce) × off_pack_factor.';
 
 -- Enseignes d'une MDD (vide pour une marque nationale).
 alter table public.products add column store_chains public.store_chain[] not null default '{}';

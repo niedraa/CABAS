@@ -9,6 +9,7 @@
 import type { BasketStorePart, OrderChannel, OrderHandoff, Product, Store } from './types.ts';
 import { createId } from './ids.ts';
 import { formatPrice } from './money.ts';
+import { isInStoreOnly, storeServiceLabel } from './labels.ts';
 
 type ProductLookup = Record<string, Product> | Map<string, Product>;
 
@@ -82,12 +83,15 @@ export function buildOrderHandoff(
   };
 }
 
-const CHANNEL_LABELS: Record<OrderChannel, string> = { drive: 'Drive', delivery: 'Livraison' };
-
-/** Version texte de la commande, prête à copier / partager. */
+/**
+ * Version texte de la commande, prête à copier / partager. En-tête selon le
+ * service réel : « Ma commande Cabas — Monoprix (Click & collect) », « Ma liste
+ * Cabas — Lidl (En magasin) » pour une enseigne sans retrait en ligne.
+ */
 export function formatOrderAsText(handoff: OrderHandoff, store: Store, productsById: ProductLookup): string {
   const lines: string[] = [];
-  lines.push(`Ma commande Cabas — ${store.name} (${CHANNEL_LABELS[handoff.channel]})`);
+  const kind = isInStoreOnly(store, handoff.channel) ? 'Ma liste' : 'Ma commande';
+  lines.push(`${kind} Cabas — ${store.name} (${storeServiceLabel(store, handoff.channel)})`);
   lines.push('');
   let linesTotal = 0;
   for (const l of handoff.lines) {

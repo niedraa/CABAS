@@ -54,6 +54,8 @@ export interface BasketState {
   storeIds: string[];
   /** Allergènes du profil appliqués au dernier calcul (aucun produit qui en contient). */
   allergens: Allergen[];
+  /** Articles dont TOUS les produits connus contiennent un de ces allergènes (dit tel quel). */
+  allergenExcludedItemIds: string[];
   /** Droit utilisé au dernier calcul réussi (null : jamais calculé). */
   entitlement: Entitlement | null;
   selectedAlternatives: Record<string, string>;
@@ -122,6 +124,7 @@ export const useBasketStore = create<BasketState>()(
       listUpdatedAt: null,
       storeIds: [],
       allergens: [],
+      allergenExcludedItemIds: [],
       entitlement: null,
       selectedAlternatives: {},
 
@@ -158,6 +161,7 @@ export const useBasketStore = create<BasketState>()(
             listUpdatedAt: list.updatedAt,
             storeIds,
             allergens: [...allergens],
+            allergenExcludedItemIds: res.allergenExcludedItemIds ?? [],
             entitlement,
           });
           track('basket_computed', {
@@ -215,6 +219,7 @@ export const useBasketStore = create<BasketState>()(
           listUpdatedAt: null,
           storeIds: [],
           allergens: [],
+          allergenExcludedItemIds: [],
           entitlement: null,
           selectedAlternatives: {},
         });
@@ -233,6 +238,7 @@ export const useBasketStore = create<BasketState>()(
         listUpdatedAt: s.listUpdatedAt,
         storeIds: s.storeIds,
         allergens: s.allergens,
+        allergenExcludedItemIds: s.allergenExcludedItemIds,
         entitlement: s.entitlement,
         selectedAlternatives: s.selectedAlternatives,
       }),

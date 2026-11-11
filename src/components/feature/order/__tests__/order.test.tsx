@@ -168,6 +168,16 @@ describe('OrderReceipt', () => {
     expect(screen.getByLabelText(/^Total : /)).toBeTruthy();
   });
 
+  it('courses en magasin : pas de ligne « Frais de retrait · Offerts »', async () => {
+    const lines = orderLineViews(part.lines, productsById);
+    const props = { lines, subtotalCents: part.subtotalCents, feesCents: 0, totalCents: part.subtotalCents, savingsCents: 0, channel: 'drive' as const };
+    const view = await render(<OrderReceipt {...props} service="En magasin" inStoreOnly testID="rc" />);
+    expect(screen.getByText(`Ticket · En magasin · ${lines.length} articles`)).toBeTruthy();
+    expect(screen.queryByText('Frais de retrait')).toBeNull();
+    await view.rerender(<OrderReceipt {...props} testID="rc" />);
+    expect(screen.getByText('Frais de retrait')).toBeTruthy();
+  });
+
   it('signale les prix estimés (ligne et sous-total)', async () => {
     const lines = orderLineViews(part.lines, productsById).map((l, i) => ({ ...l, isEstimate: i < 2 }));
     await render(<OrderReceipt lines={lines} subtotalCents={part.subtotalCents} feesCents={0} totalCents={part.subtotalCents} savingsCents={0} channel="drive" testID="rc" />);

@@ -12,7 +12,8 @@
 --    `owner`, donnée personnelle) + « socles » de l'instantané (kind
 --    'snapshot', écrits par le seed : la médiane de l'instantané pèse le
 --    nombre de relevés qu'elle résume) ;
---  • price_collection_state : curseur `created__gte` du prochain passage.
+--  • price_collection_state : curseurs `created__gte` du prochain passage
+--    (un par lot de lieux, et le plus en retard).
 --
 -- Tables système : RLS activée SANS politique (service_role uniquement),
 -- droits retirés à anon / authenticated.
@@ -58,6 +59,10 @@ create table public.price_observations (
   regular_milli     integer not null check (regular_milli > 0),
   promo_milli       integer check (promo_milli is null or (promo_milli > 0 and promo_milli < regular_milli)),
   price_per         text check (price_per is null or price_per in ('KILOGRAM', 'UNIT')),
+  -- Vrac : catégorie Open Food Facts du relevé (une enseigne est chiffrée par la
+  -- 1re catégorie du produit qui y a des relevés, comme l'instantané).
+  category_tag      text check (category_tag is null or category_tag ~ '^[a-z]{2,3}:[a-z0-9]+(-[a-z0-9]+)*$'),
+  -- Format de proximité (socle : médiane de l'instantané sans aucun relevé hyper / super).
   proximity         boolean not null default false,
   -- Jour du relevé (socle : jour du relevé le plus récent de l'instantané).
   observed_on       date not null,
@@ -86,8 +91,11 @@ create index price_observations_product_chain_idx on public.price_observations (
 
 create table public.price_collection_state (
   id                     boolean primary key default true check (id),
-  -- Prochain passage : relevés créés à partir de cet instant (created__gte).
+  -- Curseur le plus en retard (min de batch_cursors) : statistiques, compatibilité.
   created_cursor         timestamptz,
+  -- Curseur PAR LOT de lieux (clé « premier id-dernier id » → created__gte ISO) :
+  -- un lot en retard (gros import, panne) ne bloque jamais les autres.
+  batch_cursors          jsonb not null default '{}'::jsonb check (jsonb_typeof(batch_cursors) = 'object'),
   locations_refreshed_at timestamptz,
   last_run_at            timestamptz,
   last_stats             jsonb not null default '{}'::jsonb check (jsonb_typeof(last_stats) = 'object'),
@@ -95,7 +103,7 @@ create table public.price_collection_state (
 );
 
 comment on table public.price_collection_state is
-  'Curseur de la collecte incrémentale Open Prices (une seule ligne). Le seed le pousse à la date de l''instantané.';
+  'Curseurs de la collecte incrémentale Open Prices (une seule ligne, un curseur par lot de lieux). Le seed les pousse au dernier relevé de l''instantané.';
 
 create trigger price_collection_state_set_updated_at before update on public.price_collection_state
   for each row execute function public.set_updated_at();

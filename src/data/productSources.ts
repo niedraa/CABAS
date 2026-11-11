@@ -420,28 +420,28 @@ export const productSources: IngredientSource[] = [
   },
   {
     ingredientId: 'persil',
-    national: { ean: '3280222109683', name: 'Persil plat frais', packSize: 1, packUnit: 'piece' },
-    note: 'Pas de vrac (2 relevés en:parsley à la botte). Aucune MDD de persil frais relevée (MDD = persil séché).',
+    national: { ean: '3280222109683', name: 'Persil plat frais, sachet 11 g' },
+    note: 'Pas de vrac (2 relevés en:parsley à la botte). Aucune MDD de persil frais relevée (MDD = persil séché). Sachet de 11 g (fiche OFF) = 0,4 botte de 30 g : jamais compté comme une botte entière.',
   },
   {
     ingredientId: 'coriandre',
-    national: { ean: '3411061111067', name: 'Coriandre fraîche', packSize: 1, packUnit: 'piece' },
-    note: 'Pas de vrac. Franprix « Coriandre coupée » 50 g = gamme surgelée Franprix : écarté.',
+    national: { ean: '3411061111067', name: 'Coriandre fraîche, barquette 20 g' },
+    note: 'Pas de vrac. Franprix « Coriandre coupée » 50 g = gamme surgelée Franprix : écarté. Barquette de 20 g = 0,7 botte de 30 g.',
   },
   {
     ingredientId: 'basilic',
-    national: { ean: '3280220918003', name: 'Basilic frais', packSize: 1, packUnit: 'piece' },
-    note: 'Pas de vrac. Alternative : Cueillettes & Cuisine barquette 20 g (3411061111029).',
+    national: { ean: '3280220918003', name: 'Basilic frais, sachet 11 g' },
+    note: 'Pas de vrac. Alternative : Cueillettes & Cuisine barquette 20 g (3411061111029). Sachet de 11 g = 0,4 botte de 25 g.',
   },
   {
     ingredientId: 'ciboulette',
-    national: { ean: '3280220920006', name: 'Ciboulette fraîche', packSize: 1, packUnit: 'piece' },
-    note: 'Pas de vrac (1 relevé en:chives à la botte). Alternative : Cueillettes & Cuisine 20 g (3411061111043).',
+    national: { ean: '3280220920006', name: 'Ciboulette fraîche, sachet 11 g' },
+    note: 'Pas de vrac (1 relevé en:chives à la botte). Alternative : Cueillettes & Cuisine 20 g (3411061111043). Sachet de 11 g = 0,6 botte de 20 g.',
   },
   {
     ingredientId: 'menthe',
-    national: { ean: '3280220923007', name: 'Menthe fraîche', packSize: 1, packUnit: 'piece' },
-    note: 'Pas de vrac (1 relevé en:mint bio). Alternative : Cueillettes & Cuisine 20 g (3411061111289).',
+    national: { ean: '3280220923007', name: 'Menthe fraîche, sachet 11 g' },
+    note: 'Pas de vrac (1 relevé en:mint bio). Alternative : Cueillettes & Cuisine 20 g (3411061111289). Sachet de 11 g = 0,4 botte de 25 g.',
   },
   // ── Boucherie & charcuterie ──
   {
@@ -571,11 +571,11 @@ export const productSources: IngredientSource[] = [
     national: { ean: '3181450100599', name: 'Chorizo doux' },
     mdd: [
       { ean: '3564700009321', name: 'Chorizo doux', chains: ['leclerc'] },
-      { ean: '3245413824899', name: 'Chorizo', chains: ['carrefour'] },
       { ean: '3596710538379', name: 'Chorizo doux', chains: ['auchan'] },
       { ean: '3250392881382', name: 'Chorizo fort, 20 tranches', chains: ['intermarche', 'netto'] },
       { ean: '3256224658917', name: 'Chorizo doux pur porc', brand: 'Produits U', chains: ['superu'] },
     ],
+    note: 'Carrefour 3245413824899 écarté : pizza ovale au chorizo (catégories OFF, tickets « PIZZA CHORIZO CRF »), pas du chorizo.',
   },
   {
     ingredientId: 'filet_mignon_porc',
@@ -664,11 +664,11 @@ export const productSources: IngredientSource[] = [
   },
   {
     ingredientId: 'moules',
-    national: { ean: '8710387005261', name: 'Moules fraîches de Hollande', packSize: 2000, packUnit: 'g' },
+    national: { ean: '8710387005261', name: 'Moules fraîches de Hollande', packSize: 1400, packUnit: 'g' },
     mdd: [
       { ean: '3523680484030', name: 'Moules de bouchot', chains: ['carrefour'] },
     ],
-    note: 'Pas de moules de bouchot de marque nationale à code fixe relevées : la marque nationale est une moule fraîche de Hollande (même usage).',
+    note: 'Pas de moules de bouchot de marque nationale à code fixe relevées : la marque nationale est une moule fraîche de Hollande (même usage). Fiche OFF « 2 l (1,4 kg) » : 2 l est le volume du sac, le poids net est 1,4 kg (packSize 1400 g).',
   },
   {
     ingredientId: 'thon_naturel',
@@ -940,7 +940,6 @@ export const productSources: IngredientSource[] = [
         brand: 'Produits U',
         chains: ['superu'],
       },
-      { ean: '4056489043157', name: 'Parmesan 150 g', chains: ['lidl'] },
       {
         ean: '3350030197148',
         name: 'Parmigiano Reggiano AOP râpé 70 g',
@@ -949,7 +948,7 @@ export const productSources: IngredientSource[] = [
         chains: ['monoprix'],
       },
     ],
-    note: 'Grana Padano écarté (autre fromage).',
+    note: 'Grana Padano écarté (autre fromage, souvent au lysozyme d’œuf) : Lidl 4056489043157 « Grana Padano AOP râpé » retiré, Lidl sans parmesan relevé.',
   },
   {
     ingredientId: 'mozzarella',
@@ -1146,11 +1145,11 @@ export const productSources: IngredientSource[] = [
     mdd: [
       { ean: '3564700098899', name: 'Pâte brisée au beurre 230 g', chains: ['leclerc'] },
       { ean: '3560071242589', name: 'Pâte brisée pur beurre bio 230 g', chains: ['carrefour'] },
-      { ean: '3596710074686', name: 'Pâte brisée 230 g', chains: ['auchan'] },
       { ean: '3250390303770', name: 'Pâte brisée pur beurre 230 g', chains: ['intermarche', 'netto'] },
       { ean: '3256224191414', name: 'Pâte brisée au beurre 230 g', brand: 'Produits U', chains: ['superu'] },
       { ean: '20250454', name: 'Pâte brisée au beurre 230 g', chains: ['lidl'] },
     ],
+    note: 'Auchan 3596710074686 écarté : pâte à la matière grasse végétale (catégorie OFF, lait seulement en traces), pas une pâte au beurre.',
   },
   {
     ingredientId: 'pate_pizza',
@@ -1243,7 +1242,7 @@ export const productSources: IngredientSource[] = [
         chains: ['superu'],
       },
       { ean: '4335619354937', name: 'Pain de mie extra moelleux 500 g', chains: ['lidl'] },
-      { ean: '4068262022037', name: 'Pain de mie 550 g', chains: ['aldi'] },
+      { ean: '4068262022037', name: 'Pain de mie céréales & graines 550 g', chains: ['aldi'] },
       { ean: '3350033672758', name: 'Pain de mie extra moelleux nature 500 g', chains: ['monoprix'] },
     ],
     note: 'Allergènes OFF sans doute issus de traces, gardés par prudence (produit écarté pour ces profils) : Chabrior 3250390036692 → œufs, soja, lait, sésame.',

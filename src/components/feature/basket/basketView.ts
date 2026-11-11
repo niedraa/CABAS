@@ -16,7 +16,16 @@ import type {
   Store,
   StoreOffer,
 } from '@/core';
-import { formatPrice, formatQuantity, hasEstimatedPrice, optimizeBasket, storeDisplayName, storeFees } from '@/core';
+import {
+  formatNumberFr,
+  formatPrice,
+  formatQuantity,
+  hasEstimatedPrice,
+  optimizeBasket,
+  storeDisplayName,
+  storeFees,
+  storeServiceLabel,
+} from '@/core';
 
 // ─── Libellés ────────────────────────────────────────────────────────────────
 
@@ -34,10 +43,25 @@ export const CHANNEL_LABELS: Record<OrderChannel, string> = { drive: 'Drive', de
  * « Livraison ».
  */
 export function serviceLabel(store: Partial<Pick<Store, 'pickup'>> | null | undefined, channel: OrderChannel): string {
-  if (channel === 'delivery') return CHANNEL_LABELS.delivery;
-  if (store?.pickup === 'click_collect') return 'Click & collect';
-  if (store?.pickup === 'none') return 'En magasin';
-  return CHANNEL_LABELS.drive;
+  return storeServiceLabel(store, channel);
+}
+
+/**
+ * Part sous le minimum de commande du magasin (aucun panier ne le respectait) :
+ * avertissement à montrer avant de commander, sinon `null`.
+ */
+export function minOrderWarning(
+  part: Pick<BasketStorePart, 'minOrderShortfallCents' | 'subtotalCents'>,
+  store: Pick<Store, 'chain' | 'name' | 'minOrderCents'> | null | undefined,
+): { title: string; message: string } | null {
+  const shortfall = part.minOrderShortfallCents ?? 0;
+  if (!(shortfall > 0)) return null;
+  const short = storeDisplayName(store, { short: true });
+  const min = store?.minOrderCents && store.minOrderCents > 0 ? store.minOrderCents : part.subtotalCents + shortfall;
+  return {
+    title: `Minimum de commande : ${formatPrice(min)}`,
+    message: `Il manque ${formatPrice(shortfall)} pour commander chez ${short} : ajoute des articles ou fais tes courses sur place.`,
+  };
 }
 
 /** Nombre de lignes au prix estimé. */
@@ -73,9 +97,13 @@ export function plural(n: number, singular: string, pluralForm = `${singular}s`)
 /** Espace insécable : « 250 g » ne se coupe jamais en fin de ligne. */
 const NBSP = '\u00A0';
 
-/** Contenance d'un conditionnement : « 250 g », « 1 l », « 6 pièces » (insécable). */
+/**
+ * Contenance d'un conditionnement : « 250 g », « 1 l », « 6 pièces », « 0,4 pièce »
+ * (sachet d'herbes de 11 g pour une botte de 30 g), insécable.
+ */
 export function packLabel(product: Pick<Product, 'packSize' | 'packUnit'>): string {
-  const raw = product.packUnit === 'piece' ? plural(product.packSize, 'pièce') : formatQuantity(product.packSize, product.packUnit);
+  const pieces = (n: number) => (Number.isInteger(n) ? plural(n, 'pièce') : `${formatNumberFr(n, 1)} pièce`);
+  const raw = product.packUnit === 'piece' ? pieces(product.packSize) : formatQuantity(product.packSize, product.packUnit);
   return raw.replace(/ /g, NBSP);
 }
 
@@ -220,8 +248,8 @@ export interface ComparisonRowData {
   stores: number;
   /** Écart entre l'offre la plus chère et la moins chère. */
   spreadCents: number;
-  /** Où l'article est dans le panier, s'il n'y est pas au meilleur prix. */
-  basket: { storeId: string; totalCents: number; extraCents: number } | null;
+  /** Où l'article est dans le panier, s'il n'y est pas au meilleur prix (`estimated` : prix estimé). */
+  basket: { storeId: string; totalCents: number; extraCents: number; estimated: boolean } | null;
   inBasket: boolean;
   mdd: MddSignal | null;
   /** Le meilleur prix est une ESTIMATION (aucun relevé dans cette enseigne). */
@@ -244,7 +272,10 @@ export function comparisonRows(comparisons: readonly ItemComparison[], plan: Bas
       bestStoreId: best.storeId,
       stores: c.offers.length,
       spreadCents: Math.max(...totals) - Math.min(...totals),
-      basket: line && (line.storeId !== best.storeId || extra > 0) ? { storeId: line.storeId, totalCents: line.totalCents, extraCents: Math.max(0, extra) } : null,
+      basket:
+        line && (line.storeId !== best.storeId || extra > 0)
+          ? { storeId: line.storeId, totalCents: line.totalCents, extraCents: Math.max(0, extra), estimated: hasEstimatedPrice(line) }
+          : null,
       inBasket: !!line,
       mdd: mddSignal(c),
       bestEstimated: hasEstimatedPrice(best),
@@ -265,23 +296,46 @@ export function comparedStoreIds(comparisons: readonly ItemComparison[]): string
 export interface MissingRow {
   itemId: string;
   label: string;
-  /** `nowhere` : aucune enseigne ; `elsewhere` : pas dans les magasins du panier. */
-  reason: 'nowhere' | 'elsewhere';
-  elsewhere: { storeId: string; totalCents: number } | null;
+  /**
+   * - `nowhere` : aucune enseigne ne le vend ;
+   * - `allergen` : tous les produits connus contiennent un allergène déclaré du profil ;
+   * - `min_order` : vendu dans un de tes magasins, écarté pour son minimum de commande ;
+   * - `elsewhere` : pas dans les magasins du panier (meilleur prix ailleurs).
+   */
+  reason: 'nowhere' | 'allergen' | 'min_order' | 'elsewhere';
+  /** Meilleur prix ailleurs ; `estimated` : c'est une estimation (signalée). */
+  elsewhere: { storeId: string; totalCents: number; estimated: boolean } | null;
+  /** `min_order` : magasin écarté et son minimum. */
+  minOrder?: { storeId: string; minOrderCents: number };
 }
 
-export function missingRows(plan: BasketPlan | null, comparisons: readonly ItemComparison[]): MissingRow[] {
+export function missingRows(
+  plan: BasketPlan | null,
+  comparisons: readonly ItemComparison[],
+  opts: { allergenExcludedItemIds?: readonly string[] } = {},
+): MissingRow[] {
   if (!plan) return [];
   const byId = new Map(comparisons.map((c) => [c.itemId, c]));
+  const excluded = new Set(opts.allergenExcludedItemIds ?? []);
+  const skipped = new Map<string, { storeId: string; minOrderCents: number }>();
+  for (const s of plan.minOrderSkipped ?? []) {
+    for (const id of s.itemIds) if (!skipped.has(id)) skipped.set(id, { storeId: s.storeId, minOrderCents: s.minOrderCents });
+  }
   return plan.missingItemIds.map((id) => {
     const c = byId.get(id);
     const best = c?.best ?? c?.offers[0];
-    return {
+    const row: MissingRow = {
       itemId: id,
       label: c?.label ?? 'Article',
-      reason: best ? 'elsewhere' : 'nowhere',
-      elsewhere: best ? { storeId: best.storeId, totalCents: best.totalCents } : null,
+      reason: best ? 'elsewhere' : excluded.has(id) ? 'allergen' : 'nowhere',
+      elsewhere: best ? { storeId: best.storeId, totalCents: best.totalCents, estimated: hasEstimatedPrice(best) } : null,
     };
+    const minOrder = skipped.get(id);
+    if (minOrder) {
+      row.reason = 'min_order';
+      row.minOrder = minOrder;
+    }
+    return row;
   });
 }
 

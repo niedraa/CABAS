@@ -316,13 +316,17 @@ export const ingredients: Ingredient[] = [
     density: 1.05,
   }),
   ing('vinaigre_vin', 'Vinaigre de vin', 'condiments', 'ml', { allergens: ['sulfites'], isPantryStaple: true }),
-  ing('moutarde', 'Moutarde de Dijon', 'condiments', 'g', { allergens: ['moutarde'] }),
+  // Moutarde de Dijon industrielle : presque toujours conservée au disulfite de
+  // potassium (E224) — 7 produits sur 10 du catalogue le déclarent.
+  ing('moutarde', 'Moutarde de Dijon', 'condiments', 'g', { allergens: ['moutarde', 'sulfites'] }),
   ing('mayonnaise', 'Mayonnaise', 'condiments', 'g', { allergens: ['oeufs', 'moutarde'], isAnimalProduct: true, density: 0.92 }),
   ing('ketchup', 'Ketchup', 'condiments', 'g', { density: 1.1 }),
   ing('sauce_soja', 'Sauce soja', 'condiments', 'ml', { allergens: ['soja', 'gluten'], density: 1.15 }),
-  // Pesto industriel : fromage (lait) + très souvent noix de cajou (fruits à coque).
+  // Pesto industriel : fromage (lait) + très souvent noix de cajou (fruits à coque)
+  // + œuf : le Grana Padano est souvent conservé au lysozyme (protéine d'œuf) —
+  // 5 pestos sur 9 du catalogue déclarent des œufs.
   ing('pesto', 'Pesto au basilic', 'condiments', 'g', {
-    allergens: ['lait', 'fruits_a_coque'],
+    allergens: ['oeufs', 'lait', 'fruits_a_coque'],
     isAnimalProduct: true,
   }),
   ing('tahini', 'Tahini (purée de sésame)', 'condiments', 'g', { allergens: ['sesame'], density: 1.05 }),

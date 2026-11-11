@@ -7,7 +7,12 @@
  * invitation Premium chiffrée), canal drive / livraison, ticket dentelé
  * (total, frais, économie), magasins du panier avec « Commander chez … »,
  * comparaison article par article et articles introuvables. Pied de page :
- * provenance des prix (Open Prices, part d'estimés) et lien « Sources et licences ».
+ * provenance des prix (Open Prices, part d'estimés), attribution ODbL
+ * (`DATA_ATTRIBUTION_LINE`) et lien « Sources et licences ».
+ *
+ * Allergies du profil : un panier calculé AVANT une nouvelle allergie n'est
+ * jamais affiché ni commandable pendant le recalcul (squelettes), et aucune
+ * offre contenant un allergène déclaré n'est montrée.
  */
 import { router, useIsFocused, type Href } from 'expo-router';
 import React, { useEffect, useMemo } from 'react';
@@ -33,7 +38,7 @@ import {
   savingsLabel,
   StorePartCard,
 } from '@/components/feature/basket';
-import { priceDataNotice } from '@/components/feature/sources';
+import { DATA_ATTRIBUTION_LINE, priceDataNotice } from '@/components/feature/sources';
 import {
   Button,
   Divider,
@@ -49,6 +54,7 @@ import type { BasketMode, OrderChannel } from '@/core';
 import { formatWeekRange, PREMIUM_PRICING } from '@/core';
 import { useHydrated, useSubscription } from '@/hooks';
 import { haptics } from '@/lib/haptics';
+import { planHasAllergen, withoutAllergenOffers } from '@/services/basket';
 import { useCatalog } from '@/services/catalog';
 import {
   basketRightsChanged,
@@ -56,6 +62,7 @@ import {
   useBasketIsStale,
   useBasketStore,
   useOrderStore,
+  useProfileStore,
   useWeekList,
   useWeekStore,
 } from '@/stores';
@@ -72,8 +79,17 @@ export default function PriceScreen() {
   const list = useWeekList(ws);
   const mode = useBasketStore((s) => s.mode);
   const channel = useBasketStore((s) => s.channel);
-  const plan = useBasketStore((s) => s.plan);
-  const comparisons = useBasketStore((s) => s.comparisons);
+  const storedPlan = useBasketStore((s) => s.plan);
+  const storedComparisons = useBasketStore((s) => s.comparisons);
+  const allergens = useProfileStore((s) => s.profile?.allergens);
+  // Panier calculé avant une nouvelle allergie (ou produit devenu allergène au
+  // rafraîchissement du catalogue) : masqué, non commandable, et recalculé.
+  const unsafePlan = useMemo(() => planHasAllergen(storedPlan, allergens, catalog), [storedPlan, allergens, catalog]);
+  const plan = unsafePlan ? null : storedPlan;
+  const comparisons = useMemo(
+    () => withoutAllergenOffers(storedComparisons, allergens, catalog),
+    [storedComparisons, allergens, catalog],
+  );
   const status = useBasketStore((s) => s.status);
   const downgraded = useBasketStore((s) => s.downgraded);
   const basketWeek = useBasketStore((s) => s.weekStart);
@@ -91,17 +107,21 @@ export default function PriceScreen() {
   // Calcul à l'arrivée (et au retour sur l'onglet) si la liste ou les magasins ont changé depuis.
   useEffect(() => {
     if (!hydrated || !isFocused || !hasUnchecked) return;
-    if ((stale || rightsChanged) && status !== 'computing' && status !== 'error') {
+    if ((stale || rightsChanged || unsafePlan) && status !== 'computing' && status !== 'error') {
       void useBasketStore.getState().compute();
     }
-  }, [hydrated, isFocused, hasUnchecked, stale, rightsChanged, status]);
+  }, [hydrated, isFocused, hasUnchecked, stale, rightsChanged, unsafePlan, status]);
 
   const state = basketScreenState({ hydrated, list, status, plan, otherWeek: basketWeek !== ws });
   const updating = state === 'ready' && status === 'computing';
 
   const summary = useMemo(() => (plan ? receiptSummary(plan, catalog.storesById) : null), [plan, catalog]);
   const rows = useMemo(() => comparisonRows(comparisons, plan), [comparisons, plan]);
-  const missing = useMemo(() => missingRows(plan, comparisons), [plan, comparisons]);
+  const allergenExcludedItemIds = useBasketStore((s) => s.allergenExcludedItemIds);
+  const missing = useMemo(
+    () => missingRows(plan, comparisons, { allergenExcludedItemIds }),
+    [plan, comparisons, allergenExcludedItemIds],
+  );
   const comparedChains = useMemo(
     () => comparedStoreIds(comparisons).map((id) => catalog.storesById[id]?.chain ?? id),
     [comparisons, catalog],
@@ -306,6 +326,9 @@ export default function PriceScreen() {
           <View style={[styles.footer, { gap: t.spacing.xs }]}>
             <Text variant="footnote" color="textSecondary" align="center" testID="price-notice">
               {priceDataNotice(catalog.meta)}
+            </Text>
+            <Text variant="caption" color="textSecondary" align="center" testID="price-attribution">
+              {DATA_ATTRIBUTION_LINE}
             </Text>
             <Button
               label="Sources et licences"

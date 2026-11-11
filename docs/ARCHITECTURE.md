@@ -70,12 +70,12 @@ data → core/types (imports `import type` uniquement)
 | `mealEngine.ts` | Planning hebdo déterministe (variété, temps, budget, goûts), remplacement d'un plat, prompt & validation de la réponse LLM |
 | `shoppingList.ts` | Agrégation des ingrédients, conversion, arrondi aux conditionnements réels, fusion avec les ajouts manuels |
 | `priceComparison.ts` | Meilleure offre par enseigne, prix au kilo, alternative MDD moins chère ; provenance des prix (relevé > estimation > démo), MDD par `storeChains`, exclusion des produits allergènes |
-| `basketOptimizer.ts` | Panier « le moins cher » (multi-magasins, max 2) ou « un seul magasin » (meilleur total), frais inclus |
-| `order.ts` | Transmission de commande : URL drive pré-remplie / redirection (gabarit sans `{query}` ouvert tel quel), texte de liste (« (prix estimé) ») |
+| `basketOptimizer.ts` | Panier « le moins cher » (multi-magasins, max 2) ou « un seul magasin » (meilleur total), frais inclus ; minimums de commande respectés si possible, et dits : `plan.minOrderSkipped` (magasin écarté, articles restés introuvables), `part.minOrderShortfallCents` (montant manquant faute d'autre choix) |
+| `order.ts` | Transmission de commande : URL drive pré-remplie / redirection (gabarit sans `{query}` ouvert tel quel), texte de liste (« (prix estimé) » ; en-tête selon le service réel : « Ma liste Cabas — Lidl (En magasin) », « (Click & collect) ») |
 | `entitlements.ts` | Gratuit vs Premium (3 repas/semaine, panier optimisé, commande 1 clic, alertes prix) |
 | `pantry.ts` | (V2) Placard : stock maison, déduction de la liste, recettes « anti-gaspi » |
 | `budget.ts` | (V2) Dépenses par semaine / mois, économies réalisées |
-| `priceAlerts.ts` | Détection des baisses de prix sur les produits habituels (jamais sur une estimation) |
+| `priceAlerts.ts` | Détection des baisses de prix sur les produits habituels (jamais sur une estimation, jamais sur un produit contenant un allergène déclaré : option `excludeAllergens` + `products`, partagée app / `collect-prices`) |
 
 ## État client (`src/stores`)
 
@@ -141,11 +141,24 @@ testée) et ses tests dans `__tests__/`.
   (`services/catalog › catalogIndexWithoutAllergens`), option
   `excludeAllergens` de `compareList` / `allOffersForItem`, et filtre de
   `productChoices` (défense en profondeur). Le panier est recalculé si les
-  allergies du profil changent.
+  allergies du profil changent ; PENDANT le recalcul, un panier qui contient
+  un produit désormais allergène n'est ni affiché (squelettes), ni commandable
+  (`orderStore.prepareOrder` / `openOrder` / `orderText` refusent), et le
+  détail d'un article refiltre la comparaison enregistrée
+  (`services/basket › planHasAllergen`, `linesHaveAllergen`,
+  `withoutAllergenOffers`). Les alertes de baisse de prix (locales et
+  serveur) et le budget estimé de « Ma semaine » (`listEstimateFor`) suivent
+  la même règle. Un article dont tous les produits connus contiennent un
+  allergène déclaré est dit « écarté pour tes allergies »
+  (`allergenExcludedItemIds`), pas « introuvable ».
 - **Transparence** : pied de l'onglet Prix (`priceDataNotice(meta)`, même texte
   que `PRICE_DATA_NOTICE` pour l'instantané embarqué) et écran
   `parametres/sources` (`components/feature/sources`), qui lisent `CatalogMeta`
-  de l'instantané courant (`useCatalog().meta`).
+  de l'instantané courant (`useCatalog().meta`). L'attribution ODbL
+  (`DATA_ATTRIBUTION_LINE` = `DATA_ATTRIBUTION`) est affichée partout où des
+  prix sont présentés : onglet Prix, détail d'un article, ticket de commande.
+  Toute estimation reste signalée, y compris « Dispo chez … (prix estimé) » et
+  le prix du panier dans la comparaison.
 
 ## Qualité
 

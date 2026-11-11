@@ -1,6 +1,6 @@
 import type { Ingredient, Price, Product, ShoppingListItem, Store } from '@/core';
 
-import { createBasketService, effectiveBasketMode, type BasketRemote } from '../basket';
+import { allergenExcludedItems, createBasketService, effectiveBasketMode, listEstimateFor, type BasketRemote } from '../basket';
 import { buildCatalogSnapshot } from '../catalog';
 
 /**
@@ -154,5 +154,48 @@ describe('basket service', () => {
     });
     expect(res.source).toBe('fallback');
     expect(res.mode).toBe('single_store');
+  });
+});
+
+describe('allergies du profil hors panier', () => {
+  // Riz « au gluten » (moins cher) et riz sans gluten (plus cher) : 2 produits du même ingrédient.
+  const glutenRice: Product = { ...product('riz'), id: 'prd_riz_gluten', ean: '3017620422003', allergens: ['gluten'] };
+  const snap = buildCatalogSnapshot(
+    {
+      recipes: [],
+      ingredients: INGREDIENT_IDS.map(ingredient),
+      stores: STORE_IDS.map(store),
+      products: [...INGREDIENT_IDS.map(product), glutenRice],
+      prices: [...PRICES, ...STORE_IDS.map((s) => ({ ...PRICES[0], productId: glutenRice.id, storeId: s, priceCents: 50 }))],
+    },
+    'local',
+  );
+
+  it('le budget estimé de la semaine ne compte jamais un produit contenant un allergène déclaré', () => {
+    const list = items().slice(0, 1);
+    const all = listEstimateFor(list, undefined, snap)!;
+    const safe = listEstimateFor(list, ['gluten'], snap)!;
+    // Sans allergie : le riz au gluten (50 c × 1 paquet) ; avec : le riz sûr, plus cher.
+    expect(all).toBe(50);
+    expect(safe).toBeGreaterThan(all);
+    expect(safe).toBe(Math.min(...PRICES.filter((p) => p.productId === 'prd_riz').map((p) => p.priceCents)));
+  });
+
+  it('distingue un article écarté pour une allergie (tous ses produits connus en contiennent)', async () => {
+    const onlyGluten = buildCatalogSnapshot(
+      {
+        recipes: [],
+        ingredients: INGREDIENT_IDS.map(ingredient),
+        stores: STORE_IDS.map(store),
+        products: [{ ...product('riz'), allergens: ['gluten'] }, ...INGREDIENT_IDS.slice(1).map(product)],
+        prices: PRICES,
+      },
+      'local',
+    );
+    const service = createBasketService({ remote: null, getCatalog: () => onlyGluten });
+    const req = { items: items(), mode: 'single_store' as const, storeIds: [], channel: 'drive' as const, entitlement: 'free' as const };
+    expect((await service.computeBasket({ ...req, allergens: ['gluten'] })).allergenExcludedItemIds).toEqual(['riz']);
+    expect((await service.computeBasket(req)).allergenExcludedItemIds).toEqual([]);
+    expect(allergenExcludedItems(items(), [], ['gluten'], onlyGluten)).toEqual([]);
   });
 });

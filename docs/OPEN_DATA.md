@@ -61,8 +61,18 @@ changer) : `prd_<ingrédient>` (marque nationale), `prd_<ingrédient>_bio`,
 `prd_<ingrédient>_vrac`.
 
 Pour valider le pipeline sans toucher au catalogue, chaque étape accepte une
-liste JSON de même format : `--sources liste.json` (avec `--out` obligatoire
-pour l'instantané et le générateur).
+liste JSON de même format : `--sources liste.json` — un tableau
+d'`IngredientSource` ou `{ "productSources": [...] }`, lus par le même
+`loadSources` (`scripts/open-data/lib.mjs`) aux trois étapes ; `--out`
+obligatoire pour l'instantané et le générateur.
+
+**Relecture** (tests d'intégrité) : un code-barres écarté (pizza au chorizo,
+Grana Padano, pâte brisée végétale…) ne revient jamais ; une surcharge `name`
+ne cache pas un mot distinctif de la fiche (« céréales », « graines »,
+« grana », « pizza ») ; la contenance est le poids NET (« 2 l (1,4 kg) » →
+1 400 g) et un sachet d'herbes compte en fraction de botte (11 g = 0,4 botte de
+30 g) ; un allergène déclaré par au moins la moitié des fiches d'un
+ingrédient (≥ 3) doit figurer sur l'ingrédient.
 
 ## 2. Téléchargements (`npm run data:fetch`)
 
@@ -97,7 +107,7 @@ Un relevé n'est retenu que si **toutes** ces conditions sont vraies :
 | Quantité de ticket | `receipt_quantity` ≤ 1 ou absente (au-delà, prix unitaire ou total : ambigu) |
 | Code-barres | GTIN-8 ou GTIN-13 à clé valide (UPC-A / GTIN-14 ramenés à 13 chiffres), jamais un code poids variable (13 chiffres commençant par 2) ; un code-barres relevé « au kilo » est écarté |
 | Vrac | catégorie `xx:…` et `price_per` `KILOGRAM` ou `UNIT` |
-| Prix normal | promo : le prix barré `price_without_discount` devient le prix normal ; **promo sans prix barré : relevé écarté**. L'instantané ne contient aucune promotion. |
+| Prix normal | prix payé entre 0,01 € et 10 000 € ; promo : le prix barré `price_without_discount` devient le prix normal (supérieur au prix payé, **au plus 10 000 €** : une saisie « 9999999 » est écartée) ; **promo sans prix barré : relevé écarté**. L'instantané ne contient aucune promotion. |
 | Données personnelles | le champ `owner` (pseudonyme) n'est jamais lu ni conservé |
 
 ### Détection d'enseigne (`detectChain`)
@@ -128,7 +138,10 @@ Pour chaque clé du catalogue — `ean:<gtin>`, `cat:<catégorie>:<KILOGRAM|UNIT
 (vrac conventionnel) ou `…:organic` (vrac bio) — et chaque enseigne : **médiane
 du prix normal** de ses relevés, en ne gardant que les relevés hyper / super
 s'il y en a (les formats de proximité sont 12 à 22 % plus chers), arrondie au
-centime. On conserve le nombre de relevés et les dates du premier et du dernier.
+centime. On conserve le nombre de relevés, les dates du premier et du dernier,
+et `proximityOnly: true` quand la médiane ne repose QUE sur des formats de
+proximité (163 prix relevés du catalogue) : le seed en fait un socle
+« proximité », qu'un premier relevé hyper / super remplacera dans la collecte.
 
 ### Indice de prix des enseignes (`computeChainIndex`)
 
@@ -158,8 +171,9 @@ Instantané du 11 novembre 2026 (relevés du 11/11/2025 au 11/11/2026) :
 
 Pour chaque code-barres : nom (`product_name_fr`, sinon `product_name`),
 marques, contenance (`parseOffQuantity` : `product_quantity` +
-`product_quantity_unit`, sinon le texte « 2 x 75 g », « 75 cl », « 6 œufs » ;
-valeur invraisemblable rejetée), Nutri-Score, labels bio, allergènes
+`product_quantity_unit`, sinon le texte « 2 x 75 g », « 125 g x 4 »,
+« 1 kg 500 », « 75 cl », « 6 œufs » ; valeur invraisemblable rejetée),
+Nutri-Score, labels bio, allergènes
 (`allergens_tags` → les 14 allergènes réglementaires, `mapOffAllergens`) et
 traces (pour information).
 
@@ -179,7 +193,8 @@ Food Facts non reconnus ou absents de l'ingrédient, contenances illisibles.
 
 - Contenance : surcharge de la source, sinon Open Food Facts, convertie dans
   l'unité de base de l'ingrédient (densité g ↔ ml, poids moyen pièce ↔ g) ;
-  produit écarté (et signalé) si inconnue.
+  produit écarté (et signalé) si inconnue ou non convertible — **jamais
+  « 1 ml = 1 g »** sans densité de l'ingrédient (préciser `packSize`).
 - Nom : surcharge, sinon nom Open Food Facts nettoyé (espaces, capitales,
   marque répétée en tête) ; marque : surcharge, sinon la première marque
   Open Food Facts (signalé pour une MDD à plusieurs marques).
@@ -190,6 +205,10 @@ Food Facts non reconnus ou absents de l'ingrédient, contenances illisibles.
 - Vrac : pas de code-barres, `offCategoryTag` = première catégorie ; vendu par
   « portion » : pièce moyenne (≥ 100 g) pour un ingrédient en g, 1 pièce pour
   un ingrédient à la pièce ; prix = prix au kilo (ou à la pièce) × portion.
+  Le produit porte aussi les règles de l'instantané pour la collecte :
+  `offCategoryTags` (toutes les catégories, par préférence), `offPricePer`
+  (unité des relevés de la SOURCE : le concombre, au poids, se relève à la
+  pièce) et `offPackFactor` (prix relevé → prix de la portion).
 - Un produit sans aucun prix (ni relevé ni estimable) est écarté et signalé.
 
 ### Prix relevés (`source: 'open_prices'`)
@@ -214,37 +233,41 @@ les médianes sont pondérées par le nombre de relevés.
 ### Méta (`catalogMeta`) et mentions
 
 `meta.ts` : date de l'instantané, fenêtre des relevés, nombres de prix relevés
-/ estimés, indice et couverture par enseigne, sources et licences.
-`src/data/index.ts` en tire `PRICE_DATA_NOTICE` (origine des prix, part
-estimée, caractère indicatif) et exporte `DATA_ATTRIBUTION`.
+/ estimés, indice et couverture par enseigne, sources et licences, et
+`lastCreatedAt` (horodatage exact du dernier relevé de l'export : curseur
+initial de la collecte). `src/data/index.ts` en tire `PRICE_DATA_NOTICE`
+(origine des prix, part estimée, caractère indicatif) et exporte
+`DATA_ATTRIBUTION`, affichée sous les prix (onglet Prix, détail d'un article,
+ticket de commande).
 
 ## 5. Catalogue actuel (instantané du 11 novembre 2026)
 
 Relevés du 11/11/2025 au 11/11/2026 : 343 096 lus, **96 591 retenus**
-(France métropolitaine, 10 enseignes, 1 553 magasins). Sources : 145
-ingrédients achetables (tous sauf l'eau), 838 codes-barres, 28 catégories vrac.
+(France métropolitaine, 10 enseignes, **660 magasins** ayant fourni au moins
+un relevé retenu, sur 1 553 lieux candidats). Sources : 145 ingrédients
+achetables (tous sauf l'eau), 835 codes-barres, 28 catégories vrac.
 
 | | Produits |
 |---|---|
 | Marques nationales | 126 |
 | Variantes bio | 66 |
-| MDD | 646 |
+| MDD | 643 |
 | Vrac | 28 |
-| **Total** | **866** |
+| **Total** | **863** |
 
-**2 361 prix** : 1 145 relevés (48 %) et 1 216 estimés — 941 `chain_index`
+**2 358 prix** : 1 142 relevés (48 %) et 1 216 estimés — 941 `chain_index`
 (dont 70 MDD des Mousquetaires estimées chez Netto ou Intermarché d'après leur
-propre relevé), 126 `mdd_ratio`, 149 `category_median`. 733 codes-barres sur 838 (87 %) ont au
-moins un relevé ; 748 prix relevés reposent sur un seul relevé.
+propre relevé), 126 `mdd_ratio`, 149 `category_median`. 730 codes-barres sur 835 (87 %) ont au
+moins un relevé ; 745 prix relevés reposent sur un seul relevé.
 
 | Enseigne | Prix relevés | Prix estimés | Ingrédients chiffrés | dont relevés | Ingrédients de recette chiffrés |
 |---|---|---|---|---|---|
 | Leclerc | 241 | 89 | 145 | 131 | 138 / 138 |
-| Carrefour | 217 | 107 | 145 | 124 | 138 / 138 |
-| Auchan | 161 | 140 | 145 | 97 | 138 / 138 |
+| Carrefour | 216 | 107 | 145 | 123 | 138 / 138 |
+| Auchan | 160 | 140 | 145 | 96 | 138 / 138 |
 | Intermarché | 140 | 171 | 145 | 96 | 138 / 138 |
 | Super U | 178 | 138 | 145 | 110 | 138 / 138 |
-| Lidl | 47 | 35 | 77 | 43 | 73 / 138 |
+| Lidl | 46 | 35 | 76 | 42 | 72 / 138 |
 | Aldi | 12 | 35 | 45 | 12 | 43 / 138 |
 | Netto | 1 | 118 | 110 | 1 | 104 / 138 |
 | Monoprix | 82 | 190 | 145 | 64 | 138 / 138 |
@@ -259,7 +282,16 @@ Choix d'intégration (détails dans les `note` de `productSources.ts`) :
 
 - **Vrac à la pièce** pour le chou-fleur, le concombre et la courge butternut
   (relevés `UNIT`, convertis par `gramsPerPiece`) : il n'y a presque aucun
-  relevé au kilo.
+  relevé au kilo. La collecte les rattache dans cette même unité
+  (`offPricePer`).
+- **Herbes fraîches** : sachets de 11 à 20 g, comptés en fraction de botte
+  (persil 11 g = 0,4 botte de 30 g) ; jamais un sachet pour une botte.
+- **Moules** : la fiche « 2 l (1,4 kg) » donne le volume du sac ; la
+  contenance retenue est le poids net, 1 400 g.
+- **Écartés à la relecture** (autre produit que l'ingrédient) : « Chorizo »
+  Carrefour 3245413824899 (pizza au chorizo), « Parmesan » Lidl 4056489043157
+  (Grana Padano), pâte brisée Auchan 3596710074686 (matière grasse végétale).
+  Le pain de mie Aldi garde son vrai nom (« céréales & graines »).
 - **Substituts** faute de produit à code fixe relevé (la viande à la coupe est
   en poids variable, exclue) : épaule d'agneau → gigot Pure South 2 kg ;
   filet mignon de porc → filet de porc mariné Nobles et pavés de porc U. Leurs
@@ -272,8 +304,11 @@ Choix d'intégration (détails dans les `note` de `productSources.ts`) :
 - **Marques** : raisons sociales et capitales d'Open Food Facts corrigées
   (« CARREFOUR FRANCE » → Carrefour, « Groupe Casino » → Monoprix…) ; la
   marque U s'affiche « Produits U ».
-- **Allergènes** : 62 produits portent des allergènes Open Food Facts absents
-  de l'ingrédient. Ce sont souvent des traces saisies comme allergènes
+- **Allergènes** : la moutarde de Dijon porte les sulfites (disulfite de
+  potassium, déclaré par 7 fiches sur 10) et le pesto les œufs (lysozyme du
+  Grana Padano, 5 fiches sur 9) au niveau de l'INGRÉDIENT : les recettes qui
+  les utilisent sont exclues pour ces profils. 49 produits portent encore des
+  allergènes Open Food Facts absents de l'ingrédient. Ce sont souvent des traces saisies comme allergènes
   (lentilles « fruits à coque », baguette avec 12 allergènes…). Ils sont
   **conservés par prudence** : le produit est alors écarté pour ces profils. Les
   tags non reconnus (11, par exemple `en:beef` ou `fr:OGM`) ne sont pas des
@@ -305,6 +340,9 @@ collecte incrémentale Open Prices, avec les mêmes fonctions de
   (566 relevés sur l'année), Aldi (83) et Netto (19) très peu → indices
   « presse » et prix surtout estimés (MDD et vrac). Un panier Lidl, Aldi ou
   Netto ne couvre qu'une partie des recettes (voir § 5).
+- Quand tous les produits connus d'un ingrédient portent un allergène déclaré
+  du profil (ex. le paleron de bœuf « lait »), l'article est signalé « écarté
+  pour tes allergies », jamais « introuvable ».
 - Netto n'a presque aucun relevé (1 prix relevé) : ses prix sont des
   estimations, avec un indice « presse » (1,00) faute de produits communs ;
   une MDD des Mousquetaires y est estimée d'après son prix Intermarché ÷ 1,087.

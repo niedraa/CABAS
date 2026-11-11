@@ -253,51 +253,82 @@ export function locationBatches(locations: readonly CollectLocation[], size = LO
 
 // ─── Rattachement au catalogue ───────────────────────────────────────────────
 
-/** Unité de prix d'un produit vrac : au kilo (g) ou à la pièce ; `null` sinon. */
-export function loosePricePer(product: Pick<Product, 'packUnit'>): 'KILOGRAM' | 'UNIT' | null {
+/**
+ * Unité des relevés d'un produit vrac : celle de la SOURCE (`offPricePer`,
+ * comme l'instantané — un concombre au poids se relève à la pièce), à défaut
+ * déduite du conditionnement (g → au kilo, pièce → à la pièce) ; `null` sinon.
+ */
+export function loosePricePer(product: Pick<Product, 'packUnit' | 'offPricePer'>): 'KILOGRAM' | 'UNIT' | null {
+  if (product.offPricePer === 'KILOGRAM' || product.offPricePer === 'UNIT') return product.offPricePer;
   return product.packUnit === 'g' ? 'KILOGRAM' : product.packUnit === 'piece' ? 'UNIT' : null;
 }
 
-/** Facteur prix unitaire de la source → prix du conditionnement du produit. */
+/** Facteur prix unitaire de la source → prix du conditionnement du produit (celui du générateur si connu). */
 export function packFactor(
-  product: Pick<Product, 'packSize' | 'packUnit'>,
+  product: Pick<Product, 'packSize' | 'packUnit' | 'offPricePer' | 'offPackFactor'>,
   pricePer: 'KILOGRAM' | 'UNIT' | null,
 ): number {
+  if (pricePer !== null && product.offPackFactor !== undefined && product.offPackFactor > 0) {
+    if (loosePricePer(product) === pricePer) return product.offPackFactor;
+  }
   if (pricePer === 'KILOGRAM') return product.packSize / 1000;
   if (pricePer === 'UNIT') return product.packSize;
   return 1;
 }
 
-/** Clé d'agrégat d'un produit du catalogue (même forme que core › aggregateKey d'un relevé). */
-export function productKey(product: Product): string | null {
+/** Catégories vrac d'un produit, par ordre de préférence (la 1re = `offCategoryTag`). */
+export function looseCategoryTags(product: Pick<Product, 'offCategoryTag' | 'offCategoryTags'>): string[] {
+  const tags = (product.offCategoryTags && product.offCategoryTags.length > 0)
+    ? product.offCategoryTags
+    : product.offCategoryTag
+    ? [product.offCategoryTag]
+    : [];
+  return Array.from(new Set(tags.map((t) => t.trim().toLowerCase()).filter(Boolean)));
+}
+
+/**
+ * Clés d'agrégat d'un produit du catalogue (même forme que core › aggregateKey
+ * d'un relevé) : son code-barres, ou UNE clé par catégorie vrac (toutes ses
+ * catégories, dans l'ordre de préférence).
+ */
+export function productKeys(product: Product): string[] {
   if (product.ean) {
     const gtin = normalizeGtin(product.ean);
-    return gtin ? eanKey(gtin) : null;
+    return gtin ? [eanKey(gtin)] : [];
   }
-  if (product.offCategoryTag) {
-    const per = loosePricePer(product);
-    if (!per) return null;
-    return aggregateKey({
-      key: categoryKey(product.offCategoryTag.toLowerCase(), per),
-      pricePer: per,
-      organic: !!product.organic,
-    });
-  }
-  return null;
+  const per = loosePricePer(product);
+  if (!per) return [];
+  return looseCategoryTags(product).map((tag) =>
+    aggregateKey({ key: categoryKey(tag, per), pricePer: per, organic: !!product.organic })
+  );
+}
+
+/** Clé d'agrégat principale d'un produit (code-barres ou 1re catégorie vrac). */
+export function productKey(product: Product): string | null {
+  return productKeys(product)[0] ?? null;
 }
 
 /** Index clé d'agrégat → produits du catalogue. */
 export function buildProductMatcher(products: readonly Product[]): Map<string, Product[]> {
   const m = new Map<string, Product[]>();
   for (const p of products) {
-    const key = productKey(p);
-    if (!key) continue;
-    const list = m.get(key);
-    if (list) list.push(p);
-    else m.set(key, [p]);
+    for (const key of productKeys(p)) {
+      const list = m.get(key);
+      if (!list) m.set(key, [p]);
+      else if (!list.includes(p)) list.push(p);
+    }
   }
   return m;
 }
+
+/** Catégorie d'une clé de relevé vrac `cat:<tag>:<unité>` (sinon `undefined`). */
+function categoryOfKey(key: string): string | undefined {
+  const m = /^cat:(.+):(?:KILOGRAM|UNIT)$/.exec(key);
+  return m ? m[1] : undefined;
+}
+
+/** Plus grand entier SQL (`integer`) : au-delà, la ligne ne peut pas être stockée. */
+const MAX_SQL_INT = 2_147_483_647;
 
 /** Relevé (ou socle) stocké dans `price_observations`. */
 export interface StoredObservation {
@@ -311,6 +342,8 @@ export interface StoredObservation {
   regularMilli: number;
   promoMilli?: number;
   pricePer: 'KILOGRAM' | 'UNIT' | null;
+  /** Vrac : catégorie Open Food Facts du relevé (socle : celle retenue par l'instantané). */
+  categoryTag?: string;
   proximity: boolean;
   /** Jour du relevé (socle : relevé le plus récent). */
   observedOn: string;
@@ -341,6 +374,10 @@ export function matchItem(
     : { ...item, location: locationForObservation(fallbackLocation) };
   const obs = normalizeObservation(raw, window);
   if (!obs) return { status: 'rejected' };
+  // Défense en profondeur : un prix hors de l'entier SQL bloquerait toute l'insertion.
+  const regularMilli = Math.round(obs.regularEur * 1000);
+  if (!(regularMilli > 0 && regularMilli <= MAX_SQL_INT)) return { status: 'rejected' };
+  const categoryTag = obs.pricePer !== null ? categoryOfKey(obs.key) : undefined;
   const products = (matcher.get(aggregateKey(obs)) ?? []).filter(
     (p) => !p.isStoreBrand || (p.storeChains ?? []).includes(obs.chain),
   );
@@ -356,11 +393,12 @@ export function matchItem(
       kind: 'observation',
       openPricesId: id,
       weight: 1,
-      regularMilli: Math.round(obs.regularEur * 1000),
+      regularMilli,
       pricePer: obs.pricePer,
       proximity: obs.proximity,
       observedOn: obs.date,
     };
+    if (categoryTag) row.categoryTag = categoryTag;
     if (Number.isInteger(locationId) && locationId > 0) row.locationId = locationId;
     if (obs.promoEur !== undefined) {
       const promo = Math.round(obs.promoEur * 1000);
@@ -410,9 +448,19 @@ export function chainPriceFromObservations(
   window: { from: string; to: string },
 ): Price | null {
   const inWindow = rows.filter((r) => r.observedOn >= window.from && r.observedOn <= window.to);
-  // Unité cohérente avec le produit (un code-barres : prix du conditionnement).
+  // Unité cohérente avec le produit (un code-barres : prix du conditionnement ;
+  // vrac : l'unité de la source, comme l'instantané).
   const per = product.ean ? null : loosePricePer(product);
-  const usable = inWindow.filter((r) => r.pricePer === per);
+  let usable = inWindow.filter((r) => r.pricePer === per);
+  if (!product.ean) {
+    // Vrac : la 1re catégorie (ordre de préférence) qui a des relevés dans la
+    // fenêtre, comme l'instantané. Relevé sans catégorie (ancien) : la 1re.
+    const tags = looseCategoryTags(product);
+    const rank = (r: StoredObservation) => (r.categoryTag ? tags.indexOf(r.categoryTag) : 0);
+    const ranked = usable.filter((r) => rank(r) >= 0);
+    const best = ranked.reduce((m, r) => Math.min(m, rank(r)), Number.POSITIVE_INFINITY);
+    usable = ranked.filter((r) => rank(r) === best);
+  }
   const agg = aggregateObservations(toCoreObservations(usable, productKey(product) ?? product.id));
   if (!agg) return null;
   const factor = packFactor(product, per);

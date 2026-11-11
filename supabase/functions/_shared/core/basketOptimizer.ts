@@ -11,10 +11,25 @@
  *   magasin le moins cher de la combinaison ; frais de retrait / livraison
  *   par magasin utilisé ; minimum de commande respecté si possible.
  *
- * Ordre de choix : couverture maximale, puis total minimal, puis moins de
- * magasins, puis ids de magasins (déterminisme).
+ * Ordre de choix : un panier qui respecte les minimums de commande passe
+ * avant (s'il en existe un), puis couverture maximale, total minimal, moins de
+ * magasins, ids de magasins (déterminisme). Ce choix est TRANSPARENT :
+ *  - un magasin écarté à cause de son minimum alors qu'il vendait des articles
+ *    restés introuvables est listé dans `plan.minOrderSkipped` ;
+ *  - si aucun panier ne respecte les minimums, chaque part sous son minimum
+ *    porte `minOrderShortfallCents` (montant manquant).
  */
-import type { BasketLine, BasketMode, BasketPlan, BasketStorePart, ItemComparison, OrderChannel, Store, StoreOffer } from './types.ts';
+import type {
+  BasketLine,
+  BasketMode,
+  BasketPlan,
+  BasketStorePart,
+  ItemComparison,
+  MinOrderSkip,
+  OrderChannel,
+  Store,
+  StoreOffer,
+} from './types.ts';
 
 export interface StoreTotal {
   storeId: string;
@@ -254,6 +269,8 @@ export function optimizeBasket(
 
   let chosen: Evaluation | undefined;
   for (const e of pool) if (!chosen || better(e, chosen)) chosen = e;
+  const storeById = new Map(eligible.map((s) => [s.id, s]));
+  const minOrderOf = (storeId: string) => storeById.get(storeId)?.minOrderCents ?? 0;
 
   const computedAt = opts.now ?? new Date().toISOString();
   if (!chosen) {
@@ -286,12 +303,35 @@ export function optimizeBasket(
     worst = Math.max(worst, subtotal + fees);
   }
 
-  return {
+  // Aucun panier ne respecte les minimums : montant manquant par part, à signaler.
+  const parts = chosen.parts.map((part) => {
+    const shortfall = minOrderOf(part.storeId) - part.subtotalCents;
+    return shortfall > 0 ? { ...part, minOrderShortfallCents: shortfall } : part;
+  });
+
+  // Minimums respectés au prix d'articles introuvables : quels magasins, quels articles ?
+  const minOrderSkipped: MinOrderSkip[] = [];
+  if (valid.length > 0) {
+    let bestOverall: Evaluation | undefined;
+    for (const e of evaluations) if (!bestOverall || better(e, bestOverall)) bestOverall = e;
+    if (bestOverall && !bestOverall.valid && bestOverall.coveredIds.size > chosen.coveredIds.size) {
+      for (const part of bestOverall.parts) {
+        const min = minOrderOf(part.storeId);
+        if (part.subtotalCents >= min) continue;
+        const itemIds = part.lines.map((l) => l.itemId).filter((id) => !chosen.coveredIds.has(id));
+        if (itemIds.length > 0) minOrderSkipped.push({ storeId: part.storeId, minOrderCents: min, itemIds });
+      }
+    }
+  }
+
+  const plan: BasketPlan = {
     mode,
-    parts: chosen.parts,
+    parts,
     totalCents: chosen.totalCents,
     savingsCents: Math.max(0, worst - chosen.totalCents),
     missingItemIds: chosen.missingItemIds,
     computedAt,
   };
+  if (minOrderSkipped.length > 0) plan.minOrderSkipped = minOrderSkipped;
+  return plan;
 }

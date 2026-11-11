@@ -5,7 +5,9 @@
  * 5 nov. · 3 relevés » ou « Estimé »), enseignes sans prix connu, puis choix
  * du produit dans le magasin du panier (`selectAlternative(itemId, productId |
  * null)` : le panier se recalcule) — jamais un produit contenant un allergène
- * déclaré du profil. Fiche Open Food Facts d'un produit à code-barres.
+ * déclaré du profil : la comparaison enregistrée (calculée peut-être AVANT une
+ * nouvelle allergie) est refiltrée — offres, alternative MDD et ligne du
+ * panier. Fiche Open Food Facts d'un produit à code-barres. Attribution ODbL.
  */
 import { router, Stack, useLocalSearchParams, type Href } from 'expo-router';
 import React, { useMemo, useRef, useState } from 'react';
@@ -28,10 +30,12 @@ import {
   storeOfferRows,
   storesWithoutItem,
 } from '@/components/feature/basket';
+import { DATA_ATTRIBUTION_LINE } from '@/components/feature/sources';
 import { Button, EmptyState, IconButton, InfoBanner, PriceTag, SectionHeader, Sheet, staggerEntering, Text } from '@/components/ui';
 import { allOffersForItem, formatPrice, formatPricePerUnit, hasEstimatedPrice, joinFr, storeDisplayName } from '@/core';
 import { haptics } from '@/lib/haptics';
 import { openExternalUrl } from '@/lib/links';
+import { linesHaveAllergen, withoutAllergenOffers } from '@/services/basket';
 import { catalogIndexWithoutAllergens, useCatalog } from '@/services/catalog';
 import { comparisonFor, useBasketStore, useProfileStore, useWeekList, useWeekStore } from '@/stores';
 import { useTheme } from '@/theme';
@@ -47,19 +51,33 @@ export default function ComparatorScreen() {
   const today = useWeekStore((s) => s.today);
   const allergens = useProfileStore((s) => s.profile?.allergens);
   const list = useWeekList(ws);
-  const comparison = useBasketStore((s) => comparisonFor(s, itemId));
+  const storedComparison = useBasketStore((s) => comparisonFor(s, itemId));
   const plan = useBasketStore((s) => s.plan);
   const hasChoice = useBasketStore((s) => !!s.selectedAlternatives[itemId]);
   const computing = useBasketStore((s) => s.status === 'computing');
   const [visible, setVisible] = useState(true);
 
   const item = useMemo(() => list?.items.find((i) => i.id === itemId), [list, itemId]);
-  const line = useMemo(() => lineForItem(plan, itemId), [plan, itemId]);
+  // Comparaison enregistrée refiltrée selon les allergies ACTUELLES du profil.
+  const comparison = useMemo(
+    () => (storedComparison ? withoutAllergenOffers([storedComparison], allergens, catalog)[0] : undefined),
+    [storedComparison, allergens, catalog],
+  );
+  const line = useMemo(() => {
+    const l = lineForItem(plan, itemId);
+    // Ligne d'un panier pas encore recalculé, au produit désormais allergène : ignorée.
+    return l && !linesHaveAllergen([l], allergens, catalog) ? l : null;
+  }, [plan, itemId, allergens, catalog]);
   // Index SANS les produits contenant un allergène déclaré : jamais proposés au choix.
   const safeIndex = useMemo(() => catalogIndexWithoutAllergens(catalog, allergens), [catalog, allergens]);
   const allOffers = useMemo(
     () => (item ? allOffersForItem(item, safeIndex, undefined, { excludeAllergens: allergens }) : []),
     [item, safeIndex, allergens],
+  );
+  // Aucune offre sûre alors que le catalogue en a : écarté pour une allergie (à dire tel quel).
+  const excludedByAllergy = useMemo(
+    () => !!item && (allergens?.length ?? 0) > 0 && allOffers.length === 0 && allOffersForItem(item, catalog.index).length > 0,
+    [item, allergens, allOffers, catalog],
   );
   const rows = useMemo(
     () => (comparison ? storeOfferRows(comparison, catalog.storesById, catalog.productsById, line) : []),
@@ -107,10 +125,12 @@ export default function ComparatorScreen() {
       <EmptyState
         compact
         illustration={<EmptyBasket size={110} />}
-        title={comparison ? 'Introuvable partout' : 'Article introuvable'}
+        title={comparison ? (excludedByAllergy ? 'Écarté pour tes allergies' : 'Introuvable partout') : 'Article introuvable'}
         body={
           comparison
-            ? 'Aucune de nos enseignes ne le vend : pense à l’acheter à part.'
+            ? excludedByAllergy
+              ? 'Les produits que nous connaissons contiennent un de tes allergènes : vérifie l’étiquette d’un autre produit.'
+              : 'Aucune de nos enseignes ne le vend : pense à l’acheter à part.'
             : 'Il a été coché ou retiré de ta liste entre-temps.'
         }
         action={{ label: 'Retour aux prix', onPress: close }}
@@ -227,6 +247,10 @@ export default function ComparatorScreen() {
             message="Pas de prix connu dans tes magasins. Il reste dans ta liste : achète-le ailleurs."
           />
         ) : null}
+
+        <Text variant="caption" color="textSecondary" align="center" testID="comparator-attribution">
+          {DATA_ATTRIBUTION_LINE}
+        </Text>
       </View>
     );
 

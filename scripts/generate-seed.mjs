@@ -26,9 +26,12 @@
  *    de la fenêtre de l'instantané ; les prix 'demo' / 'estimate' absents du
  *    seed sont supprimés, les relevés réels absents conservés ;
  *  - instantané (`meta`) : `catalog_meta`, socles de la collecte
- *    (`price_observations` kind 'snapshot'), relevés déjà inclus dans
- *    l'instantané purgés, curseur de collecte avancé à la date de l'instantané.
- *    Sans `meta` (catalogue fictif), `catalog_meta` est vidée.
+ *    (`price_observations` kind 'snapshot' : médiane de l'instantané, avec son
+ *    drapeau « proximité seulement » et sa catégorie vrac, lus dans
+ *    `src/data/openData/snapshot.json`), relevés déjà inclus dans l'instantané
+ *    purgés, curseurs de collecte (global et par lot) avancés juste après le
+ *    DERNIER relevé de l'export (`meta.lastCreatedAt`, à défaut la date de
+ *    l'instantané). Sans `meta` (catalogue fictif), `catalog_meta` est vidée.
  *
  * Usage : `node scripts/generate-seed.mjs` (ou `npm run seed:generate`)
  *         `node scripts/generate-seed.mjs --check` : code 1 si seed.sql est périmé.
@@ -166,6 +169,9 @@ export function validateCatalog(data) {
 
 async function loadData() {
   const load = (name) => import(pathToFileURL(join(ROOT, 'src', 'data', `${name}.ts`)).href);
+  // Instantané versionné : provenance des socles (proximité, catégorie vrac retenue).
+  const snapshotFile = join(ROOT, 'src', 'data', 'openData', 'snapshot.json');
+  const snapshot = existsSync(snapshotFile) ? JSON.parse(readFileSync(snapshotFile, 'utf8')) : null;
   const [ing, rec, sto, pro, pri] = await Promise.all(
     ['ingredients', 'recipes', 'stores', 'products', 'prices'].map(load),
   );
@@ -182,7 +188,32 @@ async function loadData() {
     products: pro.products,
     prices: pri.prices,
     meta,
+    snapshot,
   };
+}
+
+/** Unité des relevés d'un produit vrac (celle de la source, sinon déduite du conditionnement). */
+function loosePricePer(p) {
+  if (p.offPricePer === 'KILOGRAM' || p.offPricePer === 'UNIT') return p.offPricePer;
+  return p.packUnit === 'g' ? 'KILOGRAM' : p.packUnit === 'piece' ? 'UNIT' : null;
+}
+
+/**
+ * Provenance du socle d'un prix relevé dans l'instantané : médiane issue des
+ * SEULS formats de proximité (`proximityOnly`) et, pour le vrac, catégorie
+ * retenue (la 1re de la liste qui a des relevés dans l'enseigne).
+ */
+export function snapshotBaseInfo(product, chain, snapshot) {
+  const aggregates = snapshot?.aggregates ?? {};
+  if (product.ean) return { proximity: aggregates[`ean:${product.ean}`]?.[chain]?.proximityOnly === true, categoryTag: null };
+  if (!product.offCategoryTag) return { proximity: false, categoryTag: null };
+  const per = loosePricePer(product);
+  const tags = product.offCategoryTags?.length ? product.offCategoryTags : [product.offCategoryTag];
+  for (const tag of tags) {
+    const agg = aggregates[`cat:${tag}:${per}${product.organic ? ':organic' : ''}`]?.[chain];
+    if (agg) return { proximity: agg.proximityOnly === true, categoryTag: tag };
+  }
+  return { proximity: false, categoryTag: tags[0] };
 }
 
 // ─── Génération ──────────────────────────────────────────────────────────────
@@ -339,16 +370,18 @@ export function buildSeedSql(data) {
     ].join('\n'),
   );
   const proCols = [
-    'id', 'ean', 'off_category_tag', 'name', 'brand', 'is_store_brand', 'store_chains', 'ingredient_id', 'pack_size',
-    'pack_unit', 'nutri_score', 'allergens', 'organic',
+    'id', 'ean', 'off_category_tag', 'off_category_tags', 'off_price_per', 'off_pack_factor', 'name', 'brand',
+    'is_store_brand', 'store_chains', 'ingredient_id', 'pack_size', 'pack_unit', 'nutri_score', 'allergens', 'organic',
   ];
   parts.push(
     insertStatements(
       'public.products',
       proCols,
       data.products.map((p) => [
-        sqlValue(p.id), sqlValue(p.ean || null), sqlValue(p.offCategoryTag || null), sqlValue(p.name),
-        sqlValue(p.brand ?? ''), sqlValue(!!p.isStoreBrand), sqlArray(productChains(p), 'public.store_chain'),
+        sqlValue(p.id), sqlValue(p.ean || null), sqlValue(p.offCategoryTag || null),
+        sqlArray(p.offCategoryTag ? (p.offCategoryTags ?? []) : [], 'text'),
+        sqlValue(p.offCategoryTag ? (p.offPricePer ?? null) : null), sqlValue(p.offCategoryTag ? (p.offPackFactor ?? null) : null),
+        sqlValue(p.name), sqlValue(p.brand ?? ''), sqlValue(!!p.isStoreBrand), sqlArray(productChains(p), 'public.store_chain'),
         sqlValue(p.ingredientId), sqlValue(p.packSize), `${sqlValue(p.packUnit)}::public.base_unit`,
         sqlTyped(p.nutriScore, 'public.nutri_score'), sqlArray(p.allergens, 'public.allergen'), sqlValue(!!p.organic),
       ]),
@@ -369,21 +402,31 @@ export function buildSeedSql(data) {
       '  promo_price_cents integer, promo_label text, promo_until date, source public.price_source not null,',
       '  updated_at timestamptz not null, observation_count integer, observed_from date,',
       '  estimate_method public.estimate_method, estimate_basis_count integer,',
+      '  base_proximity boolean, base_category_tag text,',
       '  primary key (product_id, store_id)',
       ') on commit drop;',
       '',
     ].join('\n'),
   );
+  const productsById = new Map(data.products.map((p) => [p.id, p]));
+  const storesById = new Map(data.stores.map((s) => [s.id, s]));
   parts.push(
     insertStatements(
       '_seed_prices',
-      priCols,
-      data.prices.map((p) => [
-        sqlValue(p.productId), sqlValue(p.storeId), sqlValue(p.priceCents), sqlValue(p.promoPriceCents),
-        sqlValue(p.promoLabel), sqlTyped(day(p.promoUntil), 'date'), `${sqlValue(p.source)}::public.price_source`,
-        `${sqlValue(p.updatedAt)}::timestamptz`, sqlValue(p.observationCount), sqlTyped(day(p.observedFrom), 'date'),
-        sqlTyped(p.estimateMethod, 'public.estimate_method'), sqlValue(p.estimateBasisCount),
-      ]),
+      [...priCols, 'base_proximity', 'base_category_tag'],
+      data.prices.map((p) => {
+        // Provenance du socle (prix relevés seulement) : proximité, catégorie vrac.
+        const base = p.source === 'open_prices'
+          ? snapshotBaseInfo(productsById.get(p.productId), storesById.get(p.storeId).chain, data.snapshot)
+          : { proximity: null, categoryTag: null };
+        return [
+          sqlValue(p.productId), sqlValue(p.storeId), sqlValue(p.priceCents), sqlValue(p.promoPriceCents),
+          sqlValue(p.promoLabel), sqlTyped(day(p.promoUntil), 'date'), `${sqlValue(p.source)}::public.price_source`,
+          `${sqlValue(p.updatedAt)}::timestamptz`, sqlValue(p.observationCount), sqlTyped(day(p.observedFrom), 'date'),
+          sqlTyped(p.estimateMethod, 'public.estimate_method'), sqlValue(p.estimateBasisCount),
+          sqlValue(base.proximity), sqlValue(base.categoryTag),
+        ];
+      }),
     ),
   );
   const real = [...REAL_SOURCES].map((s) => `'${s}'`).join(', ');
@@ -421,40 +464,54 @@ export function buildSeedSql(data) {
     [
       "delete from public.price_observations where kind = 'snapshot';",
       '-- Socle : la médiane de l\'instantané, pesant le nombre de relevés qu\'elle résume,',
-      '-- dans l\'unité des relevés (prix du conditionnement, ou au kilo / à la pièce pour le vrac).',
+      '-- dans l\'unité des relevés (prix du conditionnement, ou au kilo / à la pièce pour le vrac :',
+      '-- unité et facteur de la SOURCE), avec sa catégorie vrac et son drapeau « proximité',
+      '-- seulement » (un relevé hyper / super la remplacera, comme dans l\'instantané).',
       'insert into public.price_observations',
-      '  (product_id, chain, kind, weight, regular_milli, price_per, proximity, observed_on, observed_from)',
+      '  (product_id, chain, kind, weight, regular_milli, price_per, category_tag, proximity, observed_on, observed_from)',
       "select s.product_id, st.chain, 'snapshot', s.observation_count,",
       '       greatest(1, round(s.price_cents * 10.0 / case',
       "         when p.off_category_tag is null then 1",
+      '         when p.off_pack_factor is not null then p.off_pack_factor',
       "         when p.pack_unit = 'g' then p.pack_size / 1000.0",
       "         when p.pack_unit = 'piece' then p.pack_size",
       '         else 1 end))::integer,',
-      "       case when p.off_category_tag is null then null when p.pack_unit = 'g' then 'KILOGRAM'",
-      "            when p.pack_unit = 'piece' then 'UNIT' end,",
-      "       false, (s.updated_at at time zone 'UTC')::date,",
+      "       case when p.off_category_tag is null then null when p.off_price_per is not null then p.off_price_per",
+      "            when p.pack_unit = 'g' then 'KILOGRAM' when p.pack_unit = 'piece' then 'UNIT' end,",
+      '       case when p.off_category_tag is null then null else coalesce(s.base_category_tag, p.off_category_tag) end,',
+      "       coalesce(s.base_proximity, false), (s.updated_at at time zone 'UTC')::date,",
       "       least(coalesce(s.observed_from, (s.updated_at at time zone 'UTC')::date), (s.updated_at at time zone 'UTC')::date)",
       '  from _seed_prices s',
       '  join public.stores st on st.id = s.store_id',
       '  join public.products p on p.id = s.product_id',
       " where s.source = 'open_prices' and s.observation_count >= 1",
-      "   and (p.off_category_tag is null or p.pack_unit in ('g', 'piece'))",
+      "   and (p.off_category_tag is null or p.off_price_per is not null or p.pack_unit in ('g', 'piece'))",
       ' order by s.product_id, s.store_id',
       'on conflict do nothing;',
       '',
     ].join('\n'),
   );
   if (meta) {
-    const snapshotAt = `${sqlValue(meta.snapshotAt)}::timestamptz`;
+    // Borne EXACTE de l'instantané : juste après le dernier relevé de l'export (arrondi à la
+    // milliseconde supérieure : `created__gte` ne relit jamais un relevé déjà compté dans
+    // le socle), à défaut la date de l'instantané.
+    const cursor = meta.lastCreatedAt
+      ? `(date_trunc('milliseconds', ${sqlValue(meta.lastCreatedAt)}::timestamptz) + interval '1 millisecond')`
+      : `${sqlValue(meta.snapshotAt)}::timestamptz`;
     parts.push(
       [
         `insert into public.catalog_meta (id, meta) values (true, ${sqlJson(meta)})`,
         'on conflict (id) do update set meta = excluded.meta;',
-        '-- Relevés collectés AVANT l\'instantané : déjà inclus dans ses médianes.',
-        `delete from public.price_observations where kind = 'observation' and source_created_at < ${snapshotAt};`,
-        `insert into public.price_collection_state (id, created_cursor) values (true, ${snapshotAt})`,
-        'on conflict (id) do update set created_cursor =',
-        '  greatest(public.price_collection_state.created_cursor, excluded.created_cursor);',
+        '-- Relevés collectés AVANT le dernier relevé de l\'export : déjà inclus dans ses médianes.',
+        `delete from public.price_observations where kind = 'observation' and source_created_at < ${cursor};`,
+        '-- Curseurs (global et par lot) jamais reculés, et jamais avant la borne de l\'instantané.',
+        `insert into public.price_collection_state (id, created_cursor) values (true, ${cursor})`,
+        'on conflict (id) do update set',
+        '  created_cursor = greatest(public.price_collection_state.created_cursor, excluded.created_cursor),',
+        '  batch_cursors = coalesce((',
+        '    select jsonb_object_agg(c.key, to_jsonb(greatest(c.value::timestamptz, excluded.created_cursor)))',
+        '      from jsonb_each_text(public.price_collection_state.batch_cursors) as c (key, value)',
+        "  ), '{}'::jsonb);",
         '',
       ].join('\n'),
     );

@@ -86,6 +86,14 @@ function monthYear(iso: string): string {
 // ─── Mentions ────────────────────────────────────────────────────────────────
 
 /**
+ * Attribution des données ouvertes (licence ODbL), OBLIGATOIRE là où les prix
+ * sont présentés (DATA_LICENSE.md) : onglet Prix, détail d'un article, ticket
+ * de commande. Même texte que `DATA_ATTRIBUTION` de `src/data` (vérifié par les tests).
+ */
+export const DATA_ATTRIBUTION_LINE =
+  'Produits : Open Food Facts · Prix : Open Prices · Enseignes : © contributeurs OpenStreetMap · Licence ODbL';
+
+/**
  * Mention sur l'origine des prix (pied de l'onglet Prix). Même texte que
  * `PRICE_DATA_NOTICE` de `src/data` pour l'instantané embarqué (vérifié par
  * les tests), mais calculé sur l'instantané COURANT (base distante comprise).

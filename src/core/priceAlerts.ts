@@ -3,8 +3,8 @@
  * (produits commandés plusieurs fois), utilisée par l'Edge Function
  * send-notifications et par l'écran « Alertes ».
  */
-import type { OrderHandoff, Price } from './types';
-import { effectivePrice, isEstimatedPrice, isPreferredPrice, isUsablePrice } from './priceComparison';
+import type { Allergen, OrderHandoff, Price, Product } from './types';
+import { effectivePrice, isEstimatedPrice, isPreferredPrice, isUsablePrice, productContainsAllergen } from './priceComparison';
 
 export interface PriceWatch {
   productId: string;
@@ -22,14 +22,50 @@ export interface PriceDrop {
   dropPct: number;
 }
 
+/** Produits connus, par id (Map ou objet) — seuls leurs allergènes sont lus. */
+export type ProductsLookup =
+  | ReadonlyMap<string, Pick<Product, 'allergens'>>
+  | Readonly<Record<string, Pick<Product, 'allergens'> | undefined>>;
+
+export interface PriceDropOptions {
+  thresholdPct?: number;
+  now?: string;
+  /**
+   * Allergènes déclarés du profil : AUCUNE alerte sur un produit qui en
+   * contient un (allergènes de l'ingrédient ∪ Open Food Facts). Exige
+   * `products` ; un produit inconnu n'est jamais signalé (on ne peut pas
+   * vérifier qu'il est sûr).
+   */
+  excludeAllergens?: readonly Allergen[];
+  products?: ProductsLookup;
+}
+
+function lookupProduct(products: ProductsLookup | undefined, id: string): Pick<Product, 'allergens'> | undefined {
+  if (!products) return undefined;
+  if (products instanceof Map) return products.get(id);
+  return (products as Readonly<Record<string, Pick<Product, 'allergens'> | undefined>>)[id];
+}
+
+/**
+ * Faut-il ignorer cette surveillance ? Oui si le profil déclare des
+ * allergènes et que le produit est inconnu ou en contient un (fail closed).
+ */
+function unsafeWatch(productId: string, opts: PriceDropOptions): boolean {
+  if (!opts.excludeAllergens || opts.excludeAllergens.length === 0) return false;
+  const product = lookupProduct(opts.products, productId);
+  return !product || productContainsAllergen(product, opts.excludeAllergens);
+}
+
 /**
  * Baisses de prix ≥ seuil (5 % par défaut), triées de la plus forte à la plus
  * faible. Les prix ESTIMÉS sont ignorés : seule une baisse constatée compte.
+ * Avec `excludeAllergens`, jamais d'alerte sur un produit contenant un
+ * allergène déclaré (ni sur un produit inconnu).
  */
 export function detectPriceDrops(
   watch: readonly PriceWatch[],
   prices: readonly Price[],
-  opts: { thresholdPct?: number; now?: string } = {},
+  opts: PriceDropOptions = {},
 ): PriceDrop[] {
   const threshold = opts.thresholdPct ?? 5;
   // Prix le plus récent par (produit, magasin).
@@ -48,6 +84,8 @@ export function detectPriceDrops(
     const key = `${w.productId}|${w.storeId}`;
     if (seen.has(key) || !(w.referenceCents > 0)) continue;
     seen.add(key);
+    // Produit contenant un allergène déclaré du profil : jamais proposé, même par une alerte.
+    if (unsafeWatch(w.productId, opts)) continue;
     const price = latest.get(key);
     if (!price) continue;
     const newCents = effectivePrice(price, opts.now).cents;

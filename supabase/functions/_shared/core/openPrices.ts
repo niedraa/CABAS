@@ -211,6 +211,9 @@ export interface PriceObservation {
   organic: boolean;
 }
 
+/** Prix maximal plausible d'un relevé (payé ou barré), €. */
+export const MAX_PRICE_EUR = 10_000;
+
 /** Étiquettes « bio » d'un relevé vrac. */
 const ORGANIC_LABELS = new Set(['en:organic', 'en:eu-organic', 'fr:ab-agriculture-biologique']);
 
@@ -266,13 +269,14 @@ export function normalizeObservation(
   }
 
   const price = toNumber(raw.price);
-  if (!Number.isFinite(price) || price < 0.01 || price > 10_000) return null;
+  if (!Number.isFinite(price) || price < 0.01 || price > MAX_PRICE_EUR) return null;
   let regularEur = price;
   let promoEur: number | undefined;
   if (raw.price_is_discounted) {
     // Promo : seul le prix barré dit le prix normal ; sans lui, relevé écarté.
+    // Même plafond que le prix payé : un prix barré saisi « 9999999 » est écarté.
     const before = toNumber(raw.price_without_discount);
-    if (!(Number.isFinite(before) && before > price)) return null;
+    if (!(Number.isFinite(before) && before > price && before <= MAX_PRICE_EUR)) return null;
     regularEur = before;
     promoEur = price;
   }
@@ -320,6 +324,11 @@ export interface AggregatedPrice {
   /** Plus ancien / plus récent relevé pris en compte (YYYY-MM-DD). */
   from: string;
   to: string;
+  /**
+   * Présent (vrai) si la médiane ne repose QUE sur des formats de proximité
+   * (aucun relevé hyper / super) : un relevé hyper / super la remplacera.
+   */
+  proximityOnly?: true;
 }
 
 /** Médiane d'une liste de nombres (moyenne des deux valeurs centrales si paire). */
@@ -347,7 +356,9 @@ export function aggregateObservations(obs: readonly PriceObservation[]): Aggrega
     if (o.date < from) from = o.date;
     if (o.date > to) to = o.date;
   }
-  return { medianCents, count: used.length, from, to };
+  const agg: AggregatedPrice = { medianCents, count: used.length, from, to };
+  if (regular.length === 0) agg.proximityOnly = true;
+  return agg;
 }
 
 // ─── Indice de prix des enseignes ────────────────────────────────────────────
@@ -598,10 +609,17 @@ const UNIT_ALTERNATION = Object.keys(MASS_VOLUME_UNITS)
   .sort((a, b) => b.length - a.length)
   .join('|');
 const NUM = '(\\d+(?:[.,]\\d+)?)';
-/** « 500 g », « 2 x 75 g », « 3 sachets de 70 g », « 1,5 l ». Le 1er motif du texte gagne. */
+/**
+ * « 500 g », « 2 x 75 g », « 3 sachets de 70 g », « 1,5 l ». Le 1er motif du
+ * texte gagne (lot écrit après : voir `TRAILING_COUNT_RE`).
+ */
 const MASS_VOLUME_RE = new RegExp(
   `(?:(\\d+)\\s*(?:x|×|\\*|[a-z]+\\s+(?:de|d')\\s*)\\s*)?${NUM}\\s*(${UNIT_ALTERNATION})(?![a-z])`,
 );
+/** Lot écrit APRÈS la contenance : « 125 g x 4 », « 125g x4 », « 1 l x 6 ». */
+const TRAILING_COUNT_RE = new RegExp(`${NUM}\\s*(${UNIT_ALTERNATION})\\s*(?:x|×|\\*)\\s*(\\d+)(?![\\d.,])`);
+/** Masse composée « 1 kg 500 » (= 1,5 kg), sans unité après le second nombre. */
+const COMPOUND_KG_RE = /(\d+)\s*kg\s*(\d{1,3})(?![\d.,])(?!\s*(?:x|×|\*|[a-z]))/;
 const PIECES_RE =
   /(\d+)\s*(?:pieces?|pcs?|unites?|oeufs?|tranches?|portions?|sachets?|galettes?|tortillas?|wraps?|pains?|feuilles?|cubes?|tablettes?|capsules?|dosettes?|steaks?|filets?|briques?|pots?|bouteilles?|boites?|canettes?|citrons?|avocats?)\b|(?:^|\s)(?:x|×)\s*(\d+)\b|^(\d+)\s*(?:x|×)$/;
 
@@ -634,6 +652,18 @@ export function parseOffQuantity(input: {
   if (!text) return null;
   const m = MASS_VOLUME_RE.exec(text);
   if (m) {
+    // Même position que le 1er motif (sans lot devant) : « 125 g x 4 » = 500 g, « 1 kg 500 » = 1 500 g.
+    if (!m[1]) {
+      const trailing = TRAILING_COUNT_RE.exec(text);
+      if (trailing && trailing.index === m.index) {
+        const tu = MASS_VOLUME_UNITS[trailing[2]];
+        return plausible(Number(trailing[3]) * toNumber(trailing[1]) * tu.factor, tu.unit);
+      }
+      const compound = COMPOUND_KG_RE.exec(text);
+      if (compound && compound.index === m.index) {
+        return plausible(Number(compound[1]) * 1000 + Number(compound[2]), 'g');
+      }
+    }
     const unit = MASS_VOLUME_UNITS[m[3]];
     const count = m[1] ? Number(m[1]) : 1;
     const amount = toNumber(m[2]);

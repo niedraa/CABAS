@@ -1,7 +1,8 @@
 /**
  * Articles introuvables, dits honnêtement : absents de toutes les enseignes
- * (« à acheter à part ») ou seulement absents des magasins du panier (avec
- * le meilleur prix ailleurs).
+ * (« à acheter à part »), écartés pour une allergie déclarée, écartés pour le
+ * minimum de commande d'un de tes magasins, ou seulement absents des magasins
+ * du panier (avec le meilleur prix ailleurs, « prix estimé » s'il l'est).
  */
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -21,8 +22,17 @@ export interface MissingItemsProps {
 }
 
 export function missingReason(row: MissingRow, storesById: Record<string, Store>): string {
+  if (row.reason === 'allergen') {
+    return 'Les produits que nous connaissons contiennent un de tes allergènes : vérifie l’étiquette d’un autre produit.';
+  }
+  if (row.reason === 'min_order' && row.minOrder) {
+    const store = storeDisplayName(storesById[row.minOrder.storeId], { short: true });
+    return `Chez ${store}, mais ta commande y resterait sous son minimum de ${formatPrice(row.minOrder.minOrderCents)}.`;
+  }
   if (row.reason === 'nowhere' || !row.elsewhere) return 'Pas de prix connu dans nos enseignes : à acheter à part.';
-  return `Pas dans tes magasins. Dispo chez ${storeDisplayName(storesById[row.elsewhere.storeId], { short: true })} à ${formatPrice(row.elsewhere.totalCents)}.`;
+  // Une estimation est toujours dite (« prix estimé »).
+  const estimated = row.elsewhere.estimated ? ' (prix estimé)' : '';
+  return `Pas dans tes magasins. Dispo chez ${storeDisplayName(storesById[row.elsewhere.storeId], { short: true })} à ${formatPrice(row.elsewhere.totalCents)}${estimated}.`;
 }
 
 export function MissingItems({ rows, storesById, testID }: MissingItemsProps) {
