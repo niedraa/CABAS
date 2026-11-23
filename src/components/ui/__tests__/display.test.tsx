@@ -91,17 +91,21 @@ describe('AnimatedPrice', () => {
 });
 
 describe('StoreBadge', () => {
-  it('affiche le monogramme et un libellé accessible', async () => {
+  it('affiche le logo (ou à défaut le monogramme) et un libellé accessible', async () => {
     await render(
       <>
         <StoreBadge chain="lidl" />
         <StoreBadge chain="leclerc" />
+        <StoreBadge chain="superu" />
         <StoreBadge chain="biocoop" name="Biocoop" />
       </>,
     );
-    expect(screen.getByText('Li')).toBeTruthy();
-    expect(screen.getByText('L')).toBeTruthy();
+    // Lidl et Leclerc ont un logo embarqué : pas de monogramme.
+    expect(screen.queryByText('Li')).toBeNull();
+    // Super U et une enseigne inconnue : monogramme.
+    expect(screen.getByText('U')).toBeTruthy();
     expect(screen.getByText('B')).toBeTruthy();
+    expect(screen.getByLabelText('Enseigne Super U')).toBeTruthy();
     expect(screen.getByLabelText('Enseigne Lidl')).toBeTruthy();
     expect(screen.getByLabelText('Enseigne E.Leclerc')).toBeTruthy();
     expect(screen.getByLabelText('Enseigne Biocoop')).toBeTruthy();
