@@ -19,6 +19,11 @@ describe('listFormat', () => {
     expect(itemQuantityLabel(item({}))).toBe('300 g');
     expect(packagingLabel(item({ packaging: { packs: 2, packSize: 500, packUnit: 'g' } }))).toBe('2 × 500 g');
     expect(packagingLabel(item({}))).toBeNull();
+    expect(itemQuantityLabel(item({ quantity: 3, unit: 'piece' }))).toBe('3 pièces');
+    expect(itemQuantityLabel(item({ quantity: 1, unit: 'piece' }))).toBe('1 pièce');
+    // À la pièce : le conditionnement « 1 × 1 » n'apporte rien.
+    expect(packagingLabel(item({ quantity: 2, unit: 'piece', packaging: { packs: 2, packSize: 1, packUnit: 'piece' } }))).toBeNull();
+    expect(packagingLabel(item({ quantity: 15, unit: 'piece', packaging: { packs: 3, packSize: 6, packUnit: 'piece' } }))).toBe('3 paquets de 6');
     expect(itemSubtitle(item({ packaging: { packs: 1, packSize: 1000, packUnit: 'g' } }))).toBe('300 g · à acheter : 1 × 1 kg');
   });
 

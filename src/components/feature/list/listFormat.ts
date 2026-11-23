@@ -4,21 +4,30 @@
  */
 import {
   AISLE_LABELS,
+  formatPieces,
   formatQuantity,
   groupByAisle,
   type ShoppingListItem,
 } from '@/core';
 
-/** « 450 g », « 1,5 L », « 3 pièces ». */
+/** « 450 g », « 1,5 l », « 3 pièces », « ½ pièce ». */
 export function itemQuantityLabel(item: Pick<ShoppingListItem, 'quantity' | 'unit'>): string {
   if (!(item.quantity > 0)) return '';
+  if (item.unit === 'piece') return `${formatPieces(item.quantity)} pièce${item.quantity >= 2 ? 's' : ''}`;
   return formatQuantity(item.quantity, item.unit);
 }
 
-/** Conditionnement conseillé : « 2 × 500 g », « 1 × 6 pièces ». */
+/**
+ * Conditionnement conseillé : « 2 × 500 g », « 3 paquets de 6 ». Rien quand il
+ * n'apporte aucune information (fruits et légumes à la pièce).
+ */
 export function packagingLabel(item: ShoppingListItem): string | null {
   const p = item.packaging;
   if (!p || !(p.packs > 0) || !(p.packSize > 0)) return null;
+  if (p.packUnit === 'piece') {
+    if (p.packSize === 1) return null;
+    return `${p.packs} paquet${p.packs > 1 ? 's' : ''} de ${formatPieces(p.packSize)}`;
+  }
   return `${p.packs} × ${formatQuantity(p.packSize, p.packUnit)}`;
 }
 
@@ -45,7 +54,7 @@ export function listAsText(
     lines.push('', `${AISLE_LABELS[section.aisle]}`);
     for (const i of section.items) {
       const pack = packagingLabel(i);
-      const q = pack ?? (i.quantity > 0 && !(i.source === 'manual' && i.quantity === 1) ? formatQuantity(i.quantity, i.unit) : '');
+      const q = pack ?? (i.quantity > 0 && !(i.source === 'manual' && i.quantity === 1) ? itemQuantityLabel(i) : '');
       lines.push(`${i.checked ? '☑' : '☐'} ${i.label}${q ? ` — ${q}` : ''}`);
     }
   }
