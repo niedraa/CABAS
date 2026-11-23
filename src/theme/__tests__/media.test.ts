@@ -9,7 +9,8 @@ describe('médias embarqués', () => {
   const recipeIds = new Set(recipes.map((r) => r.id));
 
   it('chaque photo illustre une recette existante et porte son crédit (licence libre)', () => {
-    expect(Object.keys(recipePhotos).length).toBeGreaterThanOrEqual(60);
+    // Toutes les recettes ont leur photo.
+    expect(recipes.filter((r) => !recipePhotos[r.id]).map((r) => r.id)).toEqual([]);
     for (const id of Object.keys(recipePhotos)) {
       expect(recipeIds.has(id)).toBe(true);
       const credit = recipePhotoCredits[id];
