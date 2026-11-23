@@ -1,11 +1,12 @@
 /**
- * Monogramme d'enseigne : cercle aux couleurs de la chaîne + initiale(s).
- * Jamais de logo officiel (droit des marques) — voir docs/brand.
+ * Badge d'enseigne : logo de l'enseigne sur pastille blanche quand il est
+ * embarqué (`storeLogos`), sinon monogramme aux couleurs de la chaîne.
  */
+import { Image } from 'expo-image';
 import React from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { storeColors, useTheme } from '@/theme';
+import { storeColors, storeLogo, useTheme } from '@/theme';
 
 import { Text } from './Text';
 
@@ -26,6 +27,9 @@ export const STORE_MONOGRAMS: Record<string, { initials: string; name: string }>
   eroski: { initials: 'E', name: 'Eroski' },
   consum: { initials: 'Co', name: 'Consum' },
 };
+
+const FULL_BLEED_LOGOS = ['leclerc', 'lidl'];
+const WORDMARK_LOGOS = ['intermarche'];
 
 const DIM: Record<StoreBadgeSize, number> = { xs: 20, sm: 28, md: 36, lg: 48, xl: 64 };
 
@@ -49,6 +53,36 @@ export function StoreBadge({ chain, name, size = 'md', ring, style }: StoreBadge
   const initials = mono?.initials ?? (name ?? chain).slice(0, 1).toUpperCase();
   const dim = DIM[size];
   const fontSize = Math.round(dim * (initials.length > 1 ? 0.4 : 0.48));
+  const logo = storeLogo(key);
+
+  if (logo) {
+    // Logos déjà ronds / carrés pleins (Leclerc, Lidl) : bord à bord.
+    // Logo-mot sans symbole (Intermarché) : marge minimale pour rester lisible.
+    const pad = FULL_BLEED_LOGOS.includes(key) ? 0 : WORDMARK_LOGOS.includes(key) ? Math.max(1, Math.round(dim * 0.05)) : Math.max(2, Math.round(dim * 0.14));
+    return (
+      <View
+        accessible
+        accessibilityRole="image"
+        accessibilityLabel={`Enseigne ${label}`}
+        style={[
+          styles.base,
+          {
+            width: dim,
+            height: dim,
+            borderRadius: dim / 2,
+            backgroundColor: '#FFFFFF',
+            padding: pad,
+            overflow: 'hidden',
+            borderWidth: ring ? Math.max(2, dim / 16) : StyleSheet.hairlineWidth,
+            borderColor: ring ? t.colors.surface : t.colors.border,
+          },
+          style,
+        ]}
+      >
+        <Image source={logo} style={styles.logo} contentFit="contain" accessible={false} />
+      </View>
+    );
+  }
 
   return (
     <View
@@ -134,6 +168,7 @@ export function StoreBadgeStack({
 }
 
 const styles = StyleSheet.create({
+  logo: { width: '100%', height: '100%' },
   base: { alignItems: 'center', justifyContent: 'center' },
   stack: { flexDirection: 'row', alignItems: 'center' },
 });

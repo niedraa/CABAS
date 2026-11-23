@@ -959,8 +959,8 @@ on conflict (recipe_id, position) do update set
 
 insert into public.stores (id, chain, country, name, city, has_drive, drive_fee_cents, delivery_fee_cents, min_order_cents, search_url_template, drive_url) values
   ('leclerc', 'leclerc'::public.store_chain, 'FR'::public.country_code, 'E.Leclerc Drive', 'Lyon', true, 0, null, 0, 'https://www.e.leclerc/recherche?q={query}', 'https://www.leclercdrive.fr/'),
-  ('carrefour', 'carrefour'::public.store_chain, 'FR'::public.country_code, 'Carrefour Drive', 'Lyon', true, 0, 599, 1500, 'https://www.carrefour.fr/s?q={query}', 'https://www.carrefour.fr/drive'),
-  ('auchan', 'auchan'::public.store_chain, 'FR'::public.country_code, 'Auchan Drive', 'Lyon', true, 0, 690, 1500, 'https://www.auchan.fr/recherche?text={query}', 'https://www.auchan.fr/drive'),
+  ('carrefour', 'carrefour'::public.store_chain, 'FR'::public.country_code, 'Carrefour Drive', 'Lyon', true, 0, 599, 1500, 'https://www.carrefour.fr/s?q={query}', 'https://www.carrefour.fr/'),
+  ('auchan', 'auchan'::public.store_chain, 'FR'::public.country_code, 'Auchan Drive', 'Lyon', true, 0, 690, 1500, 'https://www.auchan.fr/recherche?text={query}', 'https://www.auchan.fr/parcours-de-courses-drive/ep-parcours-de-courses-drive'),
   ('intermarche', 'intermarche'::public.store_chain, 'FR'::public.country_code, 'Intermarché Drive', 'Lyon', true, 190, 799, 2000, 'https://www.intermarche.com/recherche/{query}', 'https://www.intermarche.com/'),
   ('lidl', 'lidl'::public.store_chain, 'FR'::public.country_code, 'Lidl', 'Lyon', false, 0, null, 0, 'https://www.lidl.fr/q/search?q={query}', 'https://www.lidl.fr/'),
   ('superu', 'superu'::public.store_chain, 'FR'::public.country_code, 'Super U Drive', 'Lyon', true, 0, 690, 1500, 'https://www.coursesu.com/recherche?q={query}', 'https://www.coursesu.com/'),

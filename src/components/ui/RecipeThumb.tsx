@@ -1,11 +1,13 @@
 /**
- * Vignette recette : emoji sur pastel (style signature de Cabas, pas de photo
- * générique). Le pastel est choisi de façon déterministe à partir de `seed`.
+ * Vignette recette : la vraie photo du plat quand elle existe (`recipeId`),
+ * sinon l'emoji sur pastel (style signature de Cabas). Le pastel est choisi
+ * de façon déterministe à partir de `seed`.
  */
+import { Image } from 'expo-image';
 import React from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { pastels, useTheme, type PastelKey } from '@/theme';
+import { pastels, recipePhoto, useTheme, type PastelKey } from '@/theme';
 
 import { Text } from './Text';
 
@@ -27,6 +29,8 @@ export interface RecipeThumbProps {
   /** Pastel imposé ; sinon dérivé de `seed` (ou de l'emoji). */
   tone?: PastelKey;
   seed?: string;
+  /** Recette : affiche sa photo si elle est embarquée. */
+  recipeId?: string;
   accessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
 }
@@ -37,10 +41,12 @@ export function RecipeThumb({
   shape = 'rounded',
   tone,
   seed,
+  recipeId,
   accessibilityLabel,
   style,
 }: RecipeThumbProps) {
   const t = useTheme();
+  const photo = recipePhoto(recipeId);
   const dim = DIM[size];
   const pastel = tone ? (pastels.find((p) => p.key === tone) ?? pastels[0]) : pastelFor(seed ?? emoji);
   const bg = t.scheme === 'dark' ? pastel.dark : pastel.light;
@@ -55,23 +61,29 @@ export function RecipeThumb({
       importantForAccessibility={accessibilityLabel ? 'yes' : 'no-hide-descendants'}
       style={[styles.base, { width: dim, height: dim, borderRadius: radius, backgroundColor: bg }, style]}
     >
-      {/* Petit reflet en haut à gauche : effet « assiette » tactile. */}
-      <View
-        style={[
-          styles.shine,
-          {
-            width: dim * 0.55,
-            height: dim * 0.55,
-            borderRadius: dim,
-            top: -dim * 0.18,
-            left: -dim * 0.18,
-            backgroundColor: t.scheme === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.3)',
-          },
-        ]}
-      />
-      <Text style={{ fontSize, lineHeight: Math.round(fontSize * 1.2) }} allowFontScaling={false}>
-        {emoji}
-      </Text>
+      {photo ? (
+        <Image source={photo} style={StyleSheet.absoluteFill} contentFit="cover" transition={150} accessible={false} />
+      ) : (
+        <>
+          {/* Petit reflet en haut à gauche : effet « assiette » tactile. */}
+          <View
+            style={[
+              styles.shine,
+              {
+                width: dim * 0.55,
+                height: dim * 0.55,
+                borderRadius: dim,
+                top: -dim * 0.18,
+                left: -dim * 0.18,
+                backgroundColor: t.scheme === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.3)',
+              },
+            ]}
+          />
+          <Text style={{ fontSize, lineHeight: Math.round(fontSize * 1.2) }} allowFontScaling={false}>
+            {emoji}
+          </Text>
+        </>
+      )}
     </View>
   );
 }

@@ -29,10 +29,10 @@ import {
   Text,
   useToast,
 } from '@/components/ui';
-import { buildProductSearchUrl, COUNTRY_FLAGS, formatPrice, storeDisplayName } from '@/core';
+import { buildProductSearchUrl, COUNTRY_FLAGS, formatPrice, productSearchQuery, storeDisplayName } from '@/core';
 import { useSubscription } from '@/hooks';
 import { haptics } from '@/lib/haptics';
-import { useCatalog } from '@/services/catalog';
+import { INGREDIENT_NAMES_ES, useCatalog } from '@/services/catalog';
 import { lastOrderForWeek, useBasketStore, useOrderStore, useWeekStore } from '@/stores';
 import { useTheme } from '@/theme';
 
@@ -135,7 +135,8 @@ export default function OrderScreen() {
       router.push('/premium' as Href);
       return;
     }
-    const url = buildProductSearchUrl(store, product);
+    const query = productSearchQuery(store, product, catalog.ingredientsById[product.ingredientId]?.name, INGREDIENT_NAMES_ES);
+    const url = buildProductSearchUrl(store, product, query);
     try {
       await WebBrowser.openBrowserAsync(url);
     } catch {

@@ -52,7 +52,7 @@ export const stores: Store[] = [
     deliveryFeeCents: 599,
     minOrderCents: 1500,
     searchUrlTemplate: 'https://www.carrefour.fr/s?q={query}',
-    driveUrl: 'https://www.carrefour.fr/drive',
+    driveUrl: 'https://www.carrefour.fr/',
   },
   {
     id: 'auchan',
@@ -65,7 +65,7 @@ export const stores: Store[] = [
     deliveryFeeCents: 690,
     minOrderCents: 1500,
     searchUrlTemplate: 'https://www.auchan.fr/recherche?text={query}',
-    driveUrl: 'https://www.auchan.fr/drive',
+    driveUrl: 'https://www.auchan.fr/parcours-de-courses-drive/ep-parcours-de-courses-drive',
   },
   {
     id: 'intermarche',

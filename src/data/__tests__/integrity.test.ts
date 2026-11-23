@@ -663,3 +663,20 @@ describe('générateur et index', () => {
     expect(DEMO_DATA_NOTICE).toMatch(/démonstration/);
   });
 });
+
+describe('recherche produit en Espagne', () => {
+  it('chaque ingrédient a un nom espagnol (recherche sur Mercadona, Dia…)', () => {
+    const { INGREDIENT_NAMES_ES } = jest.requireActual('../ingredientNamesEs') as typeof import('../ingredientNamesEs');
+    const missing = ingredients.filter((i) => !INGREDIENT_NAMES_ES[i.id]?.trim()).map((i) => i.id);
+    expect(missing).toEqual([]);
+  });
+
+  it('les sites des enseignes sont en https sur le bon domaine national', () => {
+    for (const s of stores) {
+      const host = new URL(s.driveUrl).hostname;
+      expect(new URL(s.searchUrlTemplate.replace('{query}', 'x')).protocol).toBe('https:');
+      if (s.country === 'ES') expect(host.endsWith('.es')).toBe(true);
+      else expect(/\.(fr|com|leclerc)$/.test(host)).toBe(true);
+    }
+  });
+});

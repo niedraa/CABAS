@@ -80,7 +80,8 @@
     "test:sql": "node supabase/tests/run-sql-tests.mjs",
     "test:functions": "cd supabase/functions && deno test --allow-env --allow-read",
     "test:scripts": "node --test supabase/tests/scripts.test.mjs",
-    "test:backend": "npm run test:sql && npm run test:scripts && npm run test:functions"
+    "test:backend": "npm run test:sql && npm run test:scripts && npm run test:functions",
+    "build:media": "node scripts/build-media.mjs"
   },
   "private": true,
   "jest": {

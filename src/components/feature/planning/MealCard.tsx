@@ -202,7 +202,7 @@ export function MealCard({
                   testID={testID ? `${testID}-open` : undefined}
                   style={styles.main}
                 >
-                  <RecipeThumb emoji={recipe.emoji} seed={recipe.id} size="lg" />
+                  <RecipeThumb emoji={recipe.emoji} seed={recipe.id} recipeId={recipe.id} size="lg" />
                   <View style={styles.body}>
                     <Text variant="overline" color={meal.type === 'dejeuner' ? 'accentText' : 'textSecondary'}>
                       {typeLabel}

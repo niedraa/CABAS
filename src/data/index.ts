@@ -19,6 +19,7 @@ import { stores } from './stores';
 export { ingredients, NON_PURCHASABLE_INGREDIENT_IDS } from './ingredients';
 export { recipes } from './recipes';
 export { stores } from './stores';
+export { INGREDIENT_NAMES_ES } from './ingredientNamesEs';
 export { products } from './products';
 export { prices, DEMO_PRICES_UPDATED_AT } from './prices';
 

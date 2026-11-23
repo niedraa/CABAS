@@ -7,6 +7,9 @@
  * Paramètres : `id` (recette), `mealId` (facultatif : repas du planning dont
  * on règle les portions — la liste de courses suit).
  */
+import { Image } from 'expo-image';
+import * as WebBrowser from 'expo-web-browser';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router, Stack, useLocalSearchParams, type Href } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -47,7 +50,7 @@ import { CUISINE_LABELS, householdServings, MEAL_TYPE_LABELS, formatDayLabel } f
 import { haptics } from '@/lib/haptics';
 import { useCatalog } from '@/services/catalog';
 import { useMeal, usePlanStore, useProfileStore } from '@/stores';
-import { boxShadow, useTheme } from '@/theme';
+import { boxShadow, recipePhoto, recipePhotoCredit, useTheme } from '@/theme';
 
 const HERO_H = 300;
 
@@ -125,6 +128,8 @@ export default function RecipeScreen() {
   }
 
   const pastel = pastelFor(recipe.id);
+  const photo = recipePhoto(recipe.id);
+  const credit = recipePhotoCredit(recipe.id);
   const heroBg = t.scheme === 'dark' ? pastel.dark : pastel.light;
   const conflicts = allergens.filter((a) => a.conflict);
   const setServings = (n: number) => {
@@ -145,13 +150,30 @@ export default function RecipeScreen() {
         {/* En-tête immersif */}
         <View style={{ height: heroH }}>
           <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: heroBg, overflow: 'hidden' }, heroBgStyle]}>
-            <CircleDecor tone="paper" placement="topRight" scale={0.8} />
+            {photo ? (
+              <>
+                <Image
+                  source={photo}
+                  style={StyleSheet.absoluteFill}
+                  contentFit="cover"
+                  transition={200}
+                  accessible
+                  accessibilityLabel={`Photo : ${recipe.title}`}
+                  testID="recipe-photo"
+                />
+                <LinearGradient colors={['rgba(0,0,0,0.35)', 'transparent', 'transparent']} style={StyleSheet.absoluteFill} pointerEvents="none" />
+              </>
+            ) : (
+              <CircleDecor tone="paper" placement="topRight" scale={0.8} />
+            )}
           </Animated.View>
-          <Animated.View style={[styles.heroEmoji, { paddingTop: insets.top }, emojiStyle]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-            <Text style={styles.emoji} allowFontScaling={false}>
-              {recipe.emoji}
-            </Text>
-          </Animated.View>
+          {photo ? null : (
+            <Animated.View style={[styles.heroEmoji, { paddingTop: insets.top }, emojiStyle]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+              <Text style={styles.emoji} allowFontScaling={false}>
+                {recipe.emoji}
+              </Text>
+            </Animated.View>
+          )}
         </View>
 
         {/* Contenu, en feuille posée sur l'en-tête */}
@@ -278,6 +300,19 @@ export default function RecipeScreen() {
               <SectionHeader title="Préparation" subtitle={`${recipe.steps.length} étapes · ${formatMinutes(recipe.prepTimeMin + recipe.cookTimeMin)}`} />
               <StepList steps={recipe.steps} onOpenStep={openCooking} testID="recipe-steps" />
             </View>
+
+            {credit ? (
+              <Text
+                variant="caption"
+                color="textSecondary"
+                accessibilityRole="link"
+                accessibilityHint="Ouvre la page de la photo sur Wikimedia Commons"
+                onPress={() => void WebBrowser.openBrowserAsync(credit.source).catch(() => undefined)}
+                testID="recipe-photo-credit"
+              >
+                Photo : {credit.author} · {credit.license} · Wikimedia Commons
+              </Text>
+            ) : null}
           </View>
         </View>
       </Animated.ScrollView>

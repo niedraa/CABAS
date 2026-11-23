@@ -163,7 +163,7 @@ export default function PantryScreen() {
                   accessibilityLabel={`${s.recipe.title}, utilise ${s.matchedIngredientIds.length} de tes restes`}
                 >
                   <View style={styles.row}>
-                    <RecipeThumb emoji={s.recipe.emoji} seed={s.recipe.id} size="sm" />
+                    <RecipeThumb emoji={s.recipe.emoji} seed={s.recipe.id} recipeId={s.recipe.id} size="sm" />
                     <View style={styles.flex}>
                       <Text variant="bodyMedium" numberOfLines={1}>
                         {s.recipe.title}

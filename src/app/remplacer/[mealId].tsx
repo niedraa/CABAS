@@ -96,7 +96,7 @@ export default function ReplaceMealScreen() {
     ) : (
       <View style={{ gap: t.spacing.lg }}>
         <View style={[styles.current, { backgroundColor: c.backgroundAlt, borderRadius: t.radius.lg, padding: t.spacing.md }]}>
-          <RecipeThumb emoji={current.emoji} seed={current.id} size="sm" />
+          <RecipeThumb emoji={current.emoji} seed={current.id} recipeId={current.id} size="sm" />
           <View style={styles.flex}>
             <Text variant="overline" color="textSecondary">
               Actuellement

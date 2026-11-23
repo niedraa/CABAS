@@ -47,7 +47,7 @@ export function MealOptionsSheet({
       {meal && recipe ? (
         <View style={{ gap: t.spacing.xs }}>
           <View style={[styles.servings, { backgroundColor: c.background, borderRadius: t.radius.lg, padding: t.spacing.md }]}>
-            <RecipeThumb emoji={recipe.emoji} seed={recipe.id} size="sm" />
+            <RecipeThumb emoji={recipe.emoji} seed={recipe.id} recipeId={recipe.id} size="sm" />
             <View style={styles.flex}>
               <Text variant="headline">Portions</Text>
               <Text variant="footnote" color="textSecondary">

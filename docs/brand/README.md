@@ -51,8 +51,9 @@ Règles d'écriture :
 - Typographie française : espace fine insécable avant `€ % : ; ? !` (U+202F,
   gérée par `formatCents`), guillemets « », apostrophe typographique ’ dans les textes longs.
 - Emoji : **un** emoji pour illustrer un aliment ou une émotion, jamais en remplacement d'un mot.
-- Jamais de nom d'enseigne détourné ni de logo officiel : on écrit « Leclerc »,
-  on montre un **monogramme** (voir § 8).
+- Jamais de nom d'enseigne détourné : on écrit « Leclerc ». Dans l'app, le
+  badge d'enseigne montre le **logo de l'enseigne** (usage nominatif : identifier
+  le magasin comparé), avec repli sur un **monogramme** (voir § 8).
 
 ---
 
@@ -221,7 +222,7 @@ prix en `<PriceTag>` / `<AnimatedPrice>` (centimes surélevés au-delà de 26 pt
 | **Cercles doux superposés** (forêt 600 sur forêt 800, petite pastille moutarde) | `CircleDecor`, `Card variant="hero"` | Bandeaux héros, onboarding, paywall, icône d'app. Toujours débordant d'un coin, jamais centré. |
 | **Ticket dentelé** | `ReceiptEdge`, `ReceiptCard`, `Divider variant="dashed"`, `KeyValueRow leader` | Tout ce qui parle d'argent : récapitulatif du panier, commande, détail de prix. |
 | **Panier** | `BasketMark`, `EmptyBasket`, `Celebration` | Marque, états vides, réussite. |
-| **Monogrammes d'enseigne** | `StoreBadge`, `StoreBadgeStack` | Cercle aux couleurs de la chaîne + initiale(s) (`L`, `C`, `A`, `I`, `Li`, `M`). **Aucun logo officiel.** |
+| **Badges d'enseigne** | `StoreBadge`, `StoreBadgeStack` | Logo de l'enseigne sur pastille blanche (`assets/images/stores/`, registre `storeLogos`) ; à défaut, cercle aux couleurs de la chaîne + initiale(s). Jamais de logo déformé ni recoloré. |
 | **Emoji sur pastel** | `RecipeThumb`, `Avatar` | Vignettes de recettes / produits : pastel déterministe dérivé du nom (8 pastels, version sombre dédiée). |
 
 ---
@@ -273,7 +274,11 @@ douce (`primarySoft`, `accentSoft`, `dangerSoft`), ombre portée = ellipse
 tomate, citron, pain). Composants : `EmptyBasket`, `EmptyList`, `CookingPot`,
 `Produce` (`leaf | carrot | tomato | baguette | lemon`), `ProduceSet`,
 `Celebration`. Décoratives par défaut (masquées aux lecteurs d'écran).
-Pas de photo d'aliment générique : l'emoji sur pastel est la signature.
+Les plats sont illustrés par de **vraies photos** (Wikimedia Commons, licences
+libres : CC0, CC BY, CC BY-SA, domaine public), embarquées hors-ligne
+(`assets/images/recipes/`, registre `recipePhotos`, `npm run build:media`).
+Auteur et licence sont affichés (fiche recette, écran « Crédits »). Sans photo,
+l'emoji sur pastel reste le repli.
 
 ---
 
@@ -312,7 +317,9 @@ modifiable dans Réglages → Apparence.
   Ordre : 1. Semaine planifiée · 2. Liste par rayon · 3. Comparateur (ticket) ·
   4. Panier optimisé · 5. Commande drive · 6. Profil (allergies, RGPD).
 - **Notification** : `notification-icon.png` (96, blanc sur transparent), couleur d'accent moutarde.
-- Pas de logos d'enseignes dans les visuels marketing (monogrammes uniquement).
+- Pas de logos d'enseignes dans les visuels marketing (store, publicité) sans
+  accord écrit des enseignes : leur usage est limité à l'identification des
+  magasins dans l'app.
 
 Régénérer tous les visuels : `node scripts/generate-brand-assets.mjs`
 (Playwright/Chromium ; écrit aussi `docs/brand/*.svg`).

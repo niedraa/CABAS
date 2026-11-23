@@ -41,8 +41,7 @@ import {
 } from '@/core';
 import { useCurrentWeek, useSubscription } from '@/hooks';
 import { haptics } from '@/lib/haptics';
-import { useCatalog } from '@/services/catalog';
-import { DEMO_DATA_NOTICE } from '@/data';
+import { DEMO_DATA_NOTICE, useCatalog } from '@/services/catalog';
 import { lastOrderForWeek, useBasketIsStale, useBasketStore, useOrderStore, useProfileStore, useWeekList } from '@/stores';
 import { useTheme } from '@/theme';
 

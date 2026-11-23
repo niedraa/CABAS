@@ -111,3 +111,20 @@ describe('parseDecimalFr', () => {
     expect(parseDecimalFr(input)).toBeNull();
   });
 });
+
+describe('productSearchQuery / buildProductSearchUrl', () => {
+  const { productSearchQuery, buildProductSearchUrl } = jest.requireActual('../order') as typeof import('../order');
+  const product = { name: 'Lait demi-écrémé UHT', brand: 'Lactel', isStoreBrand: false, ingredientId: 'lait' };
+  const mdd = { name: 'Lait demi-écrémé', brand: 'Hacendado', isStoreBrand: true, ingredientId: 'lait' };
+  const es = { lait: 'leche semidesnatada' };
+  it('cherche le nom générique en France, sans marque nationale fictive', () => {
+    expect(productSearchQuery({ country: 'FR' }, product, 'Lait demi-écrémé', es)).toBe('Lait demi-écrémé');
+  });
+  it('cherche en espagnol en Espagne, avec la marque distributeur', () => {
+    expect(productSearchQuery({ country: 'ES' }, mdd, 'Lait demi-écrémé', es)).toBe('leche semidesnatada Hacendado');
+  });
+  it('construit une URL encodée', () => {
+    const url = buildProductSearchUrl(st('mercadona', 'mercadona', 'ES', { searchUrlTemplate: 'https://tienda.mercadona.es/search-results?query={query}' }), { ...mdd, id: 'p', ean: '1', packSize: 1, packUnit: 'ml', allergens: [] }, 'leche semidesnatada');
+    expect(url).toBe('https://tienda.mercadona.es/search-results?query=leche%20semidesnatada');
+  });
+});

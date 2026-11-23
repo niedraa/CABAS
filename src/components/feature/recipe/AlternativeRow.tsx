@@ -64,7 +64,7 @@ export function AlternativeRow({ recipe, reasons, onPress, testID }: Alternative
       testID={testID}
       style={[styles.row, { backgroundColor: c.surface, borderColor: c.border, borderRadius: t.radius.lg, padding: t.spacing.md }]}
     >
-      <RecipeThumb emoji={recipe.emoji} seed={recipe.id} size="md" />
+      <RecipeThumb emoji={recipe.emoji} seed={recipe.id} recipeId={recipe.id} size="md" />
       <View style={styles.body}>
         <Text variant="headline" numberOfLines={2}>
           {recipe.title}

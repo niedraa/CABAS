@@ -17,6 +17,7 @@ import {
   Archive,
   BarChart3,
   Bell,
+  Camera,
   Crown,
   HeartPulse,
   Home,
@@ -257,6 +258,7 @@ export default function ProfileScreen() {
               right={<Switch value={settings.analyticsConsent} onValueChange={settings.setAnalyticsConsent} accessibilityLabel="Mesure d’audience anonyme" testID="switch-analytics" />}
             />
             <ListRow icon={ShoppingBasket} title="Compte & données" subtitle="Exporter ou supprimer tes données (RGPD)" chevron onPress={() => router.push('/parametres/compte' as Href)} testID="row-account" />
+            <ListRow icon={Camera} title="Crédits photos" subtitle="Photographes et licences" chevron onPress={() => router.push('/parametres/credits' as Href)} testID="row-credits" />
           </Card>
           <View style={{ marginTop: t.spacing.lg, gap: t.spacing.sm }}>
             <Text variant="subhead">Apparence</Text>

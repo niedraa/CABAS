@@ -16,10 +16,31 @@ function getProduct(products: ProductLookup, id: string): Product | undefined {
   return products instanceof Map ? products.get(id) : products[id];
 }
 
-/** URL de recherche drive pour un produit (« {query} » remplacé, encodé). */
-export function buildProductSearchUrl(store: Store, product: Product): string {
-  const query = `${product.name} ${product.brand ?? ''}`.replace(/\s+/g, ' ').trim();
-  return store.searchUrlTemplate.split('{query}').join(encodeURIComponent(query));
+/**
+ * URL de recherche drive pour un produit (« {query} » remplacé, encodé).
+ * `query` : texte de recherche imposé (ex. nom espagnol pour une enseigne
+ * espagnole) ; par défaut, nom du produit + marque.
+ */
+export function buildProductSearchUrl(store: Store, product: Product, query?: string): string {
+  const q = (query ?? `${product.name} ${product.brand ?? ''}`).replace(/\s+/g, ' ').trim();
+  return store.searchUrlTemplate.split('{query}').join(encodeURIComponent(q));
+}
+
+/**
+ * Texte de recherche d'un produit sur le site d'une enseigne : le nom
+ * générique de l'ingrédient dans la langue du pays (« leche semidesnatada »
+ * chez Mercadona), suivi de la marque distributeur s'il s'agit d'une MDD
+ * (« Hacendado »). Les marques nationales fictives du catalogue de démo ne
+ * sont pas ajoutées : elles fausseraient la recherche.
+ */
+export function productSearchQuery(
+  store: Pick<Store, 'country'>,
+  product: Pick<Product, 'name' | 'brand' | 'isStoreBrand' | 'ingredientId'>,
+  ingredientName: string | undefined,
+  localizedNames: Readonly<Record<string, string>> = {},
+): string {
+  const base = (store.country === 'ES' ? localizedNames[product.ingredientId] : ingredientName) ?? ingredientName ?? product.name;
+  return product.isStoreBrand && product.brand ? `${base} ${product.brand}` : base;
 }
 
 function safeDecode(s: string): string {

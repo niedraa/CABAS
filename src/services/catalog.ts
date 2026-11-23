@@ -21,7 +21,7 @@ import { useSyncExternalStore } from 'react';
 
 import type { CatalogIndex, Ingredient, Price, Product, Recipe, Store } from '@/core';
 import { buildCatalogIndex } from '@/core';
-import { catalog as localData, NON_PURCHASABLE_INGREDIENT_IDS } from '@/data';
+import { catalog as localData, DEMO_DATA_NOTICE, INGREDIENT_NAMES_ES, NON_PURCHASABLE_INGREDIENT_IDS } from '@/data';
 import { readJSON, storageKey, writeJSON } from '@/lib/storage';
 
 import { rowToIngredient, rowToPrice, rowToProduct, rowToRecipe, rowToStore, type Row } from './mappers';
@@ -29,6 +29,10 @@ import { getSupabase } from './supabase';
 
 /** Ingrédients qui ne s'achètent pas (eau du robinet) : exclus de la liste de courses. */
 export { NON_PURCHASABLE_INGREDIENT_IDS };
+/** Noms espagnols des ingrédients (recherche produit chez les enseignes espagnoles). */
+export { INGREDIENT_NAMES_ES };
+/** Mention « prix de démonstration » affichée près des prix en mode démo. */
+export { DEMO_DATA_NOTICE };
 
 // ─── Dépôts ──────────────────────────────────────────────────────────────────
 

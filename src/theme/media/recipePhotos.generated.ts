@@ -1,0 +1,71 @@
+/** ⚠️ FICHIER GÉNÉRÉ (scripts/build-media.mjs) — photos de plats embarquées. */
+export interface PhotoCredit {
+  author: string;
+  license: string;
+  licenseUrl: string;
+  source: string;
+}
+
+export const recipePhotos: Record<string, number> = {
+  rec_cabillaud_puree: require('../../../assets/images/recipes/rec_cabillaud_puree.jpg'),
+  rec_chili_sin_carne: require('../../../assets/images/recipes/rec_chili_sin_carne.jpg'),
+  rec_couscous_legumes: require('../../../assets/images/recipes/rec_couscous_legumes.jpg'),
+  rec_curry_crevettes_coco: require('../../../assets/images/recipes/rec_curry_crevettes_coco.jpg'),
+  rec_curry_pois_chiches: require('../../../assets/images/recipes/rec_curry_pois_chiches.jpg'),
+  rec_dahl_lentilles_corail: require('../../../assets/images/recipes/rec_dahl_lentilles_corail.jpg'),
+  rec_falafels_maison: require('../../../assets/images/recipes/rec_falafels_maison.jpg'),
+  rec_gratin_chou_fleur: require('../../../assets/images/recipes/rec_gratin_chou_fleur.jpg'),
+  rec_lasagnes_epinards_ricotta: require('../../../assets/images/recipes/rec_lasagnes_epinards_ricotta.jpg'),
+  rec_mac_and_cheese: require('../../../assets/images/recipes/rec_mac_and_cheese.jpg'),
+  rec_minestrone: require('../../../assets/images/recipes/rec_minestrone.jpg'),
+  rec_moules_marinieres: require('../../../assets/images/recipes/rec_moules_marinieres.jpg'),
+  rec_omelette_champignons: require('../../../assets/images/recipes/rec_omelette_champignons.jpg'),
+  rec_pizza_margherita: require('../../../assets/images/recipes/rec_pizza_margherita.jpg'),
+  rec_poke_bowl_saumon: require('../../../assets/images/recipes/rec_poke_bowl_saumon.jpg'),
+  rec_quesadillas_haricots: require('../../../assets/images/recipes/rec_quesadillas_haricots.jpg'),
+  rec_quiche_poireaux_chevre: require('../../../assets/images/recipes/rec_quiche_poireaux_chevre.jpg'),
+  rec_ratatouille: require('../../../assets/images/recipes/rec_ratatouille.jpg'),
+  rec_salade_chevre_chaud: require('../../../assets/images/recipes/rec_salade_chevre_chaud.jpg'),
+  rec_salade_grecque: require('../../../assets/images/recipes/rec_salade_grecque.jpg'),
+  rec_salade_nicoise: require('../../../assets/images/recipes/rec_salade_nicoise.jpg'),
+  rec_shakshuka: require('../../../assets/images/recipes/rec_shakshuka.jpg'),
+  rec_soupe_oignon: require('../../../assets/images/recipes/rec_soupe_oignon.jpg'),
+  rec_spaghetti_tomate_basilic: require('../../../assets/images/recipes/rec_spaghetti_tomate_basilic.jpg'),
+  rec_taboule_libanais: require('../../../assets/images/recipes/rec_taboule_libanais.jpg'),
+  rec_tacos_poisson: require('../../../assets/images/recipes/rec_tacos_poisson.jpg'),
+  rec_tortilla_espagnole: require('../../../assets/images/recipes/rec_tortilla_espagnole.jpg'),
+  rec_veloute_butternut_coco: require('../../../assets/images/recipes/rec_veloute_butternut_coco.jpg'),
+  rec_veloute_poireaux_pdt: require('../../../assets/images/recipes/rec_veloute_poireaux_pdt.jpg'),
+};
+
+export const recipePhotoCredits: Record<string, PhotoCredit> = {
+  rec_cabillaud_puree: {"author":"Benreis","license":"CC BY-SA 4.0","licenseUrl":"https://creativecommons.org/licenses/by-sa/4.0","source":"https://commons.wikimedia.org/wiki/File:Dorschfilet_Hafenliebe_Warnem%C3%BCnde.jpg"},
+  rec_chili_sin_carne: {"author":"Badagnani","license":"CC BY 3.0","licenseUrl":"https://creativecommons.org/licenses/by/3.0","source":"https://commons.wikimedia.org/wiki/File:Blackbeanstew.jpg"},
+  rec_couscous_legumes: {"author":"Jon Lean","license":"CC BY-SA 2.0","licenseUrl":"https://creativecommons.org/licenses/by-sa/2.0","source":"https://commons.wikimedia.org/wiki/File:Moroccan_food-08.jpg"},
+  rec_curry_crevettes_coco: {"author":"DreamyFlutura11","license":"CC BY-SA 4.0","licenseUrl":"https://creativecommons.org/licenses/by-sa/4.0","source":"https://commons.wikimedia.org/wiki/File:Prawn_and_okra_curry.jpg"},
+  rec_curry_pois_chiches: {"author":"Jim Reynolds from Cleveland, USA","license":"CC BY 2.0","licenseUrl":"https://creativecommons.org/licenses/by/2.0","source":"https://commons.wikimedia.org/wiki/File:Curried_cauliflower_and_chickpea_stew.jpg"},
+  rec_dahl_lentilles_corail: {"author":"Biswarup Ganguly","license":"CC BY 3.0","licenseUrl":"https://creativecommons.org/licenses/by/3.0","source":"https://commons.wikimedia.org/wiki/File:Red_Gram_Dal_-_Kolkata_2011-11-15_7055.JPG"},
+  rec_falafels_maison: {"author":"Miansari66","license":"CC0","licenseUrl":"http://creativecommons.org/publicdomain/zero/1.0/deed.en","source":"https://commons.wikimedia.org/wiki/File:Falafel_1.JPG"},
+  rec_gratin_chou_fleur: {"author":"Acabashi","license":"CC BY-SA 4.0","licenseUrl":"https://creativecommons.org/licenses/by-sa/4.0","source":"https://commons.wikimedia.org/wiki/File:Cauliflower_cheese_side_dish_for_Sunday_roast_at_The_Black_Bull,_Fyfield,_Essex,_England.jpg"},
+  rec_lasagnes_epinards_ricotta: {"author":"Magalia","license":"CC BY 3.0","licenseUrl":"https://creativecommons.org/licenses/by/3.0","source":"https://commons.wikimedia.org/wiki/File:Tort_warzywny.JPG"},
+  rec_mac_and_cheese: {"author":"Scott Veg","license":"CC BY 2.0","licenseUrl":"https://creativecommons.org/licenses/by/2.0","source":"https://commons.wikimedia.org/wiki/File:Baked_macaroni_and_cheese_close-up.jpg"},
+  rec_minestrone: {"author":"Katrin Morenz from Aachen, Deutschland","license":"CC BY-SA 2.0","licenseUrl":"https://creativecommons.org/licenses/by-sa/2.0","source":"https://commons.wikimedia.org/wiki/File:Minestrone_soup.jpg"},
+  rec_moules_marinieres: {"author":"Thomon","license":"CC BY-SA 4.0","licenseUrl":"https://creativecommons.org/licenses/by-sa/4.0","source":"https://commons.wikimedia.org/wiki/File:Moules_marini%C3%A8res.jpg"},
+  rec_omelette_champignons: {"author":"Arnaud 25","license":"CC BY-SA 3.0","licenseUrl":"https://creativecommons.org/licenses/by-sa/3.0","source":"https://commons.wikimedia.org/wiki/File:Omelette_aux_girolles_0001.jpg"},
+  rec_pizza_margherita: {"author":"Valerio Capello at English Wikipedia","license":"CC BY-SA 3.0","licenseUrl":"http://creativecommons.org/licenses/by-sa/3.0/","source":"https://commons.wikimedia.org/wiki/File:Eq_it-na_pizza-margherita_sep2005_sml.jpg"},
+  rec_poke_bowl_saumon: {"author":"Andy Li","license":"CC0","licenseUrl":"http://creativecommons.org/publicdomain/zero/1.0/deed.en","source":"https://commons.wikimedia.org/wiki/File:Salmon_Poke_Bowl_(S)_with_Spicy_mayo_sauce_-_Kitokito.jpg"},
+  rec_quesadillas_haricots: {"author":"Michael Rivera","license":"CC BY-SA 3.0","licenseUrl":"https://creativecommons.org/licenses/by-sa/3.0","source":"https://commons.wikimedia.org/wiki/File:Supreme_Quesadilla,_San_Francisco.JPG"},
+  rec_quiche_poireaux_chevre: {"author":"Benoît Prieur","license":"CC0","licenseUrl":"http://creativecommons.org/publicdomain/zero/1.0/deed.en","source":"https://commons.wikimedia.org/wiki/File:Quiche_aux_poireaux,_ch%C3%A8vre_et_chorizo.jpg"},
+  rec_ratatouille: {"author":"Marcus Guimarães","license":"CC BY 2.0","licenseUrl":"https://creativecommons.org/licenses/by/2.0","source":"https://commons.wikimedia.org/wiki/File:Ratatouille.jpg"},
+  rec_salade_chevre_chaud: {"author":"DocteurCosmos","license":"CC BY-SA 3.0","licenseUrl":"https://creativecommons.org/licenses/by-sa/3.0","source":"https://commons.wikimedia.org/wiki/File:Salade_mesclun_et_ch%C3%A8vre_chaud_sur_toasts.jpg"},
+  rec_salade_grecque: {"author":"https://www.flickr.com/photos/zone41/","license":"CC BY 2.0","licenseUrl":"https://creativecommons.org/licenses/by/2.0","source":"https://commons.wikimedia.org/wiki/File:Greek_Salad_Choriatiki.jpg"},
+  rec_salade_nicoise: {"author":"jenny downing","license":"CC BY 2.0","licenseUrl":"https://creativecommons.org/licenses/by/2.0","source":"https://commons.wikimedia.org/wiki/File:Salade_Ni%C3%A7oise_jenny_downing.jpg"},
+  rec_shakshuka: {"author":"Joe Mahoney","license":"CC BY 2.0","licenseUrl":"https://creativecommons.org/licenses/by/2.0","source":"https://commons.wikimedia.org/wiki/File:Shakshuka1.jpg"},
+  rec_soupe_oignon: {"author":"jeffreyw","license":"CC BY 2.0","licenseUrl":"https://creativecommons.org/licenses/by/2.0","source":"https://commons.wikimedia.org/wiki/File:Mmm...onion_soup_(5344349906).jpg"},
+  rec_spaghetti_tomate_basilic: {"author":"Dr.Conati","license":"Public domain","licenseUrl":"","source":"https://commons.wikimedia.org/wiki/File:Spaghettata.JPG"},
+  rec_taboule_libanais: {"author":"cyclonebill","license":"CC BY-SA 2.0","licenseUrl":"https://creativecommons.org/licenses/by-sa/2.0","source":"https://commons.wikimedia.org/wiki/File:Flickr_-_cyclonebill_-_Tabbouleh.jpg"},
+  rec_tacos_poisson: {"author":"Tomascastelazo","license":"CC BY-SA 4.0","licenseUrl":"https://creativecommons.org/licenses/by-sa/4.0","source":"https://commons.wikimedia.org/wiki/File:Fish_Taco_Ensenada_style.jpg"},
+  rec_tortilla_espagnole: {"author":"Tamorlan","license":"CC BY-SA 3.0","licenseUrl":"https://creativecommons.org/licenses/by-sa/3.0","source":"https://commons.wikimedia.org/wiki/File:Tortilla_de_Patatas_(Corte_transversal).jpg"},
+  rec_veloute_butternut_coco: {"author":"SoHome Jacaranda Lilau, So Home Recreation Club (蘇戶康樂會) / PropLuxurians Health S","license":"CC BY-SA 3.0","licenseUrl":"https://creativecommons.org/licenses/by-sa/3.0","source":"https://commons.wikimedia.org/wiki/File:Pumpkin_Cream_Soup.jpg"},
+  rec_veloute_poireaux_pdt: {"author":"Ewan Munro from London, UK","license":"CC BY-SA 2.0","licenseUrl":"https://creativecommons.org/licenses/by-sa/2.0","source":"https://commons.wikimedia.org/wiki/File:Mon_Plaisir,_Covent_Garden,_London_(3717184145).jpg"},
+};
