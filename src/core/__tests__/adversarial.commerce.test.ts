@@ -182,6 +182,8 @@ function store(id: string, chain: Store['chain'], o: Partial<Store> = {}): Store
     id,
     chain,
     name: id,
+    country: 'FR',
+    hasDrive: true,
     city: 'Nantes',
     driveFeeCents: 0,
     deliveryFeeCents: 500,

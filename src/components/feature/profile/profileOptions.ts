@@ -15,6 +15,7 @@ import {
   foldText,
   householdPortions,
   type Allergen,
+  type Country,
   type Cuisine,
   type Diet,
   type Equipment,
@@ -22,6 +23,7 @@ import {
   type Ingredient,
   type MealSlotPreference,
   type MealType,
+  type Store,
 } from '@/core';
 
 export interface ProfileChoice<T extends string> {
@@ -264,6 +266,20 @@ export const STORES_MIN = 1;
 export const STORES_MAX = 5;
 /** À partir de 3 enseignes, le comparateur fait de vraies économies. */
 export const STORES_RECOMMENDED = 3;
+
+/**
+ * Pays affiché par défaut dans le choix des magasins : celui des magasins déjà
+ * choisis, sinon la région de l'appareil (Espagne → ES), sinon la France.
+ */
+export function initialStoreCountry(
+  selectedIds: readonly string[],
+  stores: readonly Pick<Store, 'id' | 'country'>[],
+  regionCode?: string | null,
+): Country {
+  const first = stores.find((s) => selectedIds.includes(s.id));
+  if (first) return first.country;
+  return regionCode?.toUpperCase() === 'ES' ? 'ES' : 'FR';
+}
 
 export type StoreToggleResult = { ids: string[]; blocked: null | 'max' };
 

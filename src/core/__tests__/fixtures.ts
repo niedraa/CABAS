@@ -263,6 +263,8 @@ function store(id: string, chain: Store['chain'], o: Partial<Store> = {}): Store
     id,
     chain,
     name: `${chain[0].toUpperCase()}${chain.slice(1)} Test`,
+    country: 'FR',
+    hasDrive: true,
     city: 'Lyon',
     driveFeeCents: 0,
     deliveryFeeCents: 599,

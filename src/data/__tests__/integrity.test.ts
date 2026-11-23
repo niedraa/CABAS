@@ -391,10 +391,29 @@ describe('recettes', () => {
 // ─── Magasins ────────────────────────────────────────────────────────────────
 
 describe('magasins', () => {
-  it('propose 5 enseignes avec des frais et des URL cohérents', () => {
-    expect(stores.map((s) => s.id)).toEqual(['leclerc', 'carrefour', 'auchan', 'intermarche', 'lidl']);
+  it('propose 7 enseignes en France et 7 en Espagne avec des frais et des URL cohérents', () => {
+    expect(stores.filter((s) => s.country === 'FR').map((s) => s.id)).toEqual([
+      'leclerc',
+      'carrefour',
+      'auchan',
+      'intermarche',
+      'lidl',
+      'superu',
+      'monoprix',
+    ]);
+    expect(stores.filter((s) => s.country === 'ES').map((s) => s.id)).toEqual([
+      'mercadona',
+      'carrefour_es',
+      'lidl_es',
+      'dia',
+      'alcampo',
+      'eroski',
+      'consum',
+    ]);
     for (const s of stores) {
-      expect(s.chain).toBe(s.id);
+      expect(s.id === s.chain || s.id === `${s.chain}_es`).toBe(true);
+      expect(['FR', 'ES']).toContain(s.country);
+      expect(s.driveUrl.includes(s.country === 'ES' ? '.es' : '.fr') || s.driveUrl.includes('.com') || s.driveUrl.includes('e.leclerc')).toBe(true);
       expect(s.searchUrlTemplate).toMatch(/^https:\/\/.+\{query\}/);
       expect(s.driveUrl).toMatch(/^https:\/\//);
       expect(Number.isInteger(s.driveFeeCents)).toBe(true);
@@ -403,20 +422,28 @@ describe('magasins', () => {
       if (s.deliveryFeeCents !== null) expect(s.deliveryFeeCents).toBeGreaterThan(0);
     }
     expect(storesById.lidl.deliveryFeeCents).toBeNull();
+    expect(storesById.lidl_es.deliveryFeeCents).toBeNull();
+    expect(storesById.mercadona.hasDrive).toBe(false);
   });
 });
 
 // ─── Produits ────────────────────────────────────────────────────────────────
 
 describe('produits', () => {
-  it('ont des ids et des EAN-13 uniques et valides (préfixe France 300-379)', () => {
+  it('ont des ids et des EAN-13 uniques et valides (préfixe France 300-379, Espagne 840-849)', () => {
     expect(duplicates(products.map((p) => p.id))).toEqual([]);
     expect(duplicates(products.map((p) => p.ean))).toEqual([]);
+    const spanishOnly = new Set(['mercadona', 'dia', 'alcampo', 'eroski', 'consum']);
     for (const p of products) {
       expect(isValidEan13(p.ean)).toBe(true);
       const prefix = Number(p.ean.slice(0, 3));
-      expect(prefix).toBeGreaterThanOrEqual(300);
-      expect(prefix).toBeLessThanOrEqual(379);
+      if (p.storeChain && spanishOnly.has(p.storeChain)) {
+        expect(prefix).toBeGreaterThanOrEqual(840);
+        expect(prefix).toBeLessThanOrEqual(849);
+      } else {
+        expect(prefix).toBeGreaterThanOrEqual(300);
+        expect(prefix).toBeLessThanOrEqual(379);
+      }
     }
   });
 
@@ -508,30 +535,56 @@ describe('prix', () => {
     }
   });
 
-  it('placent chaque MDD uniquement dans son enseigne', () => {
+  it('placent chaque MDD uniquement dans les magasins de son enseigne (France et Espagne)', () => {
     for (const price of prices) {
       const product = productsById[price.productId];
       if (product.isStoreBrand) expect(storesById[price.storeId].chain).toBe(product.storeChain);
     }
     for (const product of products.filter((p) => p.isStoreBrand)) {
-      expect(pricesByProduct.get(product.id)?.length).toBe(1);
+      const expected = stores.filter((s) => s.chain === product.storeChain).length;
+      expect(pricesByProduct.get(product.id)?.length).toBe(expected);
     }
   });
 
-  it('placent chaque produit de marque nationale dans au moins 4 magasins sur 5', () => {
+  it('placent chaque produit de marque nationale dans au moins 4 magasins de chaque pays', () => {
     for (const product of products.filter((p) => !p.isStoreBrand)) {
-      const storesWithPrice = new Set((pricesByProduct.get(product.id) ?? []).map((p) => p.storeId));
-      expect(storesWithPrice.size).toBeGreaterThanOrEqual(4);
+      for (const country of ['FR', 'ES'] as const) {
+        const storesWithPrice = new Set(
+          (pricesByProduct.get(product.id) ?? []).filter((p) => storesById[p.storeId].country === country).map((p) => p.storeId),
+        );
+        expect(storesWithPrice.size).toBeGreaterThanOrEqual(4);
+      }
     }
   });
 
-  it('permettent de comparer chaque ingrédient de recette dans au moins 3 magasins', () => {
+  it('rendent les courses moins chères en Espagne qu’en France (même enseigne, même produit)', () => {
+    let fr = 0;
+    let es = 0;
+    for (const product of products.filter((p) => !p.isStoreBrand)) {
+      const list = pricesByProduct.get(product.id) ?? [];
+      const a = list.find((x) => x.storeId === 'carrefour');
+      const b = list.find((x) => x.storeId === 'carrefour_es');
+      if (a && b) {
+        fr += a.priceCents;
+        es += b.priceCents;
+      }
+    }
+    expect(es / fr).toBeGreaterThan(0.8);
+    expect(es / fr).toBeLessThan(0.95);
+  });
+
+  it('permettent de comparer chaque ingrédient de recette dans au moins 3 magasins de chaque pays', () => {
     const tooFew: string[] = [];
     for (const id of requiredIngredientIds) {
-      const storeIds = new Set(
-        products.filter((p) => p.ingredientId === id).flatMap((p) => (pricesByProduct.get(p.id) ?? []).map((x) => x.storeId)),
-      );
-      if (storeIds.size < 3) tooFew.push(`${id} (${storeIds.size})`);
+      for (const country of ['FR', 'ES'] as const) {
+        const storeIds = new Set(
+          products
+            .filter((p) => p.ingredientId === id)
+            .flatMap((p) => (pricesByProduct.get(p.id) ?? []).map((x) => x.storeId))
+            .filter((sid) => storesById[sid].country === country),
+        );
+        if (storeIds.size < 3) tooFew.push(`${id} ${country} (${storeIds.size})`);
+      }
     }
     expect(requiredIngredientIds.length).toBeGreaterThan(100);
     expect(tooFew).toEqual([]);
@@ -543,11 +596,12 @@ describe('prix', () => {
     for (const mdd of products.filter((p) => p.isStoreBrand)) {
       const national = productsById[`prd_${mdd.ingredientId}`];
       expect(national).toBeDefined();
-      const mddPrice = pricesByProduct.get(mdd.id)![0];
-      const natPrice = (pricesByProduct.get(national.id) ?? []).find((x) => x.storeId === mddPrice.storeId);
-      if (!natPrice) continue; // marque nationale non référencée dans ce magasin (ex. Lidl)
-      if (unit(mdd, mddPrice) >= unit(national, natPrice)) {
-        violations.push(`${mdd.id} : ${mddPrice.priceCents}/${mdd.packSize} ≥ ${natPrice.priceCents}/${national.packSize}`);
+      for (const mddPrice of pricesByProduct.get(mdd.id)!) {
+        const natPrice = (pricesByProduct.get(national.id) ?? []).find((x) => x.storeId === mddPrice.storeId);
+        if (!natPrice) continue; // marque nationale non référencée dans ce magasin (ex. Lidl)
+        if (unit(mdd, mddPrice) >= unit(national, natPrice)) {
+          violations.push(`${mdd.id}@${mddPrice.storeId} : ${mddPrice.priceCents}/${mdd.packSize} ≥ ${natPrice.priceCents}/${national.packSize}`);
+        }
       }
     }
     expect(violations).toEqual([]);

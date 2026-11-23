@@ -112,8 +112,10 @@ function store(id: Store['chain'], driveFee = 0): Store {
   return {
     id,
     chain: id,
+    country: 'FR',
     name: `${id} Drive`,
     city: 'Lyon',
+    hasDrive: true,
     driveFeeCents: driveFee,
     deliveryFeeCents: 599,
     minOrderCents: 0,

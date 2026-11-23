@@ -19,6 +19,12 @@ export const STORE_MONOGRAMS: Record<string, { initials: string; name: string }>
   intermarche: { initials: 'I', name: 'Intermarché' },
   lidl: { initials: 'Li', name: 'Lidl' },
   monoprix: { initials: 'M', name: 'Monoprix' },
+  superu: { initials: 'U', name: 'Super U' },
+  mercadona: { initials: 'Me', name: 'Mercadona' },
+  dia: { initials: 'D', name: 'Dia' },
+  alcampo: { initials: 'Al', name: 'Alcampo' },
+  eroski: { initials: 'E', name: 'Eroski' },
+  consum: { initials: 'Co', name: 'Consum' },
 };
 
 const DIM: Record<StoreBadgeSize, number> = { xs: 20, sm: 28, md: 36, lg: 48, xl: 64 };

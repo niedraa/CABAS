@@ -328,6 +328,12 @@ export const storeColors: Record<string, { bg: string; fg: string }> = {
   intermarche: { bg: '#C8102E', fg: '#FFFFFF' },
   lidl: { bg: '#F5C400', fg: '#0050AA' },
   monoprix: { bg: '#1A1A1A', fg: '#FFFFFF' },
+  superu: { bg: '#E3001B', fg: '#FFFFFF' },
+  mercadona: { bg: '#0A7D3B', fg: '#FFFFFF' },
+  dia: { bg: '#D1121B', fg: '#FFFFFF' },
+  alcampo: { bg: '#1E6B3A', fg: '#FFFFFF' },
+  eroski: { bg: '#173F8A', fg: '#FFFFFF' },
+  consum: { bg: '#E35205', fg: '#FFFFFF' },
   default: { bg: palette.foret600, fg: palette.lin },
 };
 

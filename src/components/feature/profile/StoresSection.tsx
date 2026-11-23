@@ -1,19 +1,22 @@
 /**
- * Section « Magasins » : cartes d'enseigne (monogramme, nom, retrait drive,
- * livraison) à sélection multiple, 1 à 5 enseignes. Composant contrôlé
- * (`value` = ids de magasins) ; la liste des magasins est passée par l'écran.
+ * Section « Magasins » : choix du pays (France / Espagne), puis cartes
+ * d'enseigne (monogramme, nom, retrait drive, livraison) à sélection
+ * multiple, 1 à 5 enseignes. On peut panacher les deux pays (frontaliers).
+ * Composant contrôlé (`value` = ids de magasins) ; la liste des magasins est
+ * passée par l'écran.
  */
-import React from 'react';
+import { getLocales } from 'expo-localization';
+import React, { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, FadeOut, LinearTransition, useAnimatedStyle, useDerivedValue, withSpring } from 'react-native-reanimated';
 import { Check, PackageCheck, Store as StoreIcon, Truck } from 'lucide-react-native';
 
-import { PressableScale, Row, Stack, StaggeredList, StoreBadge, StoreBadgeStack, Text } from '@/components/ui';
-import { formatPrice, STORE_CHAIN_LABELS, type Store } from '@/core';
+import { PressableScale, Row, SegmentedControl, Stack, StaggeredList, StoreBadge, StoreBadgeStack, Text } from '@/components/ui';
+import { COUNTRY_FLAGS, COUNTRY_LABELS, COUNTRIES, formatPrice, storeDisplayName, type Country, type Store } from '@/core';
 import { haptics } from '@/lib/haptics';
 import { useTheme } from '@/theme';
 
-import { STORES_MAX, STORES_RECOMMENDED, toggleStoreId } from './profileOptions';
+import { initialStoreCountry, STORES_MAX, STORES_RECOMMENDED, toggleStoreId } from './profileOptions';
 
 export interface StoresSectionProps {
   value: string[];
@@ -25,13 +28,13 @@ export interface StoresSectionProps {
 
 /** Libellés de service d'un magasin (drive / livraison), prêts à afficher. */
 export function storeServiceLabels(store: Store): { pickup: string; delivery: string } {
-  const hasDrive = /drive/i.test(store.name);
-  const pickup = hasDrive
+  const pickup = store.hasDrive
     ? store.driveFeeCents === 0
       ? 'Drive · retrait gratuit'
       : `Drive · retrait ${formatPrice(store.driveFeeCents)}`
     : 'Courses en magasin';
-  const delivery = store.deliveryFeeCents === null ? 'Pas de livraison' : `Livraison ${formatPrice(store.deliveryFeeCents)}`;
+  const min = store.minOrderCents > 0 ? ` · dès ${formatPrice(store.minOrderCents)}` : '';
+  const delivery = store.deliveryFeeCents === null ? 'Pas de livraison' : `Livraison ${formatPrice(store.deliveryFeeCents)}${min}`;
   return { pickup, delivery };
 }
 
@@ -39,6 +42,10 @@ export function StoresSection({ value, onChange, stores, max = STORES_MAX, testI
   const t = useTheme();
   const selectedChains = value.map((id) => stores.find((s) => s.id === id)?.chain ?? id);
   const n = value.length;
+  const countries = COUNTRIES.filter((ct) => stores.some((s) => s.country === ct));
+  const [country, setCountry] = useState<Country>(() => initialStoreCountry(value, stores, safeRegion()));
+  const visible = countries.length > 1 ? stores.filter((s) => s.country === country) : stores;
+  const otherCountryCount = value.filter((id) => stores.find((s) => s.id === id)?.country !== country).length;
 
   const toggle = (id: string) => {
     const res = toggleStoreId(value, id, max);
@@ -89,8 +96,28 @@ export function StoresSection({ value, onChange, stores, max = STORES_MAX, testI
         </Row>
       </Animated.View>
 
-      <StaggeredList gap="sm">
-        {stores.map((store) => (
+      {countries.length > 1 ? (
+        <Stack gap="xs">
+          <SegmentedControl<Country>
+            options={countries.map((ct) => ({ value: ct, label: `${COUNTRY_FLAGS[ct]}  ${COUNTRY_LABELS[ct]}` }))}
+            value={country}
+            onChange={(ct) => {
+              haptics.select();
+              setCountry(ct);
+            }}
+            accessibilityLabel="Pays de tes magasins"
+            testID={`${testID}-country`}
+          />
+          {otherCountryCount > 0 ? (
+            <Text variant="footnote" color="textSecondary" testID={`${testID}-other-country`}>
+              + {otherCountryCount} enseigne{otherCountryCount > 1 ? 's' : ''} choisie{otherCountryCount > 1 ? 's' : ''} dans l’autre pays
+            </Text>
+          ) : null}
+        </Stack>
+      ) : null}
+
+      <StaggeredList key={country} gap="sm">
+        {visible.map((store) => (
           <StoreCard
             key={store.id}
             store={store}
@@ -103,6 +130,15 @@ export function StoresSection({ value, onChange, stores, max = STORES_MAX, testI
       </StaggeredList>
     </Stack>
   );
+}
+
+/** Région de l'appareil (ex. « ES ») ; null si indisponible. */
+function safeRegion(): string | null {
+  try {
+    return getLocales()[0]?.regionCode ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function StoreCard({
@@ -120,7 +156,7 @@ function StoreCard({
 }) {
   const t = useTheme();
   const c = t.colors;
-  const name = STORE_CHAIN_LABELS[store.chain] ?? store.name;
+  const name = storeDisplayName(store);
   const { pickup, delivery } = storeServiceLabels(store);
   const p = useDerivedValue(() => withSpring(selected ? 1 : 0, t.motion.springBouncy), [selected]);
   const checkStyle = useAnimatedStyle(() => ({ opacity: Math.min(1, p.get() * 1.5), transform: [{ scale: 0.3 + 0.7 * p.get() }] }));

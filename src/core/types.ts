@@ -111,7 +111,28 @@ export type BaseUnit = 'g' | 'ml' | 'piece';
 
 export type MealType = 'dejeuner' | 'diner';
 
-export type StoreChain = 'leclerc' | 'carrefour' | 'auchan' | 'intermarche' | 'lidl' | 'monoprix';
+/** Pays couverts par le comparateur (prix en euros dans les deux cas). */
+export const COUNTRIES = ['FR', 'ES'] as const;
+export type Country = (typeof COUNTRIES)[number];
+
+/** Enseignes gérées. `carrefour` et `lidl` existent en France ET en Espagne. */
+export const STORE_CHAINS = [
+  // France
+  'leclerc',
+  'carrefour',
+  'auchan',
+  'intermarche',
+  'lidl',
+  'monoprix',
+  'superu',
+  // Espagne
+  'mercadona',
+  'dia',
+  'alcampo',
+  'eroski',
+  'consum',
+] as const;
+export type StoreChain = (typeof STORE_CHAINS)[number];
 
 // ─── Profil ──────────────────────────────────────────────────────────────────
 
@@ -225,8 +246,12 @@ export interface Recipe {
 export interface Store {
   id: string;
   chain: StoreChain;
+  /** Pays du magasin (France ou Espagne). */
+  country: Country;
   name: string;
   city: string;
+  /** Retrait drive / click & collect proposé (sinon : courses en magasin). */
+  hasDrive: boolean;
   /** Frais de retrait drive / livraison, centimes. */
   driveFeeCents: number;
   deliveryFeeCents: number | null;

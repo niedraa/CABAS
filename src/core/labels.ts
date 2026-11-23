@@ -2,7 +2,7 @@
  * Libellés français des référentiels du domaine (affichage UI, raisons,
  * messages d'erreur). Une seule source pour l'app et les Edge Functions.
  */
-import type { Aisle, Allergen, Cuisine, Diet, Equipment, MealType, StoreChain } from './types';
+import type { Aisle, Allergen, Country, Cuisine, Diet, Equipment, MealType, Store, StoreChain } from './types';
 
 export const ALLERGEN_LABELS: Record<Allergen, string> = {
   gluten: 'Gluten',
@@ -82,4 +82,33 @@ export const STORE_CHAIN_LABELS: Record<StoreChain, string> = {
   intermarche: 'Intermarché',
   lidl: 'Lidl',
   monoprix: 'Monoprix',
+  superu: 'Super U',
+  mercadona: 'Mercadona',
+  dia: 'Dia',
+  alcampo: 'Alcampo',
+  eroski: 'Eroski',
+  consum: 'Consum',
 };
+
+export const COUNTRY_LABELS: Record<Country, string> = {
+  FR: 'France',
+  ES: 'Espagne',
+};
+
+export const COUNTRY_FLAGS: Record<Country, string> = {
+  FR: '🇫🇷',
+  ES: '🇪🇸',
+};
+
+/** Enseignes présentes dans les deux pays : le nom affiché précise le pays. */
+const CROSS_BORDER_CHAINS: readonly StoreChain[] = ['carrefour', 'lidl'];
+
+/**
+ * Nom court d'un magasin, prêt à afficher : « Mercadona », « Leclerc »,
+ * « Carrefour Espagne » (enseigne présente dans les deux pays).
+ */
+export function storeDisplayName(store: Pick<Store, 'chain' | 'country' | 'name'>): string {
+  const base = STORE_CHAIN_LABELS[store.chain] ?? store.name;
+  if (store.country === 'ES' && CROSS_BORDER_CHAINS.includes(store.chain)) return `${base} Espagne`;
+  return base;
+}

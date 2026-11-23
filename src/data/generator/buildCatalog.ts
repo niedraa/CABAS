@@ -16,7 +16,7 @@
  *
  * Aucune dépendance (imports de types uniquement) : chargeable par Node.
  */
-import type { Allergen, Ingredient, Price, Product, Store, StoreChain } from '../../core/types';
+import type { Allergen, Country, Ingredient, Price, Product, Store, StoreChain } from '../../core/types';
 import type { ProductFamily, ProductSpec } from '../productSpecs';
 
 // ─── Constantes du modèle ────────────────────────────────────────────────────
@@ -24,7 +24,7 @@ import type { ProductFamily, ProductSpec } from '../productSpecs';
 /** Date de relevé des prix de démo. */
 export const DEMO_PRICES_UPDATED_AT = '2026-11-09T06:00:00.000Z';
 
-/** Indice de prix moyen de chaque enseigne (Carrefour = référence). */
+/** Indice de prix moyen de chaque enseigne dans son pays (Carrefour = référence). */
 export const CHAIN_PRICE_INDEX: Record<StoreChain, number> = {
   leclerc: 0.95,
   lidl: 0.93,
@@ -32,7 +32,28 @@ export const CHAIN_PRICE_INDEX: Record<StoreChain, number> = {
   carrefour: 1.0,
   intermarche: 1.01,
   monoprix: 1.12,
+  superu: 0.99,
+  mercadona: 0.95,
+  dia: 0.96,
+  alcampo: 0.97,
+  eroski: 1.03,
+  consum: 1.02,
 };
+
+/**
+ * Niveau de prix alimentaire du pays (France = 1). Les courses coûtent en
+ * moyenne ≈ 12 % de moins en Espagne (indices Eurostat des prix alimentaires).
+ */
+export const COUNTRY_PRICE_INDEX: Record<Country, number> = { FR: 1, ES: 0.88 };
+
+/**
+ * Part des produits de marque nationale absents de l'enseigne (hard-discount,
+ * Mercadona qui privilégie sa marque Hacendado). Le vrac est toujours vendu.
+ */
+const NATIONAL_MISSING_SHARE: Partial<Record<StoreChain, number>> = { lidl: 0.3, mercadona: 0.45, dia: 0.25 };
+
+/** Enseignes à forte proportion de marques propres : le bio de marque y est plus rare. */
+const BIO_SCARCE_CHAINS: readonly StoreChain[] = ['lidl', 'mercadona', 'dia'];
 
 /** Amplitude du bruit déterministe par (produit, magasin). */
 const NATIONAL_NOISE = 0.06;
@@ -41,8 +62,6 @@ const MDD_NOISE = 0.03;
 const DEFAULT_MDD_RATIO = 0.74;
 /** Part des prix en promotion. */
 const PROMO_SHARE = 0.08;
-/** Part des produits de marque nationale absents chez Lidl. */
-const LIDL_MISSING_SHARE = 0.3;
 
 /** Promotions possibles : libellé + coefficient sur le prix unitaire effectif. */
 const PROMOS: { label: string; factor: number }[] = [
@@ -82,6 +101,26 @@ const MDD_BRANDS: Record<ProductFamily, Partial<Record<StoreChain, string>>> = {
   surgeles: { leclerc: 'Marque Repère', carrefour: 'Carrefour', auchan: 'Auchan', intermarche: 'Intermarché', lidl: 'Freshona' },
   vin: {},
 };
+
+/** Marque distributeur par défaut des enseignes sans déclinaison par famille. */
+const DEFAULT_MDD_BRAND: Partial<Record<StoreChain, string>> = {
+  superu: 'Produits U',
+  monoprix: 'Monoprix',
+  mercadona: 'Hacendado',
+  dia: 'Dia',
+  alcampo: 'Alcampo',
+  eroski: 'Eroski',
+  consum: 'Consum',
+};
+
+/** Marque distributeur d'une famille dans une enseigne (aucune pour le vin). */
+export function mddBrandFor(family: ProductFamily, chain: StoreChain): string | undefined {
+  if (family === 'vin') return undefined;
+  return MDD_BRANDS[family][chain] ?? DEFAULT_MDD_BRAND[chain];
+}
+
+/** Enseignes exclusivement espagnoles (EAN des MDD en 84x). */
+const SPANISH_ONLY_CHAINS: readonly StoreChain[] = ['mercadona', 'dia', 'alcampo', 'eroski', 'consum'];
 
 // ─── Aléa déterministe ───────────────────────────────────────────────────────
 
@@ -130,12 +169,14 @@ export function isValidEan13(ean: string): boolean {
 }
 
 /**
- * EAN-13 déterministe avec un préfixe GS1 France (300-379). Le préfixe
- * entreprise dépend de la marque, le code article du produit.
+ * EAN-13 déterministe avec un préfixe GS1 France (300-379) ou Espagne
+ * (840-849). Le préfixe entreprise dépend de la marque, le code article du produit.
  */
-function makeEan(brand: string, productId: string, attempt: number): string {
+function makeEan(brand: string, productId: string, attempt: number, spanish = false): string {
   const company = String(hashString(`brand:${brand}`) % 1_000_000).padStart(6, '0');
-  const country = String(300 + (hashString(`country:${brand}`) % 80)); // 300-379
+  const country = spanish
+    ? String(840 + (hashString(`country:${brand}`) % 10)) // 840-849
+    : String(300 + (hashString(`country:${brand}`) % 80)); // 300-379
   const item = String(hashString(`item:${productId}:${attempt}`) % 1000).padStart(3, '0');
   const first12 = `${country}${company}${item}`;
   return `${first12}${ean13CheckDigit(first12)}`;
@@ -175,9 +216,9 @@ export function buildProducts(
   const usedEans = new Set<string>();
   const products: Product[] = [];
 
-  const uniqueEan = (brand: string, productId: string): string => {
+  const uniqueEan = (brand: string, productId: string, spanish = false): string => {
     for (let attempt = 0; attempt < 1000; attempt++) {
-      const ean = makeEan(brand, productId, attempt);
+      const ean = makeEan(brand, productId, attempt, spanish);
       if (!usedEans.has(ean)) {
         usedEans.add(ean);
         return ean;
@@ -201,7 +242,7 @@ export function buildProducts(
       organic?: boolean;
     }): Product => ({
       id: fields.id,
-      ean: uniqueEan(fields.brand, fields.id),
+      ean: uniqueEan(fields.brand, fields.id, !!fields.storeChain && SPANISH_ONLY_CHAINS.includes(fields.storeChain)),
       name: fields.name,
       brand: fields.brand,
       isStoreBrand: fields.storeChain !== undefined,
@@ -230,7 +271,7 @@ export function buildProducts(
     if (spec.mdd !== false) {
       const mdd = spec.mdd ?? {};
       for (const chain of chainsOf(stores)) {
-        const brand = MDD_BRANDS[spec.family][chain];
+        const brand = mddBrandFor(spec.family, chain);
         if (!brand) continue;
         const id = mddProductId(ingredient.id, chain);
         products.push(
@@ -262,15 +303,29 @@ function promoFor(productId: string, storeId: string, priceCents: number): Pick<
   return { promoPriceCents, promoLabel: promo.label, promoUntil: until };
 }
 
-/** Le produit national est-il référencé chez Lidl ? (≈ 70 % des cas, toujours pour le vrac). */
-function nationalSoldAtLidl(spec: ProductSpec, productId: string): boolean {
+/**
+ * Le produit national est-il référencé dans ce magasin ? Toujours pour le vrac ;
+ * Lidl ≈ 70 %, Mercadona ≈ 55 %, Dia ≈ 75 % ; partout ailleurs.
+ * (Clé `lidl:` conservée pour Lidl France : prix français stables.)
+ */
+function nationalSoldAt(spec: ProductSpec, productId: string, store: Store): boolean {
   if (spec.brand.startsWith('Vrac')) return true;
-  return rand01(`lidl:${productId}`) >= LIDL_MISSING_SHARE;
+  const missing = NATIONAL_MISSING_SHARE[store.chain];
+  if (!missing) return true;
+  const key = store.id === 'lidl' ? `lidl:${productId}` : `missing:${productId}:${store.id}`;
+  return rand01(key) >= missing;
+}
+
+/** Bio de marque nationale : présent un produit sur deux dans les enseignes à MDD dominante. */
+function bioSoldAt(productId: string, store: Store): boolean {
+  if (!BIO_SCARCE_CHAINS.includes(store.chain)) return true;
+  const key = store.id === 'lidl' ? `lidl-bio:${productId}` : `bio:${productId}:${store.id}`;
+  return rand01(key) >= 0.5;
 }
 
 /** Prix national « théorique » d'un produit dans un magasin (avant arrondi). */
 function nationalRawPrice(baseCents: number, productId: string, store: Store): number {
-  const index = CHAIN_PRICE_INDEX[store.chain] ?? 1;
+  const index = (CHAIN_PRICE_INDEX[store.chain] ?? 1) * (COUNTRY_PRICE_INDEX[store.country] ?? 1);
   return baseCents * index * (1 + noise(`price:${productId}:${store.id}`, NATIONAL_NOISE));
 }
 
@@ -302,16 +357,16 @@ export function buildPrices(
     if (!product.isStoreBrand) {
       const base = product.organic && spec.bio ? spec.bio.priceCents : spec.priceCents;
       for (const store of stores) {
-        if (store.chain === 'lidl' && !nationalSoldAtLidl(spec, product.id)) continue;
-        // Le bio est plus rare chez Lidl : présent un produit sur deux.
-        if (store.chain === 'lidl' && product.organic && rand01(`lidl-bio:${product.id}`) < 0.5) continue;
+        if (!nationalSoldAt(spec, product.id, store)) continue;
+        if (product.organic && !bioSoldAt(product.id, store)) continue;
         push(product.id, store, nationalRawPrice(base, product.id, store));
       }
       continue;
     }
 
-    // MDD : uniquement dans son enseigne, dérivée du prix unitaire national
-    // du même magasin (garantit une MDD moins chère au kilo / à l'unité).
+    // MDD : uniquement dans son enseigne (dans chaque pays où elle est présente),
+    // dérivée du prix unitaire national du même magasin (garantit une MDD
+    // moins chère au kilo / à l'unité).
     const ratio = spec.mdd ? (spec.mdd.ratio ?? DEFAULT_MDD_RATIO) : DEFAULT_MDD_RATIO;
     const nationalId = nationalProductId(product.ingredientId);
     for (const store of stores) {

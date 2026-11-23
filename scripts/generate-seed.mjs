@@ -173,7 +173,8 @@ export function buildSeedSql(data) {
 
   // Magasins
   const stoCols = [
-    'id', 'chain', 'name', 'city', 'drive_fee_cents', 'delivery_fee_cents', 'min_order_cents', 'search_url_template', 'drive_url',
+    'id', 'chain', 'country', 'name', 'city', 'has_drive', 'drive_fee_cents', 'delivery_fee_cents', 'min_order_cents',
+    'search_url_template', 'drive_url',
   ];
   parts.push('-- ─── Magasins ───\n');
   parts.push(
@@ -181,8 +182,8 @@ export function buildSeedSql(data) {
       'stores',
       stoCols,
       data.stores.map((s) => [
-        sqlValue(s.id), `${sqlValue(s.chain)}::public.store_chain`, sqlValue(s.name), sqlValue(s.city),
-        sqlValue(s.driveFeeCents), sqlValue(s.deliveryFeeCents), sqlValue(s.minOrderCents),
+        sqlValue(s.id), `${sqlValue(s.chain)}::public.store_chain`, `${sqlValue(s.country)}::public.country_code`,
+        sqlValue(s.name), sqlValue(s.city), sqlValue(s.hasDrive), sqlValue(s.driveFeeCents), sqlValue(s.deliveryFeeCents), sqlValue(s.minOrderCents),
         sqlValue(s.searchUrlTemplate), sqlValue(s.driveUrl),
       ]),
       upsertClause(['id'], stoCols),

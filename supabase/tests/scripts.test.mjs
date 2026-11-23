@@ -69,7 +69,7 @@ test('generate-seed : le SQL produit est exécutable et restitue les valeurs pi�
         ingredients: [{ ingredientId: 'oeuf', quantity: 3, unit: 'piece', note: "battus à l'ancienne" }], steps: [{ text: "Bats les œufs. C'est tout", timerMin: 2 }],
       },
     ],
-    stores: [{ id: 'lidl', chain: 'lidl', name: 'Lidl', city: 'Lyon', driveFeeCents: 0, deliveryFeeCents: null, minOrderCents: 0, searchUrlTemplate: 'https://x/?q={query}', driveUrl: 'https://x' }],
+    stores: [{ id: 'lidl', chain: 'lidl', country: 'FR', hasDrive: false, name: 'Lidl', city: 'Lyon', driveFeeCents: 0, deliveryFeeCents: null, minOrderCents: 0, searchUrlTemplate: 'https://x/?q={query}', driveUrl: 'https://x' }],
     products: [{ id: 'prd_oeuf', ean: '3000000000017', name: 'Œufs x6', brand: '', isStoreBrand: true, storeChain: 'lidl', ingredientId: 'oeuf', packSize: 6, packUnit: 'piece', allergens: ['oeufs'] }],
     prices: [{ productId: 'prd_oeuf', storeId: 'lidl', priceCents: 199, promoPriceCents: 149, promoLabel: "-25 % l'unité", promoUntil: '2026-11-30', updatedAt: '2026-11-09T06:00:00.000Z', source: 'demo' }],
   };
@@ -78,7 +78,7 @@ test('generate-seed : le SQL produit est exécutable et restitue les valeurs pi�
   // Schéma minimal : on rejoue les vraies migrations catalogue sur un bouchon Supabase.
   const { readFileSync } = await import('node:fs');
   await db.exec(readFileSync(join(ROOT, 'supabase/tests/supabase-stub.sql'), 'utf8'));
-  for (const f of ['20260901000000_extensions_and_types.sql', '20260901000100_catalog.sql']) {
+  for (const f of ['20260901000000_extensions_and_types.sql', '20260901000100_catalog.sql', '20261123000000_spain_and_more_stores.sql']) {
     await db.exec(readFileSync(join(ROOT, 'supabase/migrations', f), 'utf8').replace(/create extension if not exists pgcrypto[^;]*;/, ''));
   }
   await db.exec(sql);

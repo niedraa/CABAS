@@ -173,9 +173,9 @@ test('index des chemins chauds présents', async () => {
 test('seed : catalogue complet chargé', async () => {
   assert.equal(await count('select count(*) from public.ingredients'), 146);
   assert.equal(await count('select count(*) from public.recipes'), 70);
-  assert.equal(await count('select count(*) from public.stores'), 5);
-  assert.equal(await count('select count(*) from public.products'), 780);
-  assert.equal(await count('select count(*) from public.prices'), 1383);
+  assert.equal(await count('select count(*) from public.stores'), 14);
+  assert.equal(await count('select count(*) from public.products'), 1648);
+  assert.equal(await count('select count(*) from public.prices'), 3794);
   assert.ok((await count('select count(*) from public.recipe_ingredients')) > 300);
   const steps = await one(`select steps from public.recipes where id = 'rec_curry_pois_chiches'`);
   assert.ok(Array.isArray(steps.steps) && typeof steps.steps[0].text === 'string');
@@ -191,9 +191,9 @@ test('seed : chaque recette a des ingrédients et des étapes', async () => {
 
 test('seed : idempotent (rejouer ne duplique rien et n\'historise pas de faux changements)', async () => {
   const hist = await count('select count(*) from public.price_history');
-  assert.equal(hist, 1383, 'une ligne d\'historique par prix inséré');
+  assert.equal(hist, 3794, 'une ligne d\'historique par prix inséré');
   await db.exec(seedSql);
-  assert.equal(await count('select count(*) from public.prices'), 1383);
+  assert.equal(await count('select count(*) from public.prices'), 3794);
   assert.equal(await count('select count(*) from public.price_history'), hist);
 });
 
@@ -212,9 +212,9 @@ test('au moins 3 enseignes comparables pour la majorité des ingrédients acheta
 test('anon lit le catalogue', async () => {
   await asAnon(async () => {
     assert.equal(await count('select count(*) from public.recipes'), 70);
-    assert.equal(await count('select count(*) from public.prices'), 1383);
+    assert.equal(await count('select count(*) from public.prices'), 3794);
     assert.ok((await count('select count(*) from public.recipe_ingredients')) > 300);
-    assert.equal(await count('select count(*) from public.stores'), 5);
+    assert.equal(await count('select count(*) from public.stores'), 14);
   });
 });
 

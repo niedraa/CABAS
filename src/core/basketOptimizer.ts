@@ -68,6 +68,15 @@ export function storeFees(store: Store, channel: OrderChannel = 'drive'): number
   return store.driveFeeCents ?? 0;
 }
 
+/**
+ * Minimum de commande d'un magasin pour un canal. Il ne s'applique qu'aux
+ * commandes en ligne : sans drive, le canal « drive » = courses en magasin.
+ */
+export function storeMinOrder(store: Store, channel: OrderChannel = 'drive'): number {
+  if (channel === 'drive' && store.hasDrive === false) return 0;
+  return store.minOrderCents ?? 0;
+}
+
 function cmpStr(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
@@ -179,7 +188,7 @@ function evaluate(
     if (!lines) continue; // magasin de la combinaison inutilisé : pas de frais
     const subtotalCents = lines.reduce((s, l) => s + l.totalCents, 0);
     const feesCents = includeFees ? (storeFees(store, channel) ?? 0) : 0;
-    if (subtotalCents < (store.minOrderCents ?? 0)) valid = false;
+    if (subtotalCents < storeMinOrder(store, channel)) valid = false;
     parts.push({ storeId: store.id, lines, subtotalCents, feesCents });
     total += subtotalCents + feesCents;
   }

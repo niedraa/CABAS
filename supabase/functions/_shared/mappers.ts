@@ -132,6 +132,8 @@ export function rowToStore(r: Row): Store {
   return {
     id: str(r.id),
     chain: str(r.chain) as Store['chain'],
+    country: (r.country === 'ES' ? 'ES' : 'FR') as Store['country'],
+    hasDrive: r.has_drive == null ? true : bool(r.has_drive),
     name: str(r.name),
     city: str(r.city),
     driveFeeCents: num(r.drive_fee_cents),
