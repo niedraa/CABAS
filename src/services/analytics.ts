@@ -36,6 +36,7 @@ export type AnalyticsEvent =
   | 'order_prepared'
   | 'order_opened'
   | 'order_list_copied'
+  | 'list_shared'
   | 'order_confirmed'
   | 'paywall_viewed'
   | 'purchase_started'

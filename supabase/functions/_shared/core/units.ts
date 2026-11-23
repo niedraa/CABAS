@@ -193,3 +193,11 @@ export function formatIngredientLine(q: number, unit: Unit, ingredient: Partial<
   // (« 2 c. à s. d'huile », « 2 gousses d'ail ») : même construction.
   return `${formatQuantity(q, unit)} ${deOrElided(name)}`;
 }
+
+/** Nombre saisi à la française (« 1,5 », « 2 », « 0.75 ») → nombre fini, ou null. */
+export function parseDecimalFr(input: string): number | null {
+  const s = input.trim().replace(/\s+/g, '').replace(',', '.');
+  if (!/^\d+(\.\d+)?$|^\.\d+$/.test(s)) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}

@@ -208,3 +208,31 @@ export function compareItem(item: ShoppingListItem, index: CatalogIndex, now?: s
 export function compareList(items: readonly ShoppingListItem[], index: CatalogIndex, now?: string): ItemComparison[] {
   return items.filter((i) => !i.checked).map((i) => compareItem(i, index, now));
 }
+
+/**
+ * Restreint des comparaisons à un ensemble de magasins (offres, meilleure
+ * offre, alternative MDD). Un ensemble vide ne restreint rien.
+ */
+export function restrictComparisons(comparisons: readonly ItemComparison[], storeIds: readonly string[]): ItemComparison[] {
+  if (storeIds.length === 0) return comparisons.slice();
+  const allowed = new Set(storeIds);
+  return comparisons.map((c) => {
+    const offers = c.offers.filter((o) => allowed.has(o.storeId));
+    const next: ItemComparison = { itemId: c.itemId, label: c.label, offers };
+    if (offers[0]) next.best = offers[0];
+    if (c.cheaperAlternative && allowed.has(c.cheaperAlternative.storeId)) next.cheaperAlternative = c.cheaperAlternative;
+    return next;
+  });
+}
+
+/**
+ * Magasins comparables pour un utilisateur : tous ceux des PAYS de ses
+ * magasins préférés (on ne compare pas les prix de Barcelone à ceux de Lyon,
+ * sauf pour un frontalier qui a choisi des enseignes des deux côtés).
+ * Sans magasin préféré connu : tous les magasins.
+ */
+export function comparableStoreIds(stores: readonly Store[], preferredStoreIds: readonly string[]): string[] {
+  const countries = new Set(stores.filter((s) => preferredStoreIds.includes(s.id)).map((s) => s.country));
+  if (countries.size === 0) return stores.map((s) => s.id);
+  return stores.filter((s) => countries.has(s.country)).map((s) => s.id);
+}

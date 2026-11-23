@@ -56,10 +56,21 @@ export interface BasketState {
   reset(): void;
 }
 
-/** Le panier ne correspond plus à la liste (articles cochés / ajoutés depuis). */
-export function isBasketStale(state: Pick<BasketState, 'weekStart' | 'listUpdatedAt' | 'plan'>, list: ShoppingList | null, weekStart: string): boolean {
+/**
+ * Le panier ne correspond plus à la liste (articles cochés / ajoutés depuis),
+ * ou aux magasins du profil (si `preferredStoreIds` est fourni).
+ */
+export function isBasketStale(
+  state: Pick<BasketState, 'weekStart' | 'listUpdatedAt' | 'plan'> & { storeIds?: string[] },
+  list: ShoppingList | null,
+  weekStart: string,
+  preferredStoreIds?: readonly string[],
+): boolean {
   if (!state.plan) return true;
   if (state.weekStart !== weekStart) return true;
+  if (preferredStoreIds && state.storeIds && [...preferredStoreIds].sort().join('|') !== [...state.storeIds].sort().join('|')) {
+    return true;
+  }
   return (list?.updatedAt ?? null) !== state.listUpdatedAt;
 }
 
@@ -206,5 +217,7 @@ export function useBasketIsStale(): boolean {
   const plan = useBasketStore((s) => s.plan);
   const weekStart = useBasketStore((s) => s.weekStart);
   const listUpdatedAt = useBasketStore((s) => s.listUpdatedAt);
-  return isBasketStale({ plan, weekStart, listUpdatedAt }, list, ws);
+  const storeIds = useBasketStore((s) => s.storeIds);
+  const preferred = useProfileStore((s) => s.profile?.preferredStoreIds);
+  return isBasketStale({ plan, weekStart, listUpdatedAt, storeIds }, list, ws, preferred);
 }

@@ -58,9 +58,10 @@ import {
   useToast,
 } from '@/components/ui';
 import type { PlannedMeal } from '@/core';
-import { compareList, formatDayLabel, formatPrice, formatWeekRange, parseISODate, MONTH_SHORT } from '@/core';
+import { formatDayLabel, formatPrice, formatWeekRange, parseISODate, MONTH_SHORT } from '@/core';
 import { useCurrentWeek, useHydrated, useSubscription } from '@/hooks';
 import { haptics } from '@/lib/haptics';
+import { computeComparison } from '@/services/basket';
 import { useCatalog } from '@/services/catalog';
 import {
   findMeal,
@@ -100,8 +101,9 @@ export default function WeekScreen() {
   const meals = useMemo(() => plan?.meals ?? [], [plan]);
   // Budget : panier calculé s'il est à jour, sinon liste chiffrée (meilleures offres), sinon estimation.
   const listEstimate = useMemo(
-    () => (list && list.items.length > 0 ? listEstimateCents(compareList(list.items, catalog.index)) : null),
-    [list, catalog],
+    () =>
+      list && list.items.length > 0 ? listEstimateCents(computeComparison(list.items, profile?.preferredStoreIds, catalog)) : null,
+    [list, catalog, profile],
   );
   const stats = useMemo(
     () =>
@@ -253,7 +255,7 @@ export default function WeekScreen() {
       return;
     }
     const fresh = useListStore.getState().lists[ws];
-    const est = fresh ? listEstimateCents(compareList(fresh.items, catalog.index)) : null;
+    const est = fresh ? listEstimateCents(computeComparison(fresh.items, profile?.preferredStoreIds, catalog)) : null;
     const s = computeWeekStats(res.plan.meals, catalog.recipesById, est !== null ? { cents: est, exact: false } : null);
     if (opts.celebrate) setCelebrate((n) => n + 1);
     toast.show({
@@ -269,6 +271,24 @@ export default function WeekScreen() {
     else {
       haptics.warning();
       toast.show({ title: 'Pas possible', message: res.message, tone: 'neutral' });
+    }
+  };
+
+  // Créneaux encore libres (aujourd'hui et après) : remplis d'un coup.
+  const fillableSlots = openSlots.filter((s) => s.date >= week.today);
+  const fillWeek = () => {
+    haptics.impact();
+    let added = 0;
+    for (const slot of fillableSlots) {
+      const res = usePlanStore.getState().addMeal(slot);
+      if (res.ok) added++;
+      else break;
+    }
+    if (added > 0) {
+      haptics.success();
+      toast.show({ title: 'Semaine complétée', message: `${added} repas ajouté${added > 1 ? 's' : ''} à ton menu.`, tone: 'success' });
+    } else {
+      toast.show({ title: 'Pas d’autre idée pour le moment', message: 'Essaie « Nouvelles idées ».', tone: 'neutral' });
     }
   };
 
@@ -335,6 +355,16 @@ export default function WeekScreen() {
             <Animated.View key={`stats-${ws}`} entering={bodyEntering} style={{ marginTop: t.spacing.lg }}>
               <WeekStatsCard stats={stats} weeklyBudgetCents={profile?.weeklyBudgetCents} testID="week-stats" />
             </Animated.View>
+          ) : null}
+          {plan && !atFreeLimit && !generating && fillableSlots.length > 0 ? (
+            <InfoBanner
+              tone="tip"
+              icon={Sparkles}
+              title={`${fillableSlots.length} repas encore libre${fillableSlots.length > 1 ? 's' : ''}`}
+              message="Cabas peut compléter ta semaine en respectant tes goûts et ton budget."
+              action={{ label: 'Compléter ma semaine', onPress: fillWeek }}
+              style={{ marginTop: t.spacing.md }}
+            />
           ) : null}
           {plan && atFreeLimit && openSlots.length > 0 ? (
             <InfoBanner

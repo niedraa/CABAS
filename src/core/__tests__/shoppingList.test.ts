@@ -214,3 +214,24 @@ describe('rayons, articles manuels, progression', () => {
     expect(listProgress([])).toEqual({ done: 0, total: 0, ratio: 0 });
   });
 });
+
+describe('buildShoppingList · ingrédients non achetables', () => {
+  it('ne liste jamais un ingrédient à ignorer (eau du robinet)', () => {
+    const { buildShoppingList } = jest.requireActual('../shoppingList') as typeof import('../shoppingList');
+    const ingredientsById = {
+      eau: { id: 'eau', name: 'Eau', aisle: 'boissons', allergens: [], isMeat: false, isPork: false, isFish: false, isSeafood: false, isAnimalProduct: false, baseUnit: 'ml', isPantryStaple: true },
+      riz: { id: 'riz', name: 'Riz', aisle: 'epicerie_salee', allergens: [], isMeat: false, isPork: false, isFish: false, isSeafood: false, isAnimalProduct: false, baseUnit: 'g' },
+    } as const;
+    const recipe = {
+      id: 'r1', title: 'Riz', description: '', emoji: '🍚', color: '#fff', cuisine: 'monde', tags: [], mealTypes: ['diner'], servings: 2,
+      prepTimeMin: 5, cookTimeMin: 10, difficulty: 1, equipment: [], costLevel: 1, steps: [],
+      ingredients: [
+        { ingredientId: 'riz', quantity: 150, unit: 'g' },
+        { ingredientId: 'eau', quantity: 300, unit: 'ml' },
+      ],
+    };
+    const plan = { id: 'p', weekStart: '2026-11-23', generatedAt: '', source: 'rules', meals: [{ id: 'm', date: '2026-11-23', type: 'diner', recipeId: 'r1', servings: 2 }] };
+    const items = buildShoppingList(plan as never, { r1: recipe } as never, ingredientsById as never, { skipIngredientIds: ['eau'] });
+    expect(items.map((i) => i.ingredientId)).toEqual(['riz']);
+  });
+});

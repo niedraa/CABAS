@@ -3,8 +3,9 @@
  *
  * - `computeComparison(items, storeIds?)` : comparaison article par article
  *   (core › compareList) sur le catalogue local — instantanée, hors-ligne.
- * - `computeBasket(req)` : comparaison sur TOUS les magasins (≥ 3 enseignes)
- *   + panier (core › optimizeBasket) restreint aux magasins choisis.
+ * - `computeBasket(req)` : comparaison sur tous les magasins des PAYS choisis
+ *   (France et / ou Espagne, ≥ 3 enseignes) + panier (core › optimizeBasket)
+ *   restreint aux magasins choisis.
  *   Production : Edge Function `optimize-basket` (prix frais) avec repli local.
  *   Le mode « le moins cher » multi-magasins est Premium : un compte gratuit
  *   reçoit le panier « un seul magasin » (`downgraded: true`).
@@ -20,7 +21,7 @@ import type {
   ShoppingListItem,
   StoreOffer,
 } from '@/core';
-import { allOffersForItem, canUse, compareList, optimizeBasket } from '@/core';
+import { allOffersForItem, canUse, comparableStoreIds, compareList, optimizeBasket, restrictComparisons } from '@/core';
 
 import { getCatalogSnapshot, type CatalogSnapshot } from './catalog';
 import { errorMessage, getSupabase } from './supabase';
@@ -105,14 +106,12 @@ export function computeComparison(
 ): ItemComparison[] {
   const comparisons = compareList(items, catalog.index);
   if (!storeIds || storeIds.length === 0) return comparisons;
-  const allowed = new Set(storeIds);
-  return comparisons.map((c) => {
-    const offers = c.offers.filter((o) => allowed.has(o.storeId));
-    const next: ItemComparison = { itemId: c.itemId, label: c.label, offers };
-    if (offers[0]) next.best = offers[0];
-    if (c.cheaperAlternative && allowed.has(c.cheaperAlternative.storeId)) next.cheaperAlternative = c.cheaperAlternative;
-    return next;
-  });
+  return restrictComparisons(comparisons, storeIds);
+}
+
+/** Magasins comparés pour ces magasins préférés : ceux des mêmes pays (France / Espagne). */
+export function comparisonScope(storeIds: readonly string[], catalog: CatalogSnapshot = getCatalogSnapshot()): string[] {
+  return comparableStoreIds(catalog.stores, knownStoreIds(storeIds, catalog));
 }
 
 /** Mode autorisé pour un droit donné. */
@@ -128,7 +127,11 @@ function knownStoreIds(storeIds: readonly string[], catalog: CatalogSnapshot): s
 export function computeBasketLocal(req: BasketRequest, catalog: CatalogSnapshot = getCatalogSnapshot()): Omit<BasketResult, 'source' | 'durationMs'> {
   const mode = effectiveBasketMode(req.mode, req.entitlement);
   const nowIso = new Date().toISOString();
-  const comparisons = applyProductChoices(compareList(req.items, catalog.index, nowIso), req.items, req.productChoices, catalog);
+  const scope = comparisonScope(req.storeIds, catalog);
+  const comparisons = restrictComparisons(
+    applyProductChoices(compareList(req.items, catalog.index, nowIso), req.items, req.productChoices, catalog),
+    scope,
+  );
   const allowed = knownStoreIds(req.storeIds, catalog);
   const plan = optimizeBasket(comparisons, catalog.stores, mode, {
     channel: req.channel,
@@ -178,7 +181,7 @@ export function createBasketService(deps: { remote: BasketRemote | null; getCata
           const mode = parsed.mode ?? effectiveBasketMode(req.mode, req.entitlement);
           if (mode === 'cheapest' && !canUse('optimized_basket', req.entitlement)) throw new Error('mode non autorisé');
           return {
-            comparisons: parsed.comparisons,
+            comparisons: restrictComparisons(parsed.comparisons, comparisonScope(req.storeIds, catalog)),
             plan: parsed.plan,
             mode,
             downgraded: mode !== req.mode,

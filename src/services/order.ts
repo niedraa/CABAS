@@ -8,7 +8,7 @@
  */
 import * as Clipboard from 'expo-clipboard';
 import * as WebBrowser from 'expo-web-browser';
-import { Linking } from 'react-native';
+import { Linking, Platform, Share } from 'react-native';
 
 import type { OrderHandoff } from '@/core';
 
@@ -56,4 +56,25 @@ export async function copyListToClipboard(text: string): Promise<boolean> {
     captureError(err, { where: 'copyListToClipboard' });
     return false;
   }
+}
+
+export type ShareOutcome = 'shared' | 'copied' | 'failed';
+
+/**
+ * Partage un texte (feuille de partage du système) ; repli : copie dans le
+ * presse-papiers (navigateur sans Web Share, partage refusé).
+ */
+export async function shareText(text: string, title = 'Ma liste Cabas'): Promise<ShareOutcome> {
+  const canNativeShare = Platform.OS !== 'web' || (typeof navigator !== 'undefined' && typeof navigator.share === 'function');
+  if (canNativeShare) {
+    try {
+      await Share.share({ message: text, title });
+      track('list_shared', { via: 'share', length: text.length });
+      return 'shared';
+    } catch {
+      // Partage annulé ou indisponible : on copie.
+    }
+  }
+  const copied = await copyListToClipboard(text);
+  return copied ? 'copied' : 'failed';
 }

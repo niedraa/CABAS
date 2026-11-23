@@ -24,7 +24,7 @@ import { persist } from 'zustand/middleware';
 import type { Aisle, BaseUnit, MealPlan, ShoppingList, ShoppingListItem } from '@/core';
 import { buildShoppingList, createManualItem, groupByAisle, listProgress, mergeWithExisting, toggleItem as toggleCore } from '@/core';
 import { track } from '@/services/analytics';
-import { getCatalogSnapshot } from '@/services/catalog';
+import { getCatalogSnapshot, NON_PURCHASABLE_INGREDIENT_IDS } from '@/services/catalog';
 
 import { pantryForWeekList, usePantryStore } from './pantryStore';
 import { basePersistOptions, registerPersistedStore } from './registry';
@@ -82,6 +82,7 @@ export const useListStore = create<ListState>()(
           const fresh = buildShoppingList(plan, catalog.recipesById, catalog.ingredientsById, {
             products: catalog.products,
             pantry,
+            skipIngredientIds: NON_PURCHASABLE_INGREDIENT_IDS,
           });
           const previous = get().lists[plan.weekStart] ?? emptyList(plan.weekStart);
           const list: ShoppingList = {

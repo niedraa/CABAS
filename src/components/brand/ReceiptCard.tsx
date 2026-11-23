@@ -18,15 +18,16 @@ export interface ReceiptCardProps {
   color?: string;
   style?: StyleProp<ViewStyle>;
   contentStyle?: StyleProp<ViewStyle>;
+  testID?: string;
 }
 
-export function ReceiptCard({ children, edges = 'bottom', header, color, style, contentStyle }: ReceiptCardProps) {
+export function ReceiptCard({ children, edges = 'bottom', header, color, style, contentStyle, testID }: ReceiptCardProps) {
   const t = useTheme();
   const bg = color ?? t.colors.surface;
   const top = edges === 'top' || edges === 'both';
   const bottom = edges === 'bottom' || edges === 'both';
   return (
-    <View style={style}>
+    <View style={style} testID={testID}>
       {top ? <ReceiptEdge position="top" color={bg} /> : null}
       <View
         style={[

@@ -26,6 +26,8 @@ export interface BuildListOptions {
   products?: Product[];
   /** (V2) Placard : les quantités disponibles sont déduites. */
   pantry?: PantryItem[];
+  /** Ingrédients qui ne s'achètent pas (eau du robinet) : jamais listés. */
+  skipIngredientIds?: readonly string[];
 }
 
 /** Id stable d'un article issu du planning. */
@@ -93,12 +95,13 @@ export function buildShoppingList(
   opts: BuildListOptions = {},
 ): ShoppingListItem[] {
   const acc = new Map<string, { ingredient: Ingredient; unit: BaseUnit; quantity: number; recipeIds: string[] }>();
+  const skip = new Set(opts.skipIngredientIds ?? []);
 
   for (const meal of plan.meals) {
     const recipe = recipesById[meal.recipeId];
     if (!recipe) continue;
     for (const ri of scaleRecipeIngredients(recipe, meal.servings)) {
-      if (ri.optional) continue;
+      if (ri.optional || skip.has(ri.ingredientId)) continue;
       const ingredient = lookupIngredient(ingredientsById, ri.ingredientId);
       if (!ingredient) continue;
       const base = toBase(ri.quantity, ri.unit, ingredient);
