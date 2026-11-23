@@ -2,7 +2,23 @@
 
 > Tes courses, de A à Z. Application mobile (iOS + Android, une seule base de code)
 > qui planifie les repas, génère la liste de courses, compare les prix entre
-> enseignes et prépare la commande drive / livraison.
+> enseignes et prépare la commande drive / livraison — en **France** et en **Espagne**.
+
+## Pays et enseignes
+
+| Pays | Enseignes (catalogue de démo) | Ville |
+|---|---|---|
+| 🇫🇷 France | E.Leclerc, Carrefour, Auchan, Intermarché, Lidl, Super U, Monoprix | Lyon |
+| 🇪🇸 Espagne | Mercadona, Carrefour, Lidl, Dia, Alcampo, Eroski, Consum | Barcelone |
+
+- `Store.country` (`FR` / `ES`) et `Store.hasDrive` (retrait drive / click & collect ;
+  sinon courses en magasin, sans minimum de commande).
+- Carrefour et Lidl existent dans les deux pays (`carrefour` / `carrefour_es`,
+  `lidl` / `lidl_es`) et partagent leurs marques distributeur ; les MDD espagnoles
+  (Hacendado, Dia, Alcampo, Eroski, Consum) portent un EAN 84x.
+- Le comparateur ne compare que les magasins des **pays** des enseignes choisies
+  (`core › comparableStoreIds`) ; un frontalier peut panacher les deux pays.
+- Prix de démo : indice enseigne × niveau de prix du pays (Espagne ≈ −12 %).
 
 ## Vue d'ensemble
 
@@ -90,8 +106,8 @@ _layout.tsx                 Providers, polices, splash, garde d'onboarding
                             → budget & temps → ustensiles → magasins → créneaux → génération
 (tabs)/                     Barre d'onglets personnalisée
   index.tsx                 Ma semaine (planning midi/soir)
-  liste.tsx                 Liste de courses (hors-ligne)
-  panier.tsx                Comparateur + panier optimisé
+  liste.tsx                 Liste de courses par rayon (hors-ligne, partage, placard)
+  panier.tsx                Comparateur + panier optimisé (un magasin / le moins cher, drive / livraison)
   profil.tsx                Profil & réglages
 recette/[id].tsx            Fiche recette + mode cuisine pas à pas
 remplacer/[mealId].tsx      Remplacer un plat (feuille modale)
@@ -100,12 +116,16 @@ commande/[storeId].tsx      Commande : panier pré-rempli → drive / livraison
 premium.tsx                 Paywall
 placard.tsx                 (V2) Placard & anti-gaspi
 budget.tsx                  (V2) Suivi du budget
-parametres/*                Notifications, abonnement, compte & données (RGPD), apparence
+parametres/[section]        Édition du profil : foyer, regime, budget, cuisine, magasins, repas
+parametres/notifications    Rappels et alertes prix
+parametres/compte           Export et suppression des données (RGPD)
 ```
 
 ## Qualité
 
 - `npm run typecheck`, `npm run lint`, `npm test` (Jest + Testing Library),
-  `npm run e2e` (Playwright sur le build web : parcours complet), `deno test` pour les fonctions.
+  `npm run e2e` (Playwright sur le build web `dist/` : onboarding, semaine, liste, prix,
+  commande, Premium, Espagne, placard, mode sombre, suppression du compte — captures dans
+  `e2e/screenshots/`), `deno test` pour les fonctions.
 - CI GitHub Actions à chaque PR (`.github/workflows/ci.yml`).
 - Sentry (erreurs) et PostHog (analytique produit) sont des no-op sans clé.

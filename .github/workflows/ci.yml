@@ -61,6 +61,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm i --no-save playwright
       - run: npx playwright install --with-deps chromium
       - run: npm run build:web
       - run: npm run e2e

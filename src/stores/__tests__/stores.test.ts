@@ -289,6 +289,9 @@ describe('orderStore & budgetStore', () => {
     useOrderStore.getState().confirmOrder(order.id);
     expect(useBudgetStore.getState().entries).toHaveLength(1);
     expect(useOrderStore.getState().orders[0].status).toBe('confirmed');
+    // Les articles commandés sont cochés dans la liste.
+    const listItems = getList(week()).items;
+    for (const line of order.lines) expect(listItems.find((i) => i.id === line.itemId)?.checked).toBe(true);
 
     const manual = useBudgetStore.getState().addManualEntry({ date: '2026-11-02', storeId: 'lidl', totalCents: 4250 });
     expect(useBudgetStore.getState().entries).toHaveLength(2);

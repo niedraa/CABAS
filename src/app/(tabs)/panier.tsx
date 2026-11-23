@@ -76,10 +76,13 @@ export default function PricesScreen() {
     }, [toBuy.length, stale]),
   );
 
-  const preferredComparisons = useMemo(
-    () => restrictComparisons(basket.comparisons, preferred.map((s) => s.id)),
-    [basket.comparisons, preferred],
-  );
+  const preferredComparisons = useMemo(() => {
+    const priced = new Set(toBuy.filter((i) => !!i.ingredientId).map((i) => i.id));
+    return restrictComparisons(
+      basket.comparisons.filter((c) => priced.has(c.itemId)),
+      preferred.map((s) => s.id),
+    );
+  }, [basket.comparisons, preferred, toBuy]);
   const totals = useMemo(
     () =>
       storeTotals(preferredComparisons, preferred, { channel: basket.channel }).map((x) => {
@@ -88,10 +91,22 @@ export default function PricesScreen() {
       }),
     [preferredComparisons, preferred, basket.channel, catalog],
   );
-  const sortedItems = useMemo(
-    () => [...basket.comparisons].sort((a, b) => (a.best ? 0 : 1) - (b.best ? 0 : 1) || (b.best?.totalCents ?? 0) - (a.best?.totalCents ?? 0)),
-    [basket.comparisons],
-  );
+
+  // Articles libres (« sacs poubelle ») : pas de produit au catalogue, donc pas comparés.
+  const manualItems = useMemo(() => toBuy.filter((i) => !i.ingredientId), [toBuy]);
+  const missingPriced = useMemo(() => {
+    const manual = new Set(manualItems.map((i) => i.id));
+    return (basket.plan?.missingItemIds ?? [])
+      .filter((id) => !manual.has(id))
+      .map((id) => basket.comparisons.find((c) => c.itemId === id)?.label ?? toBuy.find((i) => i.id === id)?.label)
+      .filter((x): x is string => !!x);
+  }, [basket.plan, basket.comparisons, toBuy, manualItems]);
+  const sortedItems = useMemo(() => {
+    const manual = new Set(manualItems.map((i) => i.id));
+    return basket.comparisons
+      .filter((c) => !manual.has(c.itemId))
+      .sort((a, b) => (a.best ? 0 : 1) - (b.best ? 0 : 1) || (b.best?.totalCents ?? 0) - (a.best?.totalCents ?? 0));
+  }, [basket.comparisons, manualItems]);
   const alternativesSavings = basket.comparisons.reduce((s, c) => s + (c.cheaperAlternative?.savingsCents ?? 0), 0);
 
   const setMode = (mode: BasketMode) => {
@@ -218,16 +233,19 @@ export default function PricesScreen() {
           />
         ) : null}
 
-        {plan && plan.missingItemIds.length > 0 ? (
+        {plan && missingPriced.length > 0 ? (
           <InfoBanner
             tone="info"
-            title={`${plan.missingItemIds.length} article${plan.missingItemIds.length > 1 ? 's' : ''} hors panier`}
-            message={`Introuvable${plan.missingItemIds.length > 1 ? 's' : ''} dans le magasin retenu : ${plan.missingItemIds
-              .map((id) => basket.comparisons.find((c) => c.itemId === id)?.label ?? toBuy.find((i) => i.id === id)?.label)
-              .filter(Boolean)
+            title={`${missingPriced.length} article${missingPriced.length > 1 ? 's' : ''} hors panier`}
+            message={`Introuvable${missingPriced.length > 1 ? 's' : ''} dans le magasin retenu : ${missingPriced
               .slice(0, 4)
-              .join(', ')}${plan.missingItemIds.length > 4 ? '…' : ''}.`}
+              .join(', ')}${missingPriced.length > 4 ? '…' : ''}. Tu les trouveras dans une autre enseigne.`}
           />
+        ) : null}
+        {manualItems.length > 0 ? (
+          <Text variant="footnote" color="textSecondary">
+            Ajouté{manualItems.length > 1 ? 's' : ''} à la main, non comparé{manualItems.length > 1 ? 's' : ''} : {manualItems.map((i) => i.label).join(', ')}.
+          </Text>
         ) : null}
 
         {/* Totaux par enseigne */}
@@ -237,7 +255,7 @@ export default function PricesScreen() {
             <Card variant="plain" padding="lg" radius="lg">
               <StoreTotalsChart
                 totals={totals}
-                itemCount={basket.comparisons.length}
+                itemCount={preferredComparisons.length}
                 highlightStoreIds={plan?.parts.map((p) => p.storeId)}
                 testID="store-totals"
               />
@@ -254,11 +272,11 @@ export default function PricesScreen() {
         ) : null}
 
         {/* Article par article */}
-        {basket.comparisons.length > 0 ? (
+        {sortedItems.length > 0 ? (
           <View>
             <SectionHeader
               title="Article par article"
-              subtitle={`${basket.comparisons.length} article${basket.comparisons.length > 1 ? 's' : ''} comparé${basket.comparisons.length > 1 ? 's' : ''}`}
+              subtitle={`${sortedItems.length} article${sortedItems.length > 1 ? 's' : ''} comparé${sortedItems.length > 1 ? 's' : ''}`}
               right={
                 <IconButton
                   icon={RefreshCw}

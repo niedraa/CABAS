@@ -93,8 +93,9 @@ serveur**.
 
 - **Énumérations Postgres = référentiels de `src/core/types.ts`** (allergen,
   diet, equipment, aisle, cuisine, unit, base_unit, meal_type, store_chain,
-  price_source, entitlement…). Ajouter une valeur : nouvelle migration
-  `alter type … add value`, puis `types.ts`.
+  country_code, price_source, entitlement…). Ajouter une valeur : nouvelle migration
+  `alter type … add value`, puis `types.ts` (ex. `20261123000000_spain_and_more_stores.sql` :
+  enseignes espagnoles + `stores.country` / `stores.has_drive`).
 - **Montants en centimes** (`integer`), dates jour en `date`, horodatages en
   `timestamptz`.
 - **Ids du catalogue** : chaînes lisibles identiques à `src/data`

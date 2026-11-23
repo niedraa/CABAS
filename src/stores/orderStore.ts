@@ -11,7 +11,8 @@
  *  - `openOrder(id)` → boolean : ouvre le drive (navigateur intégré) et passe à « opened » ;
  *  - `markOpened(id)` ;
  *  - `confirmOrder(id)` → SpendingEntry | null : statut « confirmed » + dépense
- *    ajoutée au budget (économies = part de `basket.plan.savingsCents`) ;
+ *    ajoutée au budget (économies = part de `basket.plan.savingsCents`) ; les
+ *    articles commandés sont cochés dans la liste de la semaine ;
  *  - `copyOrderText(id)` → boolean (presse-papiers) ; `orderText(id)` → texte ;
  *  - `reset()`.
  * Sélecteurs purs : `lastOrderForWeek(orders, weekStart, storeId?)`, `ordersForWeek(orders, ws)`.
@@ -30,6 +31,7 @@ import { copyListToClipboard, openOrder as openOrderService } from '@/services/o
 
 import { useBasketStore } from './basketStore';
 import { useBudgetStore } from './budgetStore';
+import { useListStore } from './listStore';
 import { usePlanStore } from './planStore';
 import { basePersistOptions, registerPersistedStore } from './registry';
 import { useSettingsStore } from './settingsStore';
@@ -140,6 +142,12 @@ export const useOrderStore = create<OrderState>()(
             store ? `Courses ${store.name}` : undefined,
           );
           useBudgetStore.getState().addEntry(entry);
+          // Les articles commandés sont achetés : on les coche dans la liste de la semaine.
+          const list = useListStore.getState();
+          const items = list.lists[order.weekStart]?.items ?? [];
+          for (const line of order.lines) {
+            if (items.some((i) => i.id === line.itemId && !i.checked)) list.setChecked(line.itemId, true, order.weekStart);
+          }
           void cancelOrderReminder();
           track('order_confirmed', {
             storeId: order.storeId,

@@ -46,3 +46,4 @@ example
 secrets/
 coverage/
 .env
+e2e/screenshots/
