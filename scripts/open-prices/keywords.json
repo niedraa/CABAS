@@ -1,0 +1,3199 @@
+{
+"oignon_jaune": {
+"q": [
+"oignons jaunes",
+"oignon jaune"
+],
+"must": [
+"oignon"
+],
+"not": [
+"frit",
+"soupe",
+"confit",
+"rouge",
+"chips"
+],
+"head": "oignons? (jaunes?|doux|blancs?)?"
+},
+"oignon_rouge": {
+"q": [
+"oignons rouges",
+"oignon rouge"
+],
+"must": [
+"oignon",
+"rouge"
+],
+"not": [
+"confit",
+"frit"
+],
+"head": "oignons? rouges?"
+},
+"oignon_nouveau": {
+"q": [
+"oignons nouveaux",
+"oignon nouveau",
+"cebette"
+],
+"must": [
+"oignon"
+],
+"not": [
+"frit"
+],
+"head": "(oignons? (nouveaux?|blancs?|botte)|cebettes?)"
+},
+"echalote": {
+"q": [
+"échalote",
+"echalote"
+],
+"must": [
+"echalote"
+],
+"not": [
+"frite",
+"sauce",
+"beurre"
+],
+"head": "echalotes?"
+},
+"ail": {
+"q": [
+"ail blanc",
+"ail violet",
+"tête d'ail",
+"ail"
+],
+"must": [
+"ail"
+],
+"not": [
+"saucisson",
+"fromage",
+"boursin",
+"pain",
+"beurre",
+"sauce",
+"semoule",
+"chips",
+"aioli",
+"mayonnaise",
+"olive",
+"tomate",
+"ailes",
+"saveur",
+"fines herbes",
+"poudre",
+"semoul",
+"maille"
+],
+"head": "(ail\\b|tetes? d.ail|gousses? d.ail)"
+},
+"carotte": {
+"q": [
+"carottes",
+"carotte"
+],
+"must": [
+"carotte"
+],
+"not": [
+"rap",
+"jus",
+"soupe",
+"veloute",
+"puree",
+"cake",
+"conserve",
+"petits pois",
+"macedoine"
+],
+"head": "carottes?"
+},
+"pomme_de_terre": {
+"q": [
+"pommes de terre",
+"pomme de terre"
+],
+"must": [
+"pomme",
+"terre"
+],
+"not": [
+"frite",
+"chips",
+"puree",
+"gratin",
+"rissol",
+"sautee",
+"salade",
+"four"
+],
+"head": "pommes? de terre"
+},
+"patate_douce": {
+"q": [
+"patate douce",
+"patates douces"
+],
+"must": [
+"patate"
+],
+"not": [
+"frite",
+"chips",
+"puree"
+],
+"head": "patates? douces?"
+},
+"tomate": {
+"q": [
+"tomates grappe",
+"tomates rondes",
+"tomate ronde"
+],
+"must": [
+"tomate"
+],
+"not": [
+"cerise",
+"sauce",
+"concentre",
+"coulis",
+"pelee",
+"concass",
+"sechee",
+"ketchup",
+"soupe",
+"jus",
+"pulpe"
+],
+"head": "tomates?\\b(?! cerise)"
+},
+"tomate_cerise": {
+"q": [
+"tomates cerises",
+"tomate cerise"
+],
+"must": [
+"cerise"
+],
+"not": [
+"sechee",
+"sauce"
+],
+"head": "tomates? cerises?"
+},
+"courgette": {
+"q": [
+"courgettes",
+"courgette"
+],
+"must": [
+"courgette"
+],
+"not": [
+"soupe",
+"veloute",
+"poelee",
+"grillee",
+"gratin"
+],
+"head": "courgettes?"
+},
+"aubergine": {
+"q": [
+"aubergines",
+"aubergine"
+],
+"must": [
+"aubergine"
+],
+"not": [
+"caviar",
+"grillee",
+"tartiner"
+],
+"head": "aubergines?"
+},
+"poivron_rouge": {
+"q": [
+"poivron rouge",
+"poivrons rouges"
+],
+"must": [
+"poivron"
+],
+"not": [
+"grille",
+"marine",
+"sauce",
+"tartiner",
+"chips"
+],
+"head": "poivrons? rouges?"
+},
+"poivron_vert": {
+"q": [
+"poivron vert",
+"poivrons verts"
+],
+"must": [
+"poivron"
+],
+"not": [
+"grille",
+"marine",
+"sauce"
+],
+"head": "poivrons? verts?"
+},
+"concombre": {
+"q": [
+"concombre"
+],
+"must": [
+"concombre"
+],
+"not": [
+"sauce",
+"tzatziki",
+"salade"
+],
+"head": "concombres?"
+},
+"salade_verte": {
+"q": [
+"salade iceberg",
+"laitue",
+"batavia",
+"mâche",
+"salade"
+],
+"must": [
+"salade"
+],
+"not": [
+"pates",
+"pâtes",
+"composee",
+"thon",
+"poulet",
+"cesar",
+"fruits",
+"taboule",
+"lentille",
+"riz",
+"pomme",
+"piemontaise",
+"carotte",
+"museau",
+"sauce"
+],
+"head": "(salade (iceberg|verte|batavia|feuille)|laitue|batavia|iceberg|mache|feuille de chene|sucrine)"
+},
+"pousses_epinards": {
+"q": [
+"pousses d'épinard",
+"jeunes pousses",
+"épinards"
+],
+"must": [
+"epinard"
+],
+"not": [
+"surgel",
+"hach",
+"creme",
+"lasagne",
+"gratin",
+"ravioli",
+"branche"
+],
+"head": "(pousses? d.epinards?|jeunes pousses|epinards? (frais|pousses?))"
+},
+"champignons_paris": {
+"q": [
+"champignons de paris",
+"champignon de paris",
+"champignons"
+],
+"must": [
+"champignon"
+],
+"not": [
+"sauce",
+"soupe",
+"veloute",
+"pizza",
+"creme",
+"poelee",
+"surgel",
+"risotto",
+"quiche",
+"omelette"
+],
+"head": "champignons? de paris"
+},
+"brocoli": {
+"q": [
+"brocoli",
+"brocolis"
+],
+"must": [
+"brocoli"
+],
+"not": [
+"soupe",
+"veloute",
+"gratin"
+],
+"head": "brocolis?"
+},
+"chou_fleur": {
+"q": [
+"chou-fleur",
+"chou fleur"
+],
+"must": [
+"chou"
+],
+"not": [
+"gratin",
+"soupe",
+"veloute",
+"puree"
+],
+"head": "chou.fleur"
+},
+"poireau": {
+"q": [
+"poireaux",
+"poireau"
+],
+"must": [
+"poireau"
+],
+"not": [
+"soupe",
+"veloute",
+"fondue",
+"quiche",
+"tarte"
+],
+"head": "poireaux?"
+},
+"celeri_branche": {
+"q": [
+"céleri branche",
+"celeri branche"
+],
+"must": [
+"celeri"
+],
+"not": [
+"sel",
+"rave",
+"remoulade"
+],
+"head": "celeri branche"
+},
+"endive": {
+"q": [
+"endives",
+"endive",
+"chicon"
+],
+"must": [
+"endive"
+],
+"not": [
+"jambon",
+"gratin"
+],
+"head": "(endives?|chicons?)"
+},
+"courge_butternut": {
+"q": [
+"butternut",
+"courge"
+],
+"must": [
+"courge"
+],
+"not": [
+"soupe",
+"veloute",
+"puree",
+"graine"
+],
+"head": "(courge butternut|butternut|courge)"
+},
+"citron": {
+"q": [
+"citron jaune",
+"citrons",
+"citron"
+],
+"must": [
+"citron"
+],
+"not": [
+"vert",
+"jus",
+"the",
+"thé",
+"limonade",
+"tarte",
+"yaourt",
+"sirop",
+"confit",
+"biscuit",
+"boisson",
+"eau",
+"gateau",
+"soda",
+"glace",
+"sorbet",
+"pastille",
+"bonbon",
+"sardine",
+"thon",
+"poivre",
+"huile",
+"vinaigre",
+"creme",
+"cake",
+"madeleine",
+"meringue",
+"liqueur",
+"biere",
+"gel",
+"dessert"
+],
+"head": "citrons?( jaunes?)?\\b(?! vert)"
+},
+"citron_vert": {
+"q": [
+"citron vert",
+"citrons verts",
+"lime"
+],
+"must": [
+"citron",
+"vert"
+],
+"not": [
+"jus",
+"the",
+"boisson",
+"eau",
+"soda",
+"sirop",
+"yaourt",
+"glace",
+"sorbet",
+"biere"
+],
+"head": "(citrons? verts?|limes?)"
+},
+"avocat": {
+"q": [
+"avocat",
+"avocats"
+],
+"must": [
+"avocat"
+],
+"not": [
+"guacamole",
+"huile",
+"sauce"
+],
+"head": "avocats?"
+},
+"banane": {
+"q": [
+"bananes",
+"banane"
+],
+"must": [
+"banane"
+],
+"not": [
+"chips",
+"yaourt",
+"jus",
+"compote",
+"smoothie",
+"cake",
+"biscuit",
+"pain",
+"gateau",
+"muffin",
+"boisson",
+"lait",
+"dessert",
+"creme",
+"glace",
+"fraise"
+],
+"head": "bananes?"
+},
+"pomme": {
+"q": [
+"pommes golden",
+"pommes gala",
+"pommes pink",
+"pommes granny",
+"pomme golden",
+"pommes bio"
+],
+"must": [
+"pomme"
+],
+"not": [
+"terre",
+"compote",
+"jus",
+"tarte",
+"chips",
+"cidre",
+"vinaigre",
+"puree",
+"gateau",
+"yaourt",
+"smoothie",
+"boisson",
+"chausson",
+"dessert",
+"pain",
+"biscuit",
+"sirop",
+"confiture",
+"cannelle"
+],
+"head": "pommes? (golden|gala|pink|granny|reinette|royal|jazz|braeburn|fuji|canada|elstar|chantecler|bicolores?|rouges?|jaunes?|vertes?|bio|de france|du limousin|des alpes|ariane|juliet|reine)"
+},
+"gingembre": {
+"q": [
+"gingembre"
+],
+"must": [
+"gingembre"
+],
+"not": [
+"the",
+"thé",
+"confit",
+"moulu",
+"poudre",
+"biscuit",
+"boisson",
+"infusion",
+"sirop",
+"jus",
+"shot",
+"pain",
+"bonbon",
+"chocolat"
+],
+"head": "gingembre( frais)?$|gingembre frais|racine de gingembre|gingembre\\b(?!.*(kombucha|boisson|the))"
+},
+"persil": {
+"q": [
+"persil plat",
+"persil"
+],
+"must": [
+"persil"
+],
+"not": [
+"surgel",
+"seche",
+"deshydrate",
+"beurre",
+"ail",
+"escargot",
+"sauce"
+],
+"head": "persil"
+},
+"coriandre": {
+"q": [
+"coriandre"
+],
+"must": [
+"coriandre"
+],
+"not": [
+"moulu",
+"graine",
+"poudre",
+"surgel",
+"seche"
+],
+"head": "coriandre"
+},
+"basilic": {
+"q": [
+"basilic"
+],
+"must": [
+"basilic"
+],
+"not": [
+"pesto",
+"sauce",
+"tomate",
+"surgel",
+"seche",
+"huile",
+"pates",
+"pizza",
+"mozzarella",
+"chips"
+],
+"head": "basilic"
+},
+"ciboulette": {
+"q": [
+"ciboulette"
+],
+"must": [
+"ciboulette"
+],
+"not": [
+"fromage",
+"sauce",
+"surgel",
+"seche",
+"chips",
+"boursin",
+"tartiner",
+"creme",
+"ail"
+],
+"head": "ciboulette"
+},
+"menthe": {
+"q": [
+"menthe fraîche",
+"menthe"
+],
+"must": [
+"menthe"
+],
+"not": [
+"the",
+"thé",
+"sirop",
+"chewing",
+"bonbon",
+"chocolat",
+"infusion",
+"pastille",
+"gomme",
+"glace",
+"liqueur",
+"sachet",
+"dentifrice",
+"seche",
+"boisson",
+"eau"
+],
+"head": "menthe"
+},
+"blanc_poulet": {
+"q": [
+"filet de poulet",
+"filets de poulet",
+"blanc de poulet"
+],
+"must": [
+"poulet"
+],
+"not": [
+"pane",
+"roti",
+"cuit",
+"tranche",
+"emince cuit",
+"nugget",
+"cordon",
+"sandwich",
+"salade",
+"aiguillette",
+"fume",
+"curry",
+"sauce"
+],
+"head": "(filets? de poulet|blancs? de poulet|filet poulet)"
+},
+"cuisse_poulet": {
+"q": [
+"cuisses de poulet",
+"cuisse de poulet",
+"haut de cuisse"
+],
+"must": [
+"poulet"
+],
+"not": [
+"roti",
+"cuit",
+"pane",
+"grill"
+],
+"head": "(cuisses? de poulet|hauts? de cuisses?|pilons? de poulet)"
+},
+"escalope_dinde": {
+"q": [
+"escalope de dinde",
+"escalopes de dinde"
+],
+"must": [
+"dinde"
+],
+"not": [
+"pane",
+"cordon",
+"cuit",
+"tranche",
+"roti"
+],
+"head": "escalopes? de dinde"
+},
+"boeuf_hache": {
+"q": [
+"viande hachée",
+"steak haché",
+"haché pur boeuf"
+],
+"must": [
+"hache"
+],
+"not": [
+"surgel",
+"cuit",
+"sauce",
+"parmentier",
+"lasagne",
+"bolognaise"
+],
+"head": "(steaks? haches?|viande hachee|hache (pur )?boeuf|boeuf hache)"
+},
+"boeuf_braiser": {
+"q": [
+"boeuf à braiser",
+"bœuf à braiser",
+"boeuf bourguignon",
+"paleron"
+],
+"must": [
+"boeuf"
+],
+"not": [
+"cuit",
+"plat",
+"conserve"
+],
+"head": "(boeuf a braiser|boeuf bourguignon (a cuisiner|cru)|viande de boeuf a braiser|paleron|basse cote|bourguignon)"
+},
+"boeuf_emince": {
+"q": [
+"émincé de boeuf",
+"emince de boeuf",
+"émincés de bœuf"
+],
+"must": [
+"boeuf"
+],
+"not": [
+"cuit",
+"sauce"
+],
+"head": "(emince de boeuf|eminces de boeuf|boeuf emince)"
+},
+"epaule_agneau": {
+"q": [
+"épaule d'agneau",
+"agneau"
+],
+"must": [
+"agneau"
+],
+"not": [
+"cuit",
+"merguez",
+"saucisse",
+"plat"
+],
+"head": "(epaule d.agneau|epaule agneau|agneau)"
+},
+"merguez": {
+"q": [
+"merguez"
+],
+"must": [
+"merguez"
+],
+"not": [
+"couscous",
+"pizza",
+"sandwich"
+],
+"head": "merguez"
+},
+"lardons": {
+"q": [
+"lardons"
+],
+"must": [
+"lardon"
+],
+"not": [
+"quiche",
+"pizza",
+"tarte",
+"flammekueche",
+"salade"
+],
+"head": "lardons?"
+},
+"jambon_blanc": {
+"q": [
+"jambon blanc",
+"jambon cuit",
+"jambon de paris"
+],
+"must": [
+"jambon"
+],
+"not": [
+"cru",
+"pizza",
+"sandwich",
+"croque",
+"quiche",
+"macaroni",
+"pates",
+"coquillette",
+"salade",
+"fume",
+"dinde",
+"poulet",
+"feuillete",
+"cordon",
+"galette",
+"crepe",
+"wrap",
+"endive",
+"friand"
+],
+"head": "(jambon (blanc|cuit|de paris)|le paris)"
+},
+"saucisse_toulouse": {
+"q": [
+"saucisse de toulouse",
+"saucisses de toulouse"
+],
+"must": [
+"toulouse"
+],
+"not": [
+"cassoulet",
+"lentille"
+],
+"head": "saucisses? de toulouse"
+},
+"chorizo": {
+"q": [
+"chorizo"
+],
+"must": [
+"chorizo"
+],
+"not": [
+"pizza",
+"paella",
+"chips",
+"pates",
+"sandwich",
+"riz"
+],
+"head": "chorizo"
+},
+"filet_mignon_porc": {
+"q": [
+"filet mignon"
+],
+"must": [
+"filet mignon"
+],
+"not": [
+"cuit",
+"sauce"
+],
+"head": "filets? mignons?"
+},
+"filet_saumon": {
+"q": [
+"pavé de saumon",
+"pavés de saumon",
+"filet de saumon"
+],
+"must": [
+"saumon"
+],
+"not": [
+"fume",
+"surgel",
+"sauce",
+"cuit",
+"tartare",
+"rillette",
+"sushi",
+"gravlax",
+"oseille"
+],
+"head": "(paves? de saumon|filets? de saumon|saumon (atlantique|frais))"
+},
+"pave_cabillaud": {
+"q": [
+"dos de cabillaud",
+"filet de cabillaud",
+"cabillaud"
+],
+"must": [
+"cabillaud"
+],
+"not": [
+"pane",
+"surgel",
+"sauce",
+"brandade",
+"fume",
+"cuit",
+"meuniere",
+"beignet",
+"fish"
+],
+"head": "(dos de cabillaud|filets? de cabillaud|cabillaud)"
+},
+"saumon_fume": {
+"q": [
+"saumon fumé",
+"saumon fume"
+],
+"must": [
+"saumon",
+"fum"
+],
+"not": [
+"rillette",
+"tartare",
+"sandwich",
+"wrap",
+"blini",
+"pates",
+"quiche",
+"salade"
+],
+"head": "saumon fume"
+},
+"crevettes": {
+"q": [
+"crevettes décortiquées",
+"crevettes cuites",
+"crevettes"
+],
+"must": [
+"crevette"
+],
+"not": [
+"chips",
+"sauce",
+"paella",
+"riz",
+"surimi",
+"beignet",
+"soupe",
+"pate",
+"cocktail",
+"nem",
+"raviole",
+"chinois"
+],
+"head": "crevettes?"
+},
+"moules": {
+"q": [
+"moules"
+],
+"must": [
+"moule"
+],
+"not": [
+"frite",
+"sauce",
+"paella",
+"conserve",
+"marinee",
+"escabeche",
+"vinaigrette",
+"farcie"
+],
+"head": "moules?"
+},
+"thon_naturel": {
+"q": [
+"thon au naturel",
+"thon albacore au naturel",
+"thon naturel"
+],
+"must": [
+"thon"
+],
+"not": [
+"huile",
+"tomate",
+"salade",
+"sandwich",
+"rillette",
+"mayonnaise",
+"pates",
+"riz"
+],
+"head": "(thon|miettes de thon|filets? de thon).*naturel"
+},
+"oeuf": {
+"q": [
+"oeufs frais",
+"œufs frais",
+"6 oeufs",
+"12 oeufs",
+"oeufs"
+],
+"must": [
+"oeuf"
+],
+"not": [
+"pates",
+"chocolat",
+"brouill",
+"dur",
+"nouille",
+"tagliatelle",
+"mayonnaise",
+"lasagne",
+"pâques",
+"paques",
+"cailles",
+"liquide",
+"blanc",
+"jaune",
+"coquillette",
+"spaetzle",
+"spaghetti",
+"fettuccine",
+"mimosa",
+"omelette",
+"crepe"
+],
+"head": "(\\d+ )?(gros )?oeufs?"
+},
+"lait": {
+"q": [
+"lait demi-écrémé",
+"lait demi écrémé",
+"lait demi-ecreme",
+"lait demi"
+],
+"must": [
+"lait",
+"demi"
+],
+"not": [
+"fromage",
+"yaourt",
+"chocolat",
+"cafe",
+"fraise",
+"vanille",
+"riz",
+"coco",
+"soja",
+"amande",
+"avoine",
+"poudre",
+"concentre",
+"dessert",
+"creme",
+"beurre",
+"brioche",
+"petit",
+"faisselle",
+"fermente",
+"ribot",
+"biscuit"
+],
+"head": "lait demi"
+},
+"beurre": {
+"q": [
+"beurre doux",
+"beurre gastronomique",
+"beurre"
+],
+"must": [
+"beurre"
+],
+"not": [
+"sale",
+"cacahuete",
+"demi-sel",
+"demi sel",
+"biscuit",
+"galette",
+"croissant",
+"brioche",
+"pate",
+"sauce",
+"ail",
+"escargot",
+"karite",
+"cacao",
+"sable",
+"palet",
+"gateau",
+"pain",
+"crepe",
+"cookie",
+"caramel",
+"madeleine",
+"financier",
+"baratte",
+"tartiner",
+"allege"
+],
+"head": "beurre (doux|gastronomique|extra.fin|moule|plaquette|pasteurise|tendre)?"
+},
+"creme_fraiche": {
+"q": [
+"crème fraîche épaisse",
+"creme fraiche epaisse",
+"crème épaisse"
+],
+"must": [
+"epaisse"
+],
+"not": [
+"dessert",
+"vanille",
+"chocolat"
+],
+"head": "creme (fraiche )?epaisse"
+},
+"creme_liquide": {
+"q": [
+"crème liquide",
+"creme liquide",
+"crème fraîche liquide"
+],
+"must": [
+"liquide"
+],
+"not": [
+"dessert",
+"vanille",
+"chocolat",
+"soja",
+"avoine",
+"coco",
+"savon"
+],
+"head": "creme (fraiche )?liquide"
+},
+"yaourt_nature": {
+"q": [
+"yaourt nature",
+"yaourts nature"
+],
+"must": [
+"yaourt",
+"nature"
+],
+"not": [
+"grec",
+"boire",
+"sucre",
+"soja",
+"coco",
+"brebis",
+"chevre",
+"avoine"
+],
+"head": "yaourts? nature"
+},
+"yaourt_grec": {
+"q": [
+"yaourt à la grecque",
+"yaourt grec",
+"yaourt a la grecque"
+],
+"must": [
+"grec"
+],
+"not": [
+"miel",
+"fraise",
+"citron",
+"vanille",
+"fruits",
+"coco",
+"sucre",
+"mangue",
+"framboise",
+"myrtille",
+"peche",
+"abricot"
+],
+"head": "(yaourts? (a la )?grecque?|yaourt grec)"
+},
+"parmesan": {
+"q": [
+"parmigiano reggiano",
+"parmesan"
+],
+"must": [
+"parm"
+],
+"not": [
+"chips",
+"biscuit",
+"sauce",
+"pesto",
+"cracker",
+"pates",
+"risotto",
+"gressin"
+],
+"head": "(parmesan|parmigiano)"
+},
+"mozzarella": {
+"q": [
+"mozzarella"
+],
+"must": [
+"mozzarella"
+],
+"not": [
+"pizza",
+"sticks",
+"tomate",
+"pane",
+"salade",
+"pates",
+"panini",
+"sandwich",
+"croque",
+"lasagne",
+"wrap"
+],
+"head": "mozzarella"
+},
+"emmental_rape": {
+"q": [
+"emmental râpé",
+"emmental rape",
+"râpé emmental"
+],
+"must": [
+"emmental"
+],
+"head": "(emmental rape|rape.*emmental|emmental.*rape)"
+},
+"comte": {
+"q": [
+"comté",
+"comte"
+],
+"must": [
+"comte"
+],
+"not": [
+"biscuit",
+"cracker",
+"chips",
+"quiche",
+"croque",
+"feuillete",
+"gougere",
+"cake",
+"sauce"
+],
+"head": "comte"
+},
+"chevre_buche": {
+"q": [
+"bûche de chèvre",
+"buche de chevre",
+"bûchette de chèvre"
+],
+"must": [
+"chevre"
+],
+"not": [
+"miel",
+"quiche",
+"tarte",
+"pizza",
+"feuillete",
+"salade"
+],
+"head": "(buche|buchette).*chevre"
+},
+"feta": {
+"q": [
+"feta"
+],
+"must": [
+"feta"
+],
+"not": [
+"salade",
+"olive",
+"epinard",
+"tomate",
+"pizza",
+"chips",
+"quiche",
+"tarte",
+"cracker",
+"wrap"
+],
+"head": "feta"
+},
+"ricotta": {
+"q": [
+"ricotta"
+],
+"must": [
+"ricotta"
+],
+"not": [
+"epinard",
+"ravioli",
+"cannelloni",
+"tortellini",
+"lasagne"
+],
+"head": "ricotta"
+},
+"reblochon": {
+"q": [
+"reblochon"
+],
+"must": [
+"reblochon"
+],
+"not": [
+"tartiflette",
+"pizza",
+"quiche",
+"chips",
+"croziflette"
+],
+"head": "reblochon"
+},
+"cheddar": {
+"q": [
+"cheddar tranches",
+"cheddar en tranches",
+"cheddar"
+],
+"must": [
+"cheddar"
+],
+"not": [
+"chips",
+"sauce",
+"cracker",
+"biscuit",
+"burger",
+"sandwich",
+"bacon",
+"pain",
+"snack",
+"pringles",
+"popcorn",
+"soupe",
+"nachos"
+],
+"head": "cheddar"
+},
+"creme_soja": {
+"q": [
+"crème de soja",
+"soja cuisine",
+"creme soja"
+],
+"must": [
+"soja"
+],
+"not": [
+"sauce",
+"dessert",
+"yaourt",
+"boisson",
+"lait"
+],
+"head": "(creme (de |cuisine )?soja|soja cuisine)"
+},
+"tofu_ferme": {
+"q": [
+"tofu nature",
+"tofu ferme",
+"tofu"
+],
+"must": [
+"tofu"
+],
+"not": [
+"fume",
+"soyeux",
+"pane",
+"mariné",
+"marine",
+"nugget",
+"saucisse",
+"burger",
+"curry",
+"basilic",
+"herbes",
+"olive",
+"tomate",
+"poivre",
+"nori",
+"pane",
+"dessert",
+"graine"
+],
+"head": "tofu( nature| ferme| bio)?$|tofu (nature|ferme|bio)"
+},
+"gnocchi": {
+"q": [
+"gnocchi"
+],
+"must": [
+"gnocchi"
+],
+"not": [
+"sauce",
+"tomate",
+"pesto",
+"fromage",
+"gorgonzola",
+"farci",
+"sorrentina",
+"champignon",
+"chorizo",
+"jambon",
+"bolognaise",
+"epinard"
+],
+"head": "gnocchis?( (de|aux|a la) pommes? de terre)?$|gnocchis? (frais|a poeler|de pommes?)"
+},
+"pate_brisee": {
+"q": [
+"pâte brisée",
+"pate brisee"
+],
+"must": [
+"bris"
+],
+"not": [
+"sucre",
+"tarte",
+"quiche"
+],
+"head": "pate brisee"
+},
+"pate_pizza": {
+"q": [
+"pâte à pizza",
+"pate a pizza"
+],
+"must": [
+"pizza"
+],
+"not": [
+"sauce",
+"garnie",
+"reine",
+"margherita",
+"fromage",
+"jambon",
+"chorizo",
+"4 fromages",
+"royale"
+],
+"head": "pate a pizza"
+},
+"pain_baguette": {
+"q": [
+"baguette"
+],
+"must": [
+"baguette"
+],
+"not": [
+"viennoise",
+"chocolat",
+"cereale",
+"sandwich",
+"jambon",
+"garnie",
+"precuite",
+"magique",
+"campagne",
+"ail",
+"pizza"
+],
+"head": "baguette"
+},
+"pain_mie": {
+"q": [
+"pain de mie"
+],
+"must": [
+"mie"
+],
+"not": [
+"brioche",
+"complet",
+"cereale",
+"nature sans croute",
+"graine",
+"chocolat",
+"sans croute"
+],
+"head": "pain de mie"
+},
+"pain_burger": {
+"q": [
+"pains burger",
+"pain burger",
+"pains à burger",
+"buns"
+],
+"must": [
+"burger"
+],
+"not": [
+"cheese",
+"boeuf",
+"poulet",
+"surgel",
+"steak",
+"veggie",
+"kit"
+],
+"head": "(pains? (a |pour )?burgers?|buns?|burger buns?)"
+},
+"tortilla_ble": {
+"q": [
+"tortillas de blé",
+"tortilla de blé",
+"wraps",
+"tortillas"
+],
+"must": [
+"tortilla"
+],
+"not": [
+"chips",
+"mais",
+"maïs",
+"nachos",
+"sauce",
+"kit",
+"poulet",
+"chili"
+],
+"head": "(tortillas?|wraps?)"
+},
+"pain_pita": {
+"q": [
+"pain pita",
+"pitas",
+"pita"
+],
+"must": [
+"pita"
+],
+"not": [
+"chips",
+"kebab",
+"poulet",
+"garni"
+],
+"head": "(pains? pitas?|pitas?)"
+},
+"pates_spaghetti": {
+"q": [
+"spaghetti"
+],
+"must": [
+"spaghetti"
+],
+"not": [
+"sauce",
+"bolognaise",
+"carbonara",
+"cuisine",
+"boite",
+"conserve",
+"oeuf",
+"complet",
+"gluten",
+"lentille",
+"pois",
+"riz",
+"courgette",
+"konjac",
+"pret"
+],
+"head": "spaghett?i"
+},
+"pates_penne": {
+"q": [
+"penne rigate",
+"penne"
+],
+"must": [
+"penne"
+],
+"not": [
+"sauce",
+"arrabbiata",
+"complet",
+"gluten",
+"lentille",
+"pois",
+"pret",
+"cuisine",
+"saumon",
+"poulet",
+"fromage",
+"thon"
+],
+"head": "penne"
+},
+"pates_coquillettes": {
+"q": [
+"coquillettes"
+],
+"must": [
+"coquillette"
+],
+"not": [
+"jambon",
+"fromage",
+"cuisine",
+"pret",
+"complet",
+"gluten",
+"oeuf"
+],
+"head": "coquillettes?"
+},
+"tagliatelles": {
+"q": [
+"tagliatelle",
+"tagliatelles"
+],
+"must": [
+"tagliatell"
+],
+"not": [
+"sauce",
+"saumon",
+"carbonara",
+"cuisine",
+"pret",
+"surgel",
+"gluten",
+"complet",
+"poulet",
+"champignon",
+"fraiche",
+"fraiches",
+"courgette"
+],
+"head": "tagliatelles?"
+},
+"lasagnes": {
+"q": [
+"feuilles de lasagne",
+"lasagnes feuilles",
+"lasagne"
+],
+"must": [
+"lasagne"
+],
+"not": [
+"bolognaise",
+"boeuf",
+"saumon",
+"legume",
+"epinard",
+"chevre",
+"surgel",
+"cuisine",
+"pret",
+"chevre",
+"ricotta",
+"poulet",
+"thon",
+"vegetarienne",
+"carbonara",
+"saumon",
+"fromage",
+"savoyarde",
+"canard"
+],
+"head": "(feuilles de lasagnes?|lasagnes?$|lasagne (feuilles|a l.oeuf|aux oeufs))"
+},
+"nouilles_riz": {
+"q": [
+"nouilles de riz",
+"vermicelles de riz"
+],
+"must": [
+"riz"
+],
+"not": [
+"instant",
+"poulet",
+"crevette",
+"soupe",
+"boeuf",
+"curry",
+"sauce",
+"cup"
+],
+"head": "(nouilles de riz|vermicelles de riz)"
+},
+"nouilles_oeufs": {
+"q": [
+"nouilles aux oeufs",
+"nouilles chinoises",
+"nouilles aux œufs"
+],
+"must": [
+"nouille"
+],
+"not": [
+"instant",
+"poulet",
+"crevette",
+"soupe",
+"boeuf",
+"curry",
+"sauce",
+"cup",
+"riz",
+"saute",
+"legume"
+],
+"head": "(nouilles (chinoises|aux oeufs)|nouilles?$)"
+},
+"riz_basmati": {
+"q": [
+"riz basmati"
+],
+"must": [
+"basmati"
+],
+"not": [
+"cuisine",
+"micro",
+"express",
+"sachet cuisson",
+"poulet",
+"legume",
+"complet",
+"pret"
+],
+"head": "riz basmati"
+},
+"riz_arborio": {
+"q": [
+"riz arborio",
+"riz pour risotto",
+"riz risotto",
+"arborio"
+],
+"must": [
+"ri"
+],
+"not": [
+"champignon",
+"cuisine",
+"pret",
+"poulet",
+"parmesan",
+"cepes",
+"asperge",
+"fruits de mer"
+],
+"head": "(riz (arborio|carnaroli|pour risotto|risotto)|arborio)"
+},
+"semoule": {
+"q": [
+"semoule de blé",
+"semoule moyenne",
+"semoule fine",
+"couscous moyen"
+],
+"must": [
+"semoule"
+],
+"not": [
+"dessert",
+"gateau",
+"lait",
+"riz",
+"cuisine",
+"taboule",
+"pois chiche",
+"mais",
+"chocolat",
+"vanille",
+"merguez",
+"legume",
+"poulet",
+"complete"
+],
+"head": "(semoule|couscous)( de ble)?( (moyenne|fine|extra.fine|complete))?$|semoule (de ble|moyenne|fine)"
+},
+"boulgour": {
+"q": [
+"boulgour",
+"bulgur"
+],
+"must": [
+"boulgour"
+],
+"not": [
+"quinoa",
+"cuisine",
+"pret",
+"legume",
+"lentille",
+"tomate"
+],
+"head": "(boulgour|bulgur)"
+},
+"quinoa": {
+"q": [
+"quinoa"
+],
+"must": [
+"quinoa"
+],
+"not": [
+"boulgour",
+"cuisine",
+"pret",
+"legume",
+"salade",
+"barre",
+"galette",
+"souffle",
+"chips",
+"pates",
+"lentille",
+"riz",
+"ble",
+"mix"
+],
+"head": "quinoa"
+},
+"lentilles_vertes": {
+"q": [
+"lentilles vertes"
+],
+"must": [
+"lentille",
+"verte"
+],
+"not": [
+"cuisine",
+"pret",
+"conserve",
+"saucisse",
+"salade",
+"soupe",
+"pates",
+"cuite"
+],
+"head": "lentilles vertes"
+},
+"lentilles_corail": {
+"q": [
+"lentilles corail"
+],
+"must": [
+"corail"
+],
+"not": [
+"cuisine",
+"pret",
+"soupe",
+"pates",
+"dahl",
+"dal",
+"curry"
+],
+"head": "lentilles corail"
+},
+"pois_chiches": {
+"q": [
+"pois chiches"
+],
+"must": [
+"pois chiche"
+],
+"not": [
+"houmous",
+"hummus",
+"farine",
+"chips",
+"pates",
+"falafel",
+"grille",
+"snack",
+"salade",
+"curry",
+"soupe",
+"cuisine",
+"soufflé",
+"souffle"
+],
+"head": "pois chiches"
+},
+"haricots_rouges": {
+"q": [
+"haricots rouges"
+],
+"must": [
+"haricot",
+"rouge"
+],
+"not": [
+"chili",
+"sauce",
+"cuisine",
+"pret",
+"salade",
+"riz"
+],
+"head": "haricots rouges"
+},
+"mais_doux": {
+"q": [
+"maïs doux",
+"mais doux"
+],
+"must": [
+"doux"
+],
+"not": [
+"salade",
+"chips",
+"pop",
+"galette",
+"farine",
+"soupe",
+"cuisine",
+"thon"
+],
+"head": "mais doux"
+},
+"tomates_concassees": {
+"q": [
+"tomates concassées",
+"tomate concassée",
+"tomates concassees"
+],
+"must": [
+"concass"
+],
+"not": [
+"basilic",
+"oignon",
+"ail",
+"herbes",
+"piment",
+"olive"
+],
+"head": "tomates? concassees?"
+},
+"coulis_tomate": {
+"q": [
+"coulis de tomate",
+"coulis de tomates",
+"passata"
+],
+"must": [
+"tomate"
+],
+"not": [
+"basilic",
+"herbes",
+"oignon",
+"ail",
+"olive",
+"piment",
+"epice",
+"champignon"
+],
+"head": "(coulis de tomates?|passata)"
+},
+"concentre_tomate": {
+"q": [
+"concentré de tomate",
+"double concentré",
+"concentre de tomate"
+],
+"must": [
+"concentr"
+],
+"head": "(double |triple )?concentre de tomates?"
+},
+"bouillon_volaille": {
+"q": [
+"bouillon de volaille",
+"bouillon volaille",
+"bouillon de poule"
+],
+"must": [
+"bouillon"
+],
+"not": [
+"legume",
+"boeuf",
+"soupe",
+"nouille",
+"pho",
+"miso",
+"liquide",
+"pret"
+],
+"head": "bouillon (de )?(volaille|poule|poulet)"
+},
+"bouillon_boeuf": {
+"q": [
+"bouillon de boeuf",
+"bouillon de bœuf",
+"bouillon boeuf",
+"pot-au-feu"
+],
+"must": [
+"bouillon"
+],
+"not": [
+"volaille",
+"poule",
+"legume",
+"soupe",
+"nouille",
+"pho",
+"poulet",
+"liquide",
+"pret"
+],
+"head": "bouillon (de )?(boeuf|pot.au.feu)"
+},
+"bouillon_legumes": {
+"q": [
+"bouillon de légumes",
+"bouillon legumes",
+"bouillon de legumes"
+],
+"must": [
+"bouillon"
+],
+"not": [
+"volaille",
+"poule",
+"boeuf",
+"soupe",
+"nouille",
+"pho",
+"poulet",
+"liquide",
+"pret"
+],
+"head": "bouillon (de )?legumes"
+},
+"lait_coco": {
+"q": [
+"lait de coco"
+],
+"must": [
+"coco"
+],
+"not": [
+"yaourt",
+"boisson",
+"dessert",
+"riz",
+"curry",
+"poudre",
+"eau",
+"sauce",
+"creme glac",
+"glace",
+"chocolat",
+"biscuit"
+],
+"head": "lait de coco"
+},
+"olives_noires": {
+"q": [
+"olives noires"
+],
+"must": [
+"olive",
+"noire"
+],
+"not": [
+"tapenade",
+"pizza",
+"pain",
+"cake",
+"chips",
+"huile",
+"sauce"
+],
+"head": "olives noires"
+},
+"cacahuetes": {
+"q": [
+"cacahuètes grillées",
+"cacahuetes grillees",
+"cacahuètes"
+],
+"must": [
+"cacahu"
+],
+"not": [
+"beurre",
+"enrobe",
+"chocolat",
+"biscuit",
+"curly",
+"sauce",
+"barre",
+"caramel",
+"puree",
+"cookie",
+"m&m",
+"snickers",
+"bretzel",
+"crackers",
+"aperitif mix",
+"melange"
+],
+"head": "cacahuetes"
+},
+"noix": {
+"q": [
+"cerneaux de noix",
+"cerneaux noix"
+],
+"must": [
+"noix"
+],
+"not": [
+"coco",
+"cajou",
+"pecan",
+"muscade",
+"huile",
+"biscuit",
+"pain",
+"gateau",
+"chocolat",
+"brioche",
+"yaourt",
+"melange",
+"mix",
+"cake"
+],
+"head": "cerneaux de noix"
+},
+"graines_sesame": {
+"q": [
+"graines de sésame",
+"sésame",
+"sesame"
+],
+"must": [
+"sesame"
+],
+"not": [
+"huile",
+"pain",
+"barre",
+"biscuit",
+"cracker",
+"tahin",
+"galette",
+"chips",
+"nougat",
+"bretzel",
+"sauce",
+"bun",
+"burger",
+"poulet"
+],
+"head": "(graines de )?sesame"
+},
+"chapelure": {
+"q": [
+"chapelure"
+],
+"must": [
+"chapelure"
+],
+"head": "chapelure"
+},
+"farine_ble": {
+"q": [
+"farine de blé",
+"farine de ble",
+"farine fluide",
+"farine t45",
+"farine t55"
+],
+"must": [
+"farine"
+],
+"not": [
+"sarrasin",
+"riz",
+"mais",
+"pois",
+"seigle",
+"epeautre",
+"complete",
+"pain",
+"gateau",
+"crepe",
+"pizza",
+"brioche",
+"chataigne",
+"coco",
+"amande",
+"avoine",
+"lupin",
+"levure",
+"patisserie",
+"gluten"
+],
+"head": "farine (de ble|fluide|t45|t55|type 45|type 55|ble)"
+},
+"farine_sarrasin": {
+"q": [
+"farine de sarrasin",
+"farine sarrasin"
+],
+"must": [
+"sarrasin"
+],
+"not": [
+"galette",
+"crepe",
+"pates",
+"nouille"
+],
+"head": "farine de sarrasin"
+},
+"maizena": {
+"q": [
+"maïzena",
+"maizena",
+"fécule de maïs",
+"fecule de mais"
+],
+"must": [
+"ma"
+],
+"not": [
+"sauce",
+"liant"
+],
+"head": "(maizena|fecule de mais)"
+},
+"sucre": {
+"q": [
+"sucre en poudre",
+"sucre poudre",
+"sucre blanc"
+],
+"must": [
+"sucre"
+],
+"not": [
+"glace",
+"vanill",
+"canne",
+"roux",
+"cassonade",
+"morceau",
+"sans",
+"pomme",
+"biscuit",
+"bonbon",
+"chocolat",
+"perle",
+"gelifiant",
+"confiture",
+"coco",
+"muscovado",
+"complet",
+"boisson",
+"soda",
+"the",
+"cafe"
+],
+"head": "sucre (en poudre|blanc|semoule|cristal)"
+},
+"miel": {
+"q": [
+"miel de fleurs",
+"miel toutes fleurs",
+"miel"
+],
+"must": [
+"miel"
+],
+"not": [
+"pain",
+"biscuit",
+"yaourt",
+"moutarde",
+"cereale",
+"muesli",
+"bonbon",
+"pastille",
+"the",
+"nougat",
+"chevre",
+"sauce",
+"vinaigrette",
+"barre",
+"gateau",
+"cake",
+"boisson",
+"lait",
+"jambon",
+"poulet",
+"pop",
+"granola",
+"flakes",
+"bretzel",
+"dragee",
+"pain",
+"creme",
+"cereal",
+"sirop",
+"pastille",
+"canard",
+"shampoo",
+"savon"
+],
+"head": "miel"
+},
+"gelatine": {
+"q": [
+"gélatine",
+"gelatine",
+"feuilles de gélatine"
+],
+"must": [
+"gelatine"
+],
+"not": [
+"bonbon"
+],
+"head": "(gelatine|feuilles de gelatine)"
+},
+"huile_olive": {
+"q": [
+"huile d'olive vierge extra",
+"huile d'olive"
+],
+"must": [
+"olive"
+],
+"not": [
+"tapenade",
+"thon",
+"sardine",
+"pain",
+"biscuit",
+"savon",
+"chips",
+"tomate",
+"artichaut",
+"poivron",
+"aubergine",
+"cake",
+"pesto",
+"mayonnaise",
+"olives",
+"maquereau",
+"cracker",
+"focaccia",
+"pizza",
+"anchois",
+"feta",
+"gressin",
+"aromatis",
+"basilic",
+"citron",
+"piment",
+"truffe",
+"ail"
+],
+"head": "huile d.olive"
+},
+"huile_tournesol": {
+"q": [
+"huile de tournesol"
+],
+"must": [
+"tournesol"
+],
+"not": [
+"graine",
+"thon",
+"sardine",
+"chips",
+"mayonnaise",
+"margarine",
+"maquereau",
+"pain"
+],
+"head": "huile de tournesol"
+},
+"huile_sesame": {
+"q": [
+"huile de sésame",
+"huile sesame",
+"huile de sesame"
+],
+"must": [
+"sesame"
+],
+"head": "huile de sesame"
+},
+"vinaigre_balsamique": {
+"q": [
+"vinaigre balsamique",
+"balsamique"
+],
+"must": [
+"balsamique"
+],
+"not": [
+"creme",
+"crème",
+"glace",
+"reduction",
+"sauce",
+"vinaigrette",
+"blanc"
+],
+"head": "vinaigre balsamique"
+},
+"vinaigre_vin": {
+"q": [
+"vinaigre de vin"
+],
+"must": [
+"vinaigre",
+"vin"
+],
+"not": [
+"balsamique",
+"cidre",
+"riz",
+"xeres",
+"framboise",
+"echalote",
+"estragon",
+"miel",
+"vinaigrette"
+],
+"head": "vinaigre de vin"
+},
+"moutarde": {
+"q": [
+"moutarde de dijon",
+"moutarde forte",
+"moutarde"
+],
+"must": [
+"moutarde"
+],
+"not": [
+"ancienne",
+"miel",
+"graine",
+"sauce",
+"vinaigrette",
+"mayonnaise",
+"saucisse",
+"jambon",
+"poulet",
+"cornichon",
+"violette",
+"estragon",
+"pain",
+"chips",
+"sandwich",
+"filet",
+"roti",
+"lapin",
+"hareng",
+"maquereau",
+"sardine",
+"douce"
+],
+"head": "moutarde( de dijon| forte| fine)?"
+},
+"mayonnaise": {
+"q": [
+"mayonnaise"
+],
+"must": [
+"mayonnaise"
+],
+"not": [
+"thon",
+"oeuf",
+"sandwich",
+"salade",
+"crabe",
+"surimi",
+"poulet",
+"piment",
+"curry",
+"ail",
+"citron",
+"wasabi",
+"sriracha",
+"truffe",
+"vegan",
+"allege",
+"light"
+],
+"head": "mayonnaise"
+},
+"ketchup": {
+"q": [
+"ketchup"
+],
+"must": [
+"ketchup"
+],
+"not": [
+"chips",
+"burger",
+"curry",
+"pringles"
+],
+"head": "(tomato )?ketchup"
+},
+"sauce_soja": {
+"q": [
+"sauce soja",
+"sauce soja salée",
+"soy sauce"
+],
+"must": [
+"soja"
+],
+"not": [
+"sucree",
+"boisson",
+"lait",
+"yaourt",
+"dessert",
+"creme",
+"tofu",
+"nouille",
+"riz",
+"poulet",
+"saumon",
+"teriyaki",
+"graine"
+],
+"head": "sauce soja"
+},
+"pesto": {
+"q": [
+"pesto alla genovese",
+"pesto basilic",
+"pesto"
+],
+"must": [
+"pesto"
+],
+"not": [
+"rosso",
+"rouge",
+"tomate",
+"pates",
+"gnocchi",
+"pizza",
+"poulet",
+"roquette",
+"ail des ours",
+"pistache",
+"aubergine",
+"chips",
+"sandwich",
+"tortellini",
+"ravioli",
+"cracker"
+],
+"head": "pesto( alla genovese| au basilic| basilic| verde| genovese)?"
+},
+"tahini": {
+"q": [
+"tahini",
+"tahin",
+"purée de sésame",
+"puree de sesame"
+],
+"must": [
+"ta"
+],
+"not": [
+"houmous",
+"hummus",
+"halva",
+"pain"
+],
+"head": "(tahini|tahin|puree de sesame)"
+},
+"sel": {
+"q": [
+"sel fin",
+"sel de table",
+"sel fin iodé"
+],
+"must": [
+"sel"
+],
+"not": [
+"gros",
+"fleur",
+"poivre",
+"chips",
+"herbe",
+"guerande",
+"beurre",
+"cacahuete",
+"pistache",
+"amande",
+"caramel",
+"sans sel",
+"peu sale",
+"demi",
+"cajou",
+"noix",
+"saumon",
+"vinaigre"
+],
+"head": "sel (fin|de table|iode)"
+},
+"poivre": {
+"q": [
+"poivre noir moulu",
+"poivre noir",
+"poivre moulu"
+],
+"must": [
+"poivre"
+],
+"not": [
+"vert",
+"baie",
+"grain",
+"rose",
+"blanc",
+"sauce",
+"steak",
+"saucisson",
+"chips",
+"fromage",
+"boursin",
+"jambon",
+"citron",
+"sel",
+"maquereau",
+"boeuf",
+"cajou",
+"rillette",
+"pate",
+"carpaccio",
+"poivron",
+"mignonnette",
+"thon",
+"piment"
+],
+"head": "poivre noir"
+},
+"curry": {
+"q": [
+"curry en poudre",
+"curry poudre",
+"curry doux",
+"curry"
+],
+"must": [
+"curry"
+],
+"not": [
+"pate",
+"poulet",
+"sauce",
+"riz",
+"lentille",
+"crevette",
+"ketchup",
+"mayonnaise",
+"chips",
+"boeuf",
+"agneau",
+"legume",
+"soupe",
+"nouille",
+"thon",
+"tofu",
+"cuisine",
+"lait",
+"pret",
+"pois",
+"saumon",
+"vert",
+"rouge",
+"jaune",
+"massaman",
+"korma",
+"tikka",
+"cacahuete",
+"cajou",
+"noix",
+"dinde",
+"porc",
+"veau",
+"boulette",
+"saucisse"
+],
+"head": "curry( en poudre| doux| fort)?$|curry (en poudre|doux|fort|madras)"
+},
+"cumin": {
+"q": [
+"cumin moulu",
+"cumin"
+],
+"must": [
+"cumin"
+],
+"not": [
+"graine",
+"fromage",
+"gouda",
+"pain",
+"carvi",
+"chips",
+"cracker",
+"saucisse"
+],
+"head": "cumin"
+},
+"paprika": {
+"q": [
+"paprika doux",
+"paprika"
+],
+"must": [
+"paprika"
+],
+"not": [
+"chips",
+"poulet",
+"sauce",
+"fume",
+"chorizo",
+"saucisse",
+"cracker",
+"pringles",
+"jambon",
+"boeuf",
+"porc",
+"crisps",
+"snack",
+"bretzel",
+"pop",
+"cacahuete",
+"graine",
+"pois"
+],
+"head": "paprika"
+},
+"curcuma": {
+"q": [
+"curcuma"
+],
+"must": [
+"curcuma"
+],
+"not": [
+"gingembre",
+"the",
+"infusion",
+"gelule",
+"boisson",
+"latte",
+"shot",
+"jus",
+"lait"
+],
+"head": "curcuma"
+},
+"cannelle": {
+"q": [
+"cannelle moulue",
+"cannelle en poudre",
+"cannelle"
+],
+"must": [
+"cannelle"
+],
+"not": [
+"pomme",
+"biscuit",
+"speculoos",
+"cereale",
+"the",
+"infusion",
+"gateau",
+"brioche",
+"sucre",
+"muesli",
+"granola",
+"baton",
+"roule",
+"bonbon",
+"chewing",
+"gomme",
+"compote",
+"pain",
+"cookie",
+"yaourt",
+"creme",
+"boisson",
+"cafe",
+"chocolat",
+"miel",
+"pruneau",
+"raisin",
+"amande",
+"noix",
+"banane",
+"poire"
+],
+"head": "cannelle"
+},
+"ras_el_hanout": {
+"q": [
+"ras el hanout",
+"ras-el-hanout"
+],
+"must": [
+"ras"
+],
+"head": "ras.el.hanout"
+},
+"herbes_provence": {
+"q": [
+"herbes de provence"
+],
+"must": [
+"provence"
+],
+"not": [
+"huile",
+"olive",
+"tomate",
+"sauce",
+"fromage",
+"chevre",
+"saucisse",
+"poulet",
+"chips",
+"cracker",
+"pain",
+"jambon",
+"boursin",
+"beurre"
+],
+"head": "herbes de provence"
+},
+"thym": {
+"q": [
+"thym"
+],
+"must": [
+"thym"
+],
+"not": [
+"miel",
+"fromage",
+"chevre",
+"huile",
+"sauce",
+"saucisse",
+"chips",
+"boursin",
+"the",
+"infusion",
+"citron",
+"romarin",
+"jambon",
+"poulet",
+"olive",
+"pain"
+],
+"head": "thym"
+},
+"laurier": {
+"q": [
+"laurier",
+"feuilles de laurier"
+],
+"must": [
+"laurier"
+],
+"not": [
+"savon",
+"bouquet garni"
+],
+"head": "laurier"
+},
+"origan": {
+"q": [
+"origan"
+],
+"must": [
+"origan"
+],
+"not": [
+"huile",
+"pizza",
+"sauce",
+"tomate",
+"chips",
+"olive",
+"fromage"
+],
+"head": "origan"
+},
+"piment": {
+"q": [
+"piment de cayenne",
+"piment en poudre",
+"piment d'espelette"
+],
+"must": [
+"piment"
+],
+"not": [
+"sauce",
+"huile",
+"chips",
+"saucisse",
+"chorizo",
+"olive",
+"poivron",
+"confit",
+"mangue",
+"chocolat",
+"ketchup",
+"mayonnaise",
+"harissa",
+"pate",
+"jambon",
+"fromage",
+"cacahuete",
+"thon",
+"sardine",
+"maquereau",
+"riz",
+"nouille",
+"poulet",
+"crevette",
+"gelee",
+"confiture"
+],
+"head": "piment (de cayenne|d.espelette|en poudre|fort)|cayenne"
+},
+"muscade": {
+"q": [
+"noix de muscade",
+"muscade moulue",
+"muscade"
+],
+"must": [
+"muscade"
+],
+"head": "(noix de )?muscade"
+},
+"vin_blanc": {
+"q": [
+"vin blanc sec",
+"vin blanc"
+],
+"must": [
+"vin",
+"blanc"
+],
+"not": [
+"vinaigre",
+"sauce",
+"moule",
+"escargot",
+"hareng",
+"maquereau",
+"saucisse",
+"poulet",
+"oignon",
+"jus",
+"raisin",
+"sans alcool",
+"cuisine"
+],
+"head": "vin blanc"
+},
+"vin_rouge": {
+"q": [
+"vin rouge"
+],
+"must": [
+"vin",
+"rouge"
+],
+"not": [
+"vinaigre",
+"sauce",
+"saucisse",
+"oignon",
+"jus",
+"raisin",
+"sans alcool",
+"cuisine",
+"boeuf",
+"coq",
+"poire"
+],
+"head": "vin rouge"
+},
+"petits_pois": {
+"q": [
+"petits pois surgelés",
+"petits pois extra fins",
+"petits pois"
+],
+"must": [
+"petits pois"
+],
+"not": [
+"carotte",
+"jambon",
+"lardon",
+"soupe",
+"veloute",
+"puree",
+"chips",
+"conserve",
+"boite",
+"cuisine",
+"salade"
+],
+"head": "petits pois"
+},
+"epinards_surgeles": {
+"q": [
+"épinards hachés",
+"epinards haches",
+"épinards en branches",
+"épinards surgelés"
+],
+"must": [
+"epinard"
+],
+"not": [
+"creme",
+"pousse",
+"lasagne",
+"gratin",
+"ravioli",
+"saumon",
+"chevre",
+"ricotta",
+"pizza",
+"quiche",
+"tarte",
+"feuillete",
+"veloute",
+"soupe"
+],
+"head": "epinards (haches|en branches|surgeles|a la creme)?"
+},
+"haricots_verts": {
+"q": [
+"haricots verts extra fins",
+"haricots verts surgelés",
+"haricots verts"
+],
+"must": [
+"haricot",
+"vert"
+],
+"not": [
+"salade",
+"lardon",
+"jambon",
+"conserve",
+"cuisine",
+"pomme",
+"carotte",
+"poelee"
+],
+"head": "haricots verts"
+}
+}

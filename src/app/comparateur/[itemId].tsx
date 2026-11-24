@@ -7,18 +7,27 @@ import { type Href } from 'expo-router';
 import { useLocalSearchParams } from 'expo-router';
 import React, { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { Check, RotateCcw } from 'lucide-react-native';
+import { Check, ExternalLink, RotateCcw } from 'lucide-react-native';
 
 import { EmptyBasket } from '@/components/brand';
 import { SheetRoute, useSheetRouteClose } from '@/components/feature/common';
 import { itemQuantityLabel } from '@/components/feature/list';
 import { Badge, Button, Card, EmptyState, PressableScale, PriceTag, StoreBadge, Text, useToast } from '@/components/ui';
-import { allOffersForItem, formatPrice, storeDisplayName, type StoreOffer } from '@/core';
+import { allOffersForItem, formatPrice, storeDisplayName, type Price, type Product, type Store, type StoreOffer } from '@/core';
 import { haptics } from '@/lib/haptics';
 import { comparisonScope } from '@/services/basket';
 import { useCatalog } from '@/services/catalog';
+import { openProductOnStoreSite } from '@/services/order';
 import { useBasketStore, useProfileStore, useWeekList } from '@/stores';
 import { useTheme } from '@/theme';
+
+const MONTHS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+
+/** « 12 oct. 2026 » à partir d'un horodatage ISO. */
+function formatDateShort(iso: string): string {
+  const d = new Date(iso);
+  return Number.isFinite(d.getTime()) ? `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}` : '';
+}
 
 export default function ItemPricesScreen() {
   const t = useTheme();
@@ -68,6 +77,17 @@ export default function ItemPricesScreen() {
     return out;
   }, [offers]);
   const cheapest = byStore[0]?.totalCents ?? 0;
+  // Relevé (source, date) de chaque prix affiché.
+  const priceIndex = useMemo(() => {
+    const ids = new Set(offers.map((o) => o.productId));
+    const map = new Map<string, Price>();
+    for (const p of catalog.prices) if (ids.has(p.productId)) map.set(`${p.productId}|${p.storeId}`, p);
+    return map;
+  }, [offers, catalog]);
+  const openOnSite = async (store: Store, product: Product) => {
+    const ok = await openProductOnStoreSite(store, product);
+    if (!ok) toast.show({ title: 'Impossible d’ouvrir le site', tone: 'danger' });
+  };
 
   const choose = (productId: string | null) => {
     if (!itemId) return;
@@ -108,12 +128,17 @@ export default function ItemPricesScreen() {
                 if (!store || !product) return null;
                 const name = storeDisplayName(store);
                 const mine = preferred.has(store.id);
+                const price = priceIndex.get(`${o.productId}|${o.storeId}`);
+                const provenance = price && price.source !== 'demo' ? `Relevé le ${formatDateShort(price.updatedAt)}` : 'Prix estimé';
                 return (
-                  <View
+                  <PressableScale
                     key={o.storeId}
+                    onPress={() => void openOnSite(store, product)}
+                    haptic="tap"
+                    scaleTo={0.98}
+                    accessibilityRole="link"
+                    accessibilityLabel={`${name} : ${formatPrice(o.totalCents)}, ${product.name}. ${provenance}. Ouvrir sur le site.`}
                     style={[styles.row, { paddingVertical: t.spacing.sm }]}
-                    accessible
-                    accessibilityLabel={`${name} : ${formatPrice(o.totalCents)}, ${product.name}`}
                     testID={`store-offer-${o.storeId}`}
                   >
                     <StoreBadge chain={store.chain} name={name} size="sm" />
@@ -127,6 +152,15 @@ export default function ItemPricesScreen() {
                       <Text variant="footnote" color="textSecondary" numberOfLines={1}>
                         {o.packs} × {product.name} · {product.brand}
                       </Text>
+                      <View style={[styles.inline, { marginTop: 2 }]}>
+                        <Text variant="caption" color={price && price.source !== 'demo' ? 'success' : 'textSecondary'}>
+                          {provenance}
+                        </Text>
+                        <ExternalLink size={t.iconSize.xs} color={c.textSecondary} />
+                        <Text variant="caption" color="textSecondary">
+                          Voir sur le site
+                        </Text>
+                      </View>
                     </View>
                     <PriceTag
                       cents={o.totalCents}
@@ -135,7 +169,7 @@ export default function ItemPricesScreen() {
                       best={o.totalCents === cheapest}
                       perUnit={{ cents: o.pricePerBaseUnitCents, unit: o.referenceUnit }}
                     />
-                  </View>
+                  </PressableScale>
                 );
               })}
             </Card>
@@ -180,6 +214,7 @@ export default function ItemPricesScreen() {
                       {storeCount > 1 ? ` · ${storeCount} enseignes` : ''}
                     </Text>
                     <View style={[styles.inline, { marginTop: 4 }]}>
+                      {p.verified ? <Badge label="Produit réel" tone="success" size="sm" /> : null}
                       {p.isStoreBrand ? <Badge label="Marque distributeur" tone="info" size="sm" /> : null}
                       {p.organic ? <Badge label="Bio" tone="success" size="sm" emoji="🌱" /> : null}
                       {p.nutriScore ? <Badge label={`Nutri-Score ${p.nutriScore}`} size="sm" /> : null}

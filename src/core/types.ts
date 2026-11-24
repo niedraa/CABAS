@@ -281,6 +281,11 @@ export interface Product {
   allergens: Allergen[];
   /** Produit bio. */
   organic?: boolean;
+  /**
+   * Produit réel (code-barres et libellé Open Food Facts), prix relevés en
+   * magasin. Absent : produit de démonstration (prix estimé).
+   */
+  verified?: boolean;
 }
 
 export type PriceSource = 'open_prices' | 'partner' | 'collect' | 'demo';

@@ -81,15 +81,17 @@ function upsertClause(keys, columns) {
 
 async function loadData() {
   const load = (name) => import(pathToFileURL(join(ROOT, 'src', 'data', `${name}.ts`)).href);
-  const [ing, rec, sto, pro, pri] = await Promise.all(
-    ['ingredients', 'recipes', 'stores', 'products', 'prices'].map(load),
+  const [ing, rec, sto, pro, pri, real, merge] = await Promise.all(
+    ['ingredients', 'recipes', 'stores', 'products', 'prices', 'openPrices', 'mergeCatalog'].map(load),
   );
+  // Prix relevés (Open Prices) prioritaires sur les estimations, comme dans l'app.
+  const merged = merge.mergeRealPrices(pro.products, pri.prices, real.openPricesProducts, real.openPricesPrices);
   return {
     ingredients: ing.ingredients,
     recipes: rec.recipes,
     stores: sto.stores,
-    products: pro.products,
-    prices: pri.prices,
+    products: merged.products,
+    prices: merged.prices,
   };
 }
 
@@ -193,7 +195,7 @@ export function buildSeedSql(data) {
   // Produits
   const proCols = [
     'id', 'ean', 'name', 'brand', 'is_store_brand', 'store_chain', 'ingredient_id', 'pack_size', 'pack_unit',
-    'nutri_score', 'allergens', 'organic',
+    'nutri_score', 'allergens', 'organic', 'verified',
   ];
   parts.push('-- ─── Produits ───\n');
   parts.push(
@@ -205,7 +207,7 @@ export function buildSeedSql(data) {
         p.storeChain ? `${sqlValue(p.storeChain)}::public.store_chain` : 'null', sqlValue(p.ingredientId),
         sqlValue(p.packSize), `${sqlValue(p.packUnit)}::public.base_unit`,
         p.nutriScore ? `${sqlValue(p.nutriScore)}::public.nutri_score` : 'null',
-        sqlArray(p.allergens, 'public.allergen'), sqlValue(!!p.organic),
+        sqlArray(p.allergens, 'public.allergen'), sqlValue(!!p.organic), sqlValue(!!p.verified),
       ]),
       upsertClause(['id'], proCols),
     ),

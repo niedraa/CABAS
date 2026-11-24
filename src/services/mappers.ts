@@ -162,6 +162,7 @@ export function rowToProduct(r: Row): Product {
     packUnit: str(r.pack_unit, 'piece') as BaseUnit,
     allergens: arr<Allergen>(r.allergens),
   };
+  if (bool(r.verified)) p.verified = true;
   const chain = optStr(r.store_chain);
   if (chain) p.storeChain = chain as Product['storeChain'];
   const ns = optStr(r.nutri_score);

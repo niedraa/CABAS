@@ -32,7 +32,8 @@ export default function CreditsScreen() {
         <Text variant="footnote" color="textSecondary">
           Les photos des plats proviennent de Wikimedia Commons, sous licences libres (CC0, CC BY, CC BY-SA ou domaine public). Elles
           illustrent des plats similaires aux recettes. Les noms et logos des enseignes appartiennent à leurs propriétaires
-          respectifs et servent uniquement à identifier les magasins comparés.
+          respectifs et servent uniquement à identifier les magasins comparés. Les prix relevés en magasin et les produits
+          réels viennent d’Open Prices et d’Open Food Facts (licence ODbL), merci à leur communauté.
         </Text>
         <Card variant="plain" padding="none" radius="lg">
           {rows.map(({ recipe, credit }) => (

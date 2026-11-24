@@ -34,13 +34,9 @@ export function rootScreenOptionsFor(routeName: string): RootScreenOptions {
         sheetGrabberVisible: true,
         sheetCornerRadius: radius.xl,
       };
+    // Détail des prix : modale plein écran (la feuille native iOS pouvait
+    // s'afficher vide sur certains appareils).
     case 'comparateur/[itemId]':
-      return {
-        presentation: 'formSheet',
-        sheetAllowedDetents: [0.7, 0.95],
-        sheetGrabberVisible: true,
-        sheetCornerRadius: radius.xl,
-      };
     case 'commande/[storeId]':
       return { presentation: 'modal', animation: 'slide_from_bottom' };
     case 'dev/seed':

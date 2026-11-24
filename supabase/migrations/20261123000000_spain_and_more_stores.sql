@@ -23,3 +23,7 @@ comment on column public.stores.has_drive is
   'Retrait drive / click & collect proposé. Sinon : courses en magasin (et livraison si delivery_fee_cents non nul).';
 
 create index stores_country_idx on public.stores (country);
+
+-- Produit réel (code-barres Open Food Facts) dont les prix sont relevés en magasin.
+alter table public.products add column if not exists verified boolean not null default false;
+comment on column public.products.verified is 'Produit réel (Open Food Facts) ; false = produit de démonstration (prix estimé).';

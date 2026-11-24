@@ -34,6 +34,9 @@ import {
   recipesById,
   stores,
   storesById,
+  mergeRealPrices,
+  openPricesPrices,
+  openPricesProducts,
 } from '../index';
 import { productSpecs } from '../productSpecs';
 
@@ -657,10 +660,11 @@ describe('générateur et index', () => {
     expect(Object.keys(ingredientsById)).toHaveLength(ingredients.length);
     expect(Object.keys(recipesById)).toHaveLength(recipes.length);
     expect(Object.keys(storesById)).toHaveLength(stores.length);
-    expect(Object.keys(productsById)).toHaveLength(products.length);
-    expect(catalog).toEqual({ ingredients, recipes, stores, products, prices });
+    const merged = mergeRealPrices(products, prices, openPricesProducts, openPricesPrices);
+    expect(Object.keys(productsById)).toHaveLength(merged.products.length);
+    expect(catalog).toEqual({ ingredients, recipes, stores, products: merged.products, prices: merged.prices });
     expect(recipesById.rec_carbonara.title).toBe('Spaghetti carbonara');
-    expect(DEMO_DATA_NOTICE).toMatch(/démonstration/);
+    expect(DEMO_DATA_NOTICE).toMatch(/Open Prices/);
   });
 });
 

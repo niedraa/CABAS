@@ -171,10 +171,21 @@ await scenario('prix : panier, détail article, livraison', async () => {
   await byId('basket-receipt').waitFor({ timeout: 15_000 });
   await expectText(/France/);
   await shot('prix');
+  await expectText(/au prix relevé en magasin/);
   await byIdPrefix('price-item-').first().click();
   await byId('item-prices').waitFor();
   await expectText(/Prix par enseigne/);
+  await expectText(/Relevé le|Prix estimé/);
   await shot('prix-article');
+  // Toucher un prix ouvre la recherche du produit sur le site de l'enseigne.
+  const [popup] = await Promise.all([
+    ctx.waitForEvent('page', { timeout: 10_000 }),
+    page.locator('[data-testid^="store-offer-"] >> visible=true').first().click(),
+  ]);
+  const opened = popup.url();
+  await popup.close();
+  assert(/^https:\/\/(www\.e\.leclerc|www\.carrefour\.fr|www\.lidl\.fr|www\.auchan\.fr|www\.intermarche\.com|www\.coursesu\.com|courses\.monoprix\.fr)\//.test(opened), `lien inattendu : ${opened}`);
+  assert(/[?/](q|text|query)?=?[^&]*[a-z%]/i.test(opened), `recherche vide : ${opened}`);
   await page.keyboard.press('Escape');
   await go('/panier');
   await tap('basket-channel-delivery');

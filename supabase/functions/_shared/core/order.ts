@@ -31,14 +31,17 @@ export function buildProductSearchUrl(store: Store, product: Product, query?: st
  * générique de l'ingrédient dans la langue du pays (« leche semidesnatada »
  * chez Mercadona), suivi de la marque distributeur s'il s'agit d'une MDD
  * (« Hacendado »). Les marques nationales fictives du catalogue de démo ne
- * sont pas ajoutées : elles fausseraient la recherche.
+ * sont pas ajoutées : elles fausseraient la recherche. Un produit réel
+ * (`verified`) est cherché par son libellé exact et sa marque.
  */
 export function productSearchQuery(
   store: Pick<Store, 'country'>,
-  product: Pick<Product, 'name' | 'brand' | 'isStoreBrand' | 'ingredientId'>,
+  product: Pick<Product, 'name' | 'brand' | 'isStoreBrand' | 'ingredientId' | 'verified'>,
   ingredientName: string | undefined,
   localizedNames: Readonly<Record<string, string>> = {},
 ): string {
+  // Produit réel : son vrai libellé et sa marque, tels qu'en rayon.
+  if (product.verified) return `${product.name} ${product.brand ?? ''}`.replace(/\s+/g, ' ').trim();
   const base = (store.country === 'ES' ? localizedNames[product.ingredientId] : ingredientName) ?? ingredientName ?? product.name;
   return product.isStoreBrand && product.brand ? `${base} ${product.brand}` : base;
 }

@@ -362,3 +362,24 @@ Deno.test('validation : limit hors bornes → 400', async () => {
   assertEquals(res.status, 400);
   await res.body?.cancel();
 });
+
+Deno.test('detectChain : Super U et enseignes espagnoles', () => {
+  assertEquals(detectChain({ osm_brand: 'Super U' }), 'superu');
+  assertEquals(detectChain({ osm_name: 'Hyper U Villeurbanne' }), 'superu');
+  assertEquals(detectChain({ osm_brand: 'Mercadona' }), 'mercadona');
+  assertEquals(detectChain({ osm_name: 'Dia Market' }), 'dia');
+  assertEquals(detectChain({ osm_brand: 'Alcampo' }), 'alcampo');
+  assertEquals(detectChain({ osm_brand: 'Eroski City' }), 'eroski');
+  assertEquals(detectChain({ osm_brand: 'Consum' }), 'consum');
+});
+
+Deno.test('storesForObservation : un relevé français ne s’applique pas à l’enseigne espagnole', async () => {
+  const { storesForObservation } = await import('./openPrices.ts');
+  const base = COLLECT_STORES[0];
+  const fr = { ...base, id: 'carrefour', chain: 'carrefour' as const, country: 'FR' as const, osmLocationIds: [] };
+  const es = { ...base, id: 'carrefour_es', chain: 'carrefour' as const, country: 'ES' as const, osmLocationIds: [] };
+  const item: OpenPriceItem = { price: 1, location: { osm_brand: 'Carrefour', osm_address_country_code: 'FR' } };
+  assertEquals(storesForObservation(item, [fr, es]).map((s) => s.id), ['carrefour']);
+  const itemEs: OpenPriceItem = { price: 1, location: { osm_brand: 'Carrefour', osm_address_country_code: 'ES' } };
+  assertEquals(storesForObservation(itemEs, [fr, es]).map((s) => s.id), ['carrefour_es']);
+});

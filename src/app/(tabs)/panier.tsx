@@ -106,6 +106,18 @@ export default function PricesScreen() {
       .filter((c) => !manual.has(c.itemId))
       .sort((a, b) => (a.best ? 0 : 1) - (b.best ? 0 : 1) || (b.best?.totalCents ?? 0) - (a.best?.totalCents ?? 0));
   }, [basket.comparisons, manualItems]);
+  // Provenance des prix : relevés en magasin (Open Prices) ou estimés.
+  const priceSource = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of catalog.prices) m.set(`${p.productId}|${p.storeId}`, p.source);
+    return m;
+  }, [catalog]);
+  const isMeasured = (productId: string, storeId: string) => {
+    const src = priceSource.get(`${productId}|${storeId}`);
+    return !!src && src !== 'demo';
+  };
+  const planLines = basket.plan?.parts.flatMap((part) => part.lines.map((l) => ({ ...l, storeId: part.storeId }))) ?? [];
+  const measuredLines = planLines.filter((l) => isMeasured(l.productId, l.storeId)).length;
   const alternativesSavings = basket.comparisons.reduce((s, c) => s + (c.cheaperAlternative?.savingsCents ?? 0), 0);
 
   const setMode = (mode: BasketMode) => {
@@ -232,6 +244,18 @@ export default function PricesScreen() {
           />
         ) : null}
 
+        {plan && planLines.length > 0 ? (
+          <InfoBanner
+            tone={measuredLines > 0 ? 'success' : 'neutral'}
+            title={`${measuredLines} article${measuredLines > 1 ? 's' : ''} sur ${planLines.length} au prix relevé en magasin`}
+            message={
+              measuredLines === planLines.length
+                ? 'Tous les prix de ton panier ont été constatés récemment en magasin (Open Prices).'
+                : 'Les autres prix sont estimés. Touche un article pour voir la date du relevé et l’ouvrir sur le site.'
+            }
+          />
+        ) : null}
+
         {plan && missingPriced.length > 0 ? (
           <InfoBanner
             tone="info"
@@ -298,6 +322,7 @@ export default function PricesScreen() {
                     bestStore={store}
                     bestStoreName={store ? storeDisplayName(store) : undefined}
                     productName={best ? catalog.productsById[best.productId]?.name : undefined}
+                    measured={best ? isMeasured(best.productId, best.storeId) : false}
                     onPress={() =>
                       router.push({ pathname: '/comparateur/[itemId]', params: { itemId: c.itemId } } as unknown as Href)
                     }

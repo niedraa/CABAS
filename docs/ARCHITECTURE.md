@@ -18,7 +18,15 @@
   (Hacendado, Dia, Alcampo, Eroski, Consum) portent un EAN 84x.
 - Le comparateur ne compare que les magasins des **pays** des enseignes choisies
   (`core › comparableStoreIds`) ; un frontalier peut panacher les deux pays.
-- Prix de démo : indice enseigne × niveau de prix du pays (Espagne ≈ −12 %).
+- **Prix réels** : `src/data/openPrices.ts` contient de vrais produits (codes-barres Open Food Facts)
+  et leurs prix **relevés en magasin** (Open Prices, licence ODbL) depuis novembre 2025 — environ
+  1 050 relevés sur ~790 produits pour 120 ingrédients, surtout en France (très peu de relevés en
+  Espagne). Rafraîchir : `npm run prices:refresh` (scripts/open-prices/).
+- **Prix estimés** (le reste) : indice enseigne × niveau de prix du pays (Espagne ≈ −12 %), recalés sur
+  le prix au kilo médian relevé pour l'ingrédient (`data/mergeCatalog.ts`). Un relevé remplace
+  toujours l'estimation pour le même ingrédient dans le même magasin. L'app affiche la provenance
+  (« Relevé le … » / « Prix estimé ») et ouvre chaque produit sur le site de l'enseigne
+  (recherche par libellé réel + marque, en espagnol pour les enseignes espagnoles).
 
 ## Vue d'ensemble
 

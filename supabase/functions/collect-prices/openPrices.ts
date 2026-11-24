@@ -37,6 +37,7 @@ export interface OpenPriceItem {
     osm_brand?: string | null;
     osm_name?: string | null;
     osm_address_city?: string | null;
+    osm_address_country_code?: string | null;
   } | null;
 }
 
@@ -84,6 +85,12 @@ const CHAIN_PATTERNS: [RegExp, StoreChain][] = [
   [/\bintermarche\b/, 'intermarche'],
   [/\blidl\b/, 'lidl'],
   [/\bmonoprix\b|\bmonop\b/, 'monoprix'],
+  [/\bsuper u\b|\bhyper u\b|\bu express\b|\bmagasins u\b|\bsysteme u\b/, 'superu'],
+  [/\bmercadona\b/, 'mercadona'],
+  [/\bdia\b/, 'dia'],
+  [/\balcampo\b/, 'alcampo'],
+  [/\beroski\b/, 'eroski'],
+  [/\bconsum\b/, 'consum'],
 ];
 
 /** Enseigne déduite du nom / de la marque OSM du point de vente. */
@@ -111,8 +118,12 @@ export function storesForObservation(item: OpenPriceItem, stores: readonly Colle
   }
   const chain = detectChain(item.location);
   if (!chain) return [];
+  // Pays du point de vente : un prix relevé chez Carrefour France ne vaut pas pour Carrefour Espagne.
+  const country = (item.location?.osm_address_country_code ?? '').toUpperCase();
   // Enseigne : magasins sans point OSM explicite (sinon on préfère les relevés exacts).
-  return stores.filter((s) => s.chain === chain && s.osmLocationIds.length === 0);
+  return stores.filter(
+    (s) => s.chain === chain && s.osmLocationIds.length === 0 && (!country || !s.country || s.country === country),
+  );
 }
 
 const toNum = (v: unknown): number => (typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN);

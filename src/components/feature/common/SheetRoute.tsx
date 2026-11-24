@@ -1,14 +1,14 @@
 /**
- * Route présentée en feuille : en natif, la route est déjà une `formSheet`
- * (voir `rootScreenOptionsFor`) ; sur le web, fond transparent + `Sheet` du
+ * Route présentée en feuille : en natif, modale plein écran avec bouton
+ * « fermer » (voir `rootScreenOptionsFor`) ; sur le web, fond transparent + `Sheet` du
  * kit (l'écran précédent reste visible). `useSheetRouteClose()` ferme la
  * feuille avec son animation puis revient en arrière.
  */
 import { router, Stack, type Href } from 'expo-router';
 import React, { useRef, useState } from 'react';
-import { Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 
-import { Sheet, Text } from '@/components/ui';
+import { Screen, Sheet } from '@/components/ui';
 import { useTheme } from '@/theme';
 
 const IS_WEB = Platform.OS === 'web';
@@ -42,25 +42,12 @@ export interface SheetRouteProps {
 }
 
 export function SheetRoute({ visible, onClose, title, subtitle, footer, children, testID }: SheetRouteProps) {
-  const t = useTheme();
   if (!IS_WEB) {
+    // Natif : la route est une modale plein écran (voir `rootScreenOptionsFor`).
     return (
-      <View style={[styles.root, { backgroundColor: t.colors.surfaceElevated }]} testID={testID}>
-        <ScrollView contentContainerStyle={{ padding: t.spacing.xl, paddingBottom: t.spacing.huge }} keyboardShouldPersistTaps="handled">
-          <View style={{ marginBottom: t.spacing.lg }}>
-            <Text variant="title3" accessibilityRole="header">
-              {title}
-            </Text>
-            {subtitle ? (
-              <Text variant="footnote" color="textSecondary">
-                {subtitle}
-              </Text>
-            ) : null}
-          </View>
-          {children}
-        </ScrollView>
-        {footer ? <View style={{ padding: t.spacing.lg, paddingBottom: t.spacing.xxl }}>{footer}</View> : null}
-      </View>
+      <Screen title={title} subtitle={subtitle} onBack={onClose} backIcon="close" bottomInset="safe" footer={footer} testID={testID}>
+        {children}
+      </Screen>
     );
   }
   return (
@@ -74,6 +61,5 @@ export function SheetRoute({ visible, onClose, title, subtitle, footer, children
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
   transparent: { flex: 1, backgroundColor: 'transparent' },
 });

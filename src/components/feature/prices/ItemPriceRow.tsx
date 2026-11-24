@@ -15,11 +15,13 @@ export interface ItemPriceRowProps {
   bestStore?: Store;
   bestStoreName?: string;
   productName?: string;
+  /** Prix de la meilleure offre relevé en magasin (sinon estimé). */
+  measured?: boolean;
   onPress: () => void;
   testID?: string;
 }
 
-export function ItemPriceRow({ comparison: c, bestStore, bestStoreName, productName, onPress, testID }: ItemPriceRowProps) {
+export function ItemPriceRow({ comparison: c, bestStore, bestStoreName, productName, measured, onPress, testID }: ItemPriceRowProps) {
   const t = useTheme();
   const best = c.best;
   const spread = c.offers.length > 1 ? c.offers[c.offers.length - 1].totalCents - c.offers[0].totalCents : 0;
@@ -48,6 +50,7 @@ export function ItemPriceRow({ comparison: c, bestStore, bestStoreName, productN
             : 'Introuvable dans tes enseignes'}
         </Text>
         <View style={[styles.badges, { marginTop: 2 }]}>
+          {best ? <Badge label={measured ? 'Relevé' : 'Estimé'} tone={measured ? 'success' : 'neutral'} size="sm" /> : null}
           {best?.isPromo ? <Badge label="Promo" tone="danger" size="sm" /> : null}
           {spread > 0 ? <Badge label={`jusqu’à ${formatPrice(spread)} d’écart`} tone="neutral" size="sm" /> : null}
           {c.cheaperAlternative ? <Badge label={`MDD −${formatPrice(c.cheaperAlternative.savingsCents)}`} tone="success" size="sm" /> : null}

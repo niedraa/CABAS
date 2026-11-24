@@ -15,6 +15,8 @@ import { prices } from './prices';
 import { products } from './products';
 import { recipes } from './recipes';
 import { stores } from './stores';
+import { mergeRealPrices } from './mergeCatalog';
+import { openPricesPrices, openPricesProducts } from './openPrices';
 
 export { ingredients, NON_PURCHASABLE_INGREDIENT_IDS } from './ingredients';
 export { recipes } from './recipes';
@@ -33,7 +35,13 @@ function indexById<T extends { id: string }>(items: readonly T[]): Record<string
 export const ingredientsById: Record<string, Ingredient> = indexById(ingredients);
 export const recipesById: Record<string, Recipe> = indexById(recipes);
 export const storesById: Record<string, Store> = indexById(stores);
-export const productsById: Record<string, Product> = indexById(products);
+/** Catalogue servi à l'app : démo + produits réels, prix relevés prioritaires. */
+const merged = mergeRealPrices(products, prices, openPricesProducts, openPricesPrices);
+
+export { openPricesProducts, openPricesPrices, OPEN_PRICES_COLLECTED_AT } from './openPrices';
+export { mergeRealPrices, realPriceShare } from './mergeCatalog';
+
+export const productsById: Record<string, Product> = indexById(merged.products);
 
 /** Le catalogue complet, au format attendu par les services et le moteur. */
 export interface Catalog {
@@ -44,8 +52,8 @@ export interface Catalog {
   prices: Price[];
 }
 
-export const catalog: Catalog = { ingredients, recipes, stores, products, prices };
+export const catalog: Catalog = { ingredients, recipes, stores, products: merged.products, prices: merged.prices };
 
 /** Mention affichée près des prix en mode démo (transparence envers l'utilisateur). */
 export const DEMO_DATA_NOTICE =
-  'Prix de démonstration : ils sont indicatifs, relevés fictivement le 9 novembre 2026 et peuvent différer des prix réels en magasin. Connecte ton compte pour voir les prix à jour de tes magasins.';
+  'Prix « relevés » : vrais prix constatés en magasin par la communauté Open Prices (Open Food Facts, licence ODbL), à la date indiquée. Prix « estimés » : moyenne réaliste quand aucun relevé récent n’existe. Les prix en ligne peuvent varier selon ton magasin.';

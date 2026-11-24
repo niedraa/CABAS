@@ -84,7 +84,8 @@
     "build:media": "node scripts/build-media.mjs",
     "iphone": "expo start --clear",
     "iphone:tunnel": "expo start --tunnel --clear",
-    "iphone:cable": "expo run:ios --device"
+    "iphone:cable": "expo run:ios --device",
+    "prices:refresh": "node scripts/open-prices/run.mjs"
   },
   "private": true,
   "jest": {

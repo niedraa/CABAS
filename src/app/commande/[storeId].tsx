@@ -4,16 +4,15 @@
  *
  * 1. Cabas prépare la commande (lignes, total, frais) à l'ouverture ;
  * 2. « Ouvrir <enseigne> » ouvre le drive / la livraison (navigateur intégré) ;
- *    Premium : un lien de recherche par produit (commande en un clic) ;
+ *    chaque article a un lien vers sa recherche sur le site de l'enseigne ;
  * 3. « Copier ma liste » (texte prêt à coller) ;
  * 4. « J'ai passé ma commande » : la dépense rejoint le suivi du budget.
  * Sans drive (Lidl, Mercadona…), la commande devient une liste à emporter.
  */
-import * as WebBrowser from 'expo-web-browser';
 import { router, useLocalSearchParams, type Href } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Linking, StyleSheet, View } from 'react-native';
-import { CheckCircle2, Copy, Crown, ExternalLink, Search, ShoppingCart } from 'lucide-react-native';
+import { StyleSheet, View } from 'react-native';
+import { CheckCircle2, Copy, ExternalLink, Search, ShoppingCart } from 'lucide-react-native';
 
 import { Celebration, EmptyBasket, ReceiptCard } from '@/components/brand';
 import {
@@ -29,17 +28,16 @@ import {
   Text,
   useToast,
 } from '@/components/ui';
-import { buildProductSearchUrl, COUNTRY_FLAGS, formatPrice, productSearchQuery, storeDisplayName } from '@/core';
-import { useSubscription } from '@/hooks';
+import { COUNTRY_FLAGS, formatPrice, storeDisplayName } from '@/core';
 import { haptics } from '@/lib/haptics';
-import { INGREDIENT_NAMES_ES, useCatalog } from '@/services/catalog';
+import { useCatalog } from '@/services/catalog';
+import { openProductOnStoreSite } from '@/services/order';
 import { lastOrderForWeek, useBasketStore, useOrderStore, useWeekStore } from '@/stores';
 import { useTheme } from '@/theme';
 
 export default function OrderScreen() {
   const t = useTheme();
   const toast = useToast();
-  const sub = useSubscription();
   const { storeId } = useLocalSearchParams<{ storeId?: string }>();
   const catalog = useCatalog();
   const store = storeId ? catalog.storesById[storeId] : undefined;
@@ -130,18 +128,9 @@ export default function OrderScreen() {
   const searchProduct = async (productId: string) => {
     const product = catalog.productsById[productId];
     if (!product) return;
-    if (!sub.canUse('one_click_order')) {
-      haptics.warning();
-      router.push('/premium' as Href);
-      return;
-    }
-    const query = productSearchQuery(store, product, catalog.ingredientsById[product.ingredientId]?.name, INGREDIENT_NAMES_ES);
-    const url = buildProductSearchUrl(store, product, query);
-    try {
-      await WebBrowser.openBrowserAsync(url);
-    } catch {
-      await Linking.openURL(url).catch(() => undefined);
-    }
+    haptics.tap();
+    const ok = await openProductOnStoreSite(store, product);
+    if (!ok) toast.show({ title: 'Impossible d’ouvrir le site', message: 'Vérifie ta connexion et réessaie.', tone: 'danger' });
   };
 
   return (
@@ -228,14 +217,10 @@ export default function OrderScreen() {
           <InfoBanner tone="success" title="C’est noté" message="La dépense est dans ton suivi de budget. Bon appétit !" action={{ label: 'Voir mon budget', onPress: () => router.push('/budget' as Href) }} />
         )}
 
-        {!sub.canUse('one_click_order') && !inStore && !confirmed ? (
-          <InfoBanner
-            tone="premium"
-            icon={Crown}
-            title="Commande en un clic"
-            message="Avec Premium, chaque produit s’ouvre directement dans la recherche de l’enseigne."
-            action={{ label: 'Découvrir', onPress: () => router.push('/premium' as Href) }}
-          />
+        {!confirmed ? (
+          <Text variant="footnote" color="textSecondary">
+            Touche la loupe d’un article pour le retrouver sur le site {store.country === 'ES' ? 'de l’enseigne (recherche en espagnol)' : 'de l’enseigne'}.
+          </Text>
         ) : null}
 
         <ReceiptCard header={`Ticket · ${name}`} testID="order-lines">
@@ -257,15 +242,14 @@ export default function OrderScreen() {
                 <Text variant="callout" tabular>
                   {formatPrice(l.totalCents)}
                 </Text>
-                {!inStore ? (
-                  <IconButton
-                    icon={sub.canUse('one_click_order') ? Search : Crown}
-                    accessibilityLabel={`Chercher ${p?.name ?? l.label} chez ${name}`}
-                    size="sm"
-                    variant="plain"
-                    onPress={() => void searchProduct(l.productId)}
-                  />
-                ) : null}
+                <IconButton
+                  icon={Search}
+                  accessibilityLabel={`Voir ${p?.name ?? l.label} sur le site ${name}`}
+                  size="sm"
+                  variant="plain"
+                  onPress={() => void searchProduct(l.productId)}
+                  testID={`order-line-link-${l.itemId}`}
+                />
               </View>
             );
           })}

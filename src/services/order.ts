@@ -10,7 +10,9 @@ import * as Clipboard from 'expo-clipboard';
 import * as WebBrowser from 'expo-web-browser';
 import { Linking, Platform, Share } from 'react-native';
 
-import type { OrderHandoff } from '@/core';
+import { buildProductSearchUrl, productSearchQuery, type OrderHandoff, type Product, type Store } from '@/core';
+
+import { getCatalogSnapshot, INGREDIENT_NAMES_ES } from './catalog';
 
 import { track } from './analytics';
 import { captureError } from './monitoring';
@@ -77,4 +79,32 @@ export async function shareText(text: string, title = 'Ma liste Cabas'): Promise
   }
   const copied = await copyListToClipboard(text);
   return copied ? 'copied' : 'failed';
+}
+
+/** URL de la recherche du produit sur le site de l'enseigne. */
+export function productUrlOnStoreSite(store: Store, product: Product): string {
+  const ingredientName = getCatalogSnapshot().ingredientsById[product.ingredientId]?.name;
+  return buildProductSearchUrl(store, product, productSearchQuery(store, product, ingredientName, INGREDIENT_NAMES_ES));
+}
+
+/** Ouvre le produit sur le site de l'enseigne (navigateur intégré, repli Linking). */
+export async function openProductOnStoreSite(store: Store, product: Product): Promise<boolean> {
+  const url = productUrlOnStoreSite(store, product);
+  try {
+    await WebBrowser.openBrowserAsync(url, {
+      toolbarColor: BROWSER_COLORS.toolbarColor,
+      controlsColor: BROWSER_COLORS.controlsColor,
+      dismissButtonStyle: 'close',
+    });
+    track('order_opened', { storeId: store.id, via: 'product_search' });
+    return true;
+  } catch {
+    try {
+      await Linking.openURL(url);
+      return true;
+    } catch (err) {
+      captureError(err, { where: 'openProductOnStoreSite', storeId: store.id });
+      return false;
+    }
+  }
 }
