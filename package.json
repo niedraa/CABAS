@@ -81,7 +81,10 @@
     "test:functions": "cd supabase/functions && deno test --allow-env --allow-read",
     "test:scripts": "node --test supabase/tests/scripts.test.mjs",
     "test:backend": "npm run test:sql && npm run test:scripts && npm run test:functions",
-    "build:media": "node scripts/build-media.mjs"
+    "build:media": "node scripts/build-media.mjs",
+    "iphone": "expo start --clear",
+    "iphone:tunnel": "expo start --tunnel --clear",
+    "iphone:cable": "expo run:ios --device"
   },
   "private": true,
   "jest": {
